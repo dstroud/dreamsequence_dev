@@ -1,5 +1,5 @@
 -- Dreamsequence
--- nb_dev 231023 01 @modularbeat
+-- 23102301 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
