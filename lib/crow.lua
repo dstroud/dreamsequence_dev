@@ -132,12 +132,11 @@ local function add_player(cv, env)
     function player:active()
         crow_ports["cv_"..cv] = crow_ports["cv_"..cv] + 1
         params:show("nb_crow_cv_"..cv)
-
         if env > 0 then
             crow_ports["env_"..env] = crow_ports["env_"..env] + 1
             params:show("nb_crow_env_"..env)  -- what about nils
-            _menu.rebuild_params()
         end
+        _menu.rebuild_params()
     end
 
     function player:inactive()
