@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 23102301 @modularbeat
+-- 23102401 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 230526 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23102301'
+  version = '23102401'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -62,19 +62,19 @@ function init()
       if crow_version_num < 4.01 then
         print('Crow compatibility mode enabled per https://github.com/monome/crow/pull/463')
         crow_trigger = function()
-          crow.send("input[1].query = function() stream_handler(1, input[1].volts) end")
-          crow.input[1].query()
+          crow.send("input[2].query = function() stream_handler(1, input[2].volts) end")  -- todo p0 test on older crow fw!
+          crow.input[2].query()
         end
       else
         crow_trigger = function()
-          crow.input[1].query()
+          crow.input[2].query()
         end
       end
-      crow.input[1].stream = sample_crow
-      crow.input[1].mode("none")
+      crow.input[2].stream = sample_crow
+      crow.input[2].mode("none")
       -- TODO: could do a gate with "both" for ADSR envelope
-      crow.input[2].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
-      crow.input[2].change = crow_trigger
+      crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
+      crow.input[1].change = crow_trigger
     end
   )
 
@@ -90,9 +90,9 @@ function init()
   
   
   function capture_preinit()
-    preinit_clock_source = params:get('clock_source')
+    -- preinit_clock_source = params:get('clock_source')
     -- print('preinit_clock_source = ' .. preinit_clock_source)
-    preinit_clock_crow_out = params:get('clock_crow_out')
+    -- preinit_clock_crow_out = params:get('clock_crow_out')
     -- print('preinit_clock_crow_out = ' .. preinit_clock_crow_out)
     preinit_jf_mode = clock.run(
       function()
@@ -104,11 +104,11 @@ function init()
     )
   
     -- If syncing to Crow clock, turn this off since we need to use Crow inputs for harmonizer. Revert in cleanup()
-    if preinit_clock_source == 4 then params:set('clock_source',1) end
+    -- if preinit_clock_source == 4 then params:set('clock_source',1) end
     
     -- Turn off system Crow clock out so it doesn't conflict with DS' custom one. Revert in cleanup()
     -- Todo p2 look at dynamically turning this on/off rather than use the DS custom clock. Or allow choice.
-    params:set('clock_crow_out', 1)
+    -- params:set('clock_crow_out', 1)
   end
   capture_preinit()
 
@@ -117,14 +117,14 @@ function init()
   function cleanup()
     clock.link.stop()
     
-    if preinit_clock_source == 4 then 
-      params:set('clock_source', preinit_clock_source)
-      print('Restoring clock_source to ' .. preinit_clock_source)
-    end
-    if preinit_clock_crow_out ~= 1 then 
-      params:set('clock_crow_out', preinit_clock_crow_out)
-      print('Restoring clock_crow_out to ' .. preinit_clock_crow_out)
-    end
+    -- if preinit_clock_source == 4 then 
+      -- params:set('clock_source', preinit_clock_source)
+      -- print('Restoring clock_source to ' .. preinit_clock_source)
+    -- end
+    -- if preinit_clock_crow_out ~= 1 then 
+      -- params:set('clock_crow_out', preinit_clock_crow_out)
+      -- print('Restoring clock_crow_out to ' .. preinit_clock_crow_out)
+    -- end
     if preinit_jf_mode == 0 then
       crow.ii.jf.mode(preinit_jf_mode)
       print('Restoring jf.mode to ' .. preinit_jf_mode)
@@ -673,7 +673,7 @@ function init()
 
 
   function params.action_read(filename,silent,number)
-    nb:stop_all() -- todo p0 untested but should stop hanging notes
+    nb:stop_all()
     local filepath = norns.state.data..number.."/"
     if util.file_exists(filepath) then
       -- Close the event editor if it's currently open so pending edits aren't made to the new arranger unintentionally
@@ -1548,7 +1548,10 @@ function sequence_clock(sync_val)
     if stop == true then
         
       -- When internally clocked, stop is quantized to occur at the end of the chord step. todo p1 also use this when running off norns link beat_count
-      if params:string('clock_source') == 'internal' or params:string('clock_source') == 'midi' then
+      -- todo p1 redo this to have last once be internal/midi/crow
+      if params:string('clock_source') == 'internal' 
+      or params:string('clock_source') == 'midi'
+      or params:string('clock_source') == 'crow' then
         if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
           -- print('Transport stopping at clock_step ' .. clock_step .. ', clock_start_method: '.. clock_start_method)
           clock_step = clock_step - 1, 0
@@ -2273,6 +2276,7 @@ end
 
 -- cv harmonizer input
 function sample_crow(volts)
+  print('sample_crow called')
   local note = _G['map_note_' .. params:get('crow_note_map')](round(volts * 12, 0) + 1, params:get('crow_octave'), params:get('chord_preload') ~= 0) + 36
   -- Blocks duplicate notes within a chord step so rests can be added to simple CV sources
   if chord_pattern_retrig == true
@@ -3078,8 +3082,24 @@ function key(n,z)
               reset_arrangement()
             else
               reset_pattern()       
-            end 
+            end
           end
+          
+          elseif params:string('clock_source') == 'crow' then
+          if transport_state == 'starting' or transport_state == 'playing' then
+            stop = true
+            transport_state = 'pausing'
+            print(transport_state)        
+            clock_start_method = 'continue'
+            -- start = true
+          else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == 'pausing' or transport_state == 'paused' then
+            reset_external_clock()
+            if params:get('arranger') == 2 then
+              reset_arrangement()
+            else
+              reset_pattern()       
+            end
+          end          
         end
         
       end
@@ -3349,13 +3369,13 @@ function key(n,z)
           
         elseif params:string('clock_source') == 'midi' then
           if transport_active == false then
-            -- Needs to punch in on a valid clock division relative to clock.get_beats() for strum calculations to work
             clock.transport.start(chord_div / global_clock_div)
           else -- we can cancel a pending pause by pressing K3 before it fires
             stop = false
             transport_state = 'playing'
             print(transport_state)            
           end
+          
         elseif params:string('clock_source') == 'link' then
           if transport_active == false then
             -- disabling until issue with internal link start clobbering clocks is addressed
@@ -3365,6 +3385,15 @@ function key(n,z)
             transport_state = 'playing'
             print(transport_state)            
           end
+          
+        elseif params:string('clock_source') == 'crow' then
+          if transport_active == false then
+            clock.transport.start(1)  -- sync on next beat
+          else -- we can cancel a pending pause by pressing K3 before it fires
+            stop = false
+            transport_state = 'playing'
+            print(transport_state)            
+          end          
         end
       end
       -----------------------------------
