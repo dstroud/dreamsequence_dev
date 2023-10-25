@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 23102301 @modularbeat
+-- 23102501 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 230526 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23102301'
+  version = '23102501'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -47,6 +47,29 @@ function init()
   nb.players["crow para"] = nil
   nb.players["jf kit"] = nil
   nb.players["jf mpe"] = nil
+
+
+  -- called by crow.input[1].change when clock_source = crow
+  -- passes through original event for crow clock
+  -- adds crow_trigger()
+  function process_crow_cv_1_change(v)
+    norns.crow.send[[tell('change',1,1)]]
+    crow_trigger()
+    -- print('adding crow_trigger()')
+  end
+
+  -- modifies norns.crow.clock_enable to also call crow_trigger()
+  -- this way we can send a swung clock into Crow CV1 to get swing notes
+  -- from the CV harmonizer while also driving the system clock
+  function redefine_crow_input_1()
+    if params:string('clock_source') == 'crow' then
+      norns.crow.clock_enable = function()
+        crow.input[1].change = process_crow_cv_1_change
+        crow.input[1].mode('change',2,0.1,'rising')
+      end
+      norns.crow.clock_enable()
+    end
+  end
 
   -- thanks @dndrks for this little bit of magic to check ^^crow^^ version!!
   norns.crow.events.version = function(...)
@@ -62,21 +85,30 @@ function init()
       if crow_version_num < 4.01 then
         print('Crow compatibility mode enabled per https://github.com/monome/crow/pull/463')
         crow_trigger = function()
-          crow.send("input[1].query = function() stream_handler(1, input[1].volts) end")
-          crow.input[1].query()
+          if crow_div == 0 then
+            crow.send("input[2].query = function() stream_handler(2, input[2].volts) end")
+            crow.input[2].query()
+          end
         end
       else
         crow_trigger = function()
-          crow.input[1].query()
+          -- todo p2 could just overwrite function so nothing happens. Not sure how to do that and maintain crow clock_source though
+          if crow_div == 0 then
+            crow.input[2].query()
+          end
         end
       end
-      crow.input[1].stream = sample_crow
-      crow.input[1].mode("none")
-      -- TODO: could do a gate with "both" for ADSR envelope
-      crow.input[2].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
-      crow.input[2].change = crow_trigger
+      crow.input[2].stream = sample_crow
+      crow.input[2].mode("none")
+      -- todo idea: could do a gate with "both" for ADSR envelope so this can do passthrough note duration
+      if params:get('clock_source') ~= 4 then
+        crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
+        crow.input[1].change = crow_trigger
+      end
+      redefine_crow_input_1()
     end
   )
+
 
   crow.ii.jf.event = function(e, value)
     if e.name == 'mode' then
@@ -90,9 +122,9 @@ function init()
   
   
   function capture_preinit()
-    preinit_clock_source = params:get('clock_source')
+    -- preinit_clock_source = params:get('clock_source')
     -- print('preinit_clock_source = ' .. preinit_clock_source)
-    preinit_clock_crow_out = params:get('clock_crow_out')
+    -- preinit_clock_crow_out = params:get('clock_crow_out')
     -- print('preinit_clock_crow_out = ' .. preinit_clock_crow_out)
     preinit_jf_mode = clock.run(
       function()
@@ -104,11 +136,11 @@ function init()
     )
   
     -- If syncing to Crow clock, turn this off since we need to use Crow inputs for harmonizer. Revert in cleanup()
-    if preinit_clock_source == 4 then params:set('clock_source',1) end
+    -- if preinit_clock_source == 4 then params:set('clock_source',1) end
     
     -- Turn off system Crow clock out so it doesn't conflict with DS' custom one. Revert in cleanup()
     -- Todo p2 look at dynamically turning this on/off rather than use the DS custom clock. Or allow choice.
-    params:set('clock_crow_out', 1)
+    -- params:set('clock_crow_out', 1)
   end
   capture_preinit()
 
@@ -117,14 +149,14 @@ function init()
   function cleanup()
     clock.link.stop()
     
-    if preinit_clock_source == 4 then 
-      params:set('clock_source', preinit_clock_source)
-      print('Restoring clock_source to ' .. preinit_clock_source)
-    end
-    if preinit_clock_crow_out ~= 1 then 
-      params:set('clock_crow_out', preinit_clock_crow_out)
-      print('Restoring clock_crow_out to ' .. preinit_clock_crow_out)
-    end
+    -- if preinit_clock_source == 4 then 
+      -- params:set('clock_source', preinit_clock_source)
+      -- print('Restoring clock_source to ' .. preinit_clock_source)
+    -- end
+    -- if preinit_clock_crow_out ~= 1 then 
+      -- params:set('clock_crow_out', preinit_clock_crow_out)
+      -- print('Restoring clock_crow_out to ' .. preinit_clock_crow_out)
+    -- end
     if preinit_jf_mode == 0 then
       crow.ii.jf.mode(preinit_jf_mode)
       print('Restoring jf.mode to ' .. preinit_jf_mode)
@@ -138,6 +170,18 @@ function init()
         end
       end
     end
+    
+    -- revert changes made to clock_enable
+    norns.crow.clock_enable = function()
+      -- directly set the change event on crow so it conforms to old-style event names
+      norns.crow.send[[
+        input[1].change = function()
+          tell('change',1,1)
+        end
+        input[1].mode('change',2,0.1,'rising')
+      ]]
+    end
+
   end
   
   
@@ -338,7 +382,7 @@ function init()
   params:add_number('chord_duration_index', 'Duration', 1, 57, 15, function(param) return divisions_string(param:get()) end)
   params:set_action('chord_duration_index',function(val) chord_duration = division_names[val][1] end) -- set global once vs lookup each time. Not sure if worth the trade-off
   
-  params:add_number('chord_octave','Octave', -2, 4, 0)
+  params:add_number('chord_octave','Octave', -4, 4, 0)
   
   params:add_option('chord_type','Chord type', {'Triad', '7th'}, 1)
   
@@ -440,7 +484,7 @@ function init()
   params:add_number('seq_pattern_length_1', 'Pattern length', 1, max_seq_pattern_length, 8)
   params:set_action('seq_pattern_length_1', function() pattern_length(1) end)
   
-  params:add_number('seq_octave_1', 'Octave', -2, 4, 0)
+  params:add_number('seq_octave_1', 'Octave', -4, 4, 0)
   
   params:add_number('seq_dynamics_1', 'Dynamics', 0, 100, 70, function(param) return percent(param:get()) end)
 
@@ -471,7 +515,7 @@ function init()
   params:add_number('midi_duration_index', 'Duration', 1, 57, 10, function(param) return divisions_string(param:get()) end)
   params:set_action('midi_duration_index', function(val) midi_duration = division_names[val][1] end) -- pointless?
     
-  params:add_number('midi_octave', 'Octave', -2, 4, 0)
+  params:add_number('midi_octave', 'Octave', -4, 4, 0)
   
   params:add_number('midi_dynamics', 'Dynamics', 0, 100, 70, function(param) return percent(param:get()) end)
 
@@ -479,22 +523,25 @@ function init()
   ------------------
   -- CV HARMONIZER PARAMS --
   ------------------
-  params:add_group('cv_harmonizer', 'CV HARMONIZER', 8)
+  params:add_group('cv_harmonizer', 'CV HARMONIZER', 9)
   
-  params:add_option("crow_note_map", "Notes", {'Triad', '7th', 'Mode+Transp.', 'Mode'}, 1)
-
   nb:add_param("crow_voice_raw", "Voice raw")
   params:hide("crow_voice_raw")
   
-  params:add_option('crow_auto_rest', 'Auto-rest', {'Off', 'On'}, 1)
-
   params:add_option("crow_voice", 'Voice', voice_param_options, 1)
   params:set_action("crow_voice", function(index) params:set("crow_voice_raw", voice_param_index[index]) end)
+  
+  params:add_number('crow_div_index', 'Trigger', 1, 56, 56, function(param) return crow_trigger_string(param:get()) end)
+  params:set_action('crow_div_index', function(val) crow_div = crow_trigger_names[val][1] end)  
+  
+  params:add_option("crow_note_map", "Notes", {'Triad', '7th', 'Mode+Transp.', 'Mode'}, 1)
+
+  params:add_option('crow_auto_rest', 'Auto-rest', {'Off', 'On'}, 1)
 
   params:add_number('crow_duration_index', 'Duration', 1, 57, 10, function(param) return divisions_string(param:get()) end)
   params:set_action('crow_duration_index', function(val) crow_duration = division_names[val][1] end) -- pointless?
   
-  params:add_number('crow_octave', 'Octave', -2, 4, 0)
+  params:add_number('crow_octave', 'Octave', -4, 4, 0)
   
   params:add_number('crow_dynamics', 'Dynamics', 0, 100, 70, function(param) return percent(param:get()) end)
 
@@ -673,7 +720,7 @@ function init()
 
 
   function params.action_read(filename,silent,number)
-    nb:stop_all() -- todo p0 untested but should stop hanging notes
+    nb:stop_all()
     local filepath = norns.state.data..number.."/"
     if util.file_exists(filepath) then
       -- Close the event editor if it's currently open so pending edits aren't made to the new arranger unintentionally
@@ -828,7 +875,7 @@ function update_menus()
   menus[4] = {'midi_voice', 'midi_note_map', 'midi_harmonizer_in_port', 'midi_octave', 'midi_duration_index', 'midi_dynamics'}
 
   -- CV HARMONIZER MENU
-    menus[5] = {'crow_voice', 'crow_note_map', 'crow_auto_rest', 'crow_octave', 'crow_duration_index', 'crow_dynamics'}
+    menus[5] = {'crow_voice', 'crow_div_index', 'crow_note_map', 'crow_auto_rest', 'crow_octave', 'crow_duration_index', 'crow_dynamics'}
 end
 
 
@@ -836,7 +883,8 @@ end
 -- Assorted functions junkdrawer
 -----------------------------------------------
 
--- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
+  
+  -- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
 -- 1. shortens MIDI player names to port # and voice_count (sorry, outta space!)
 -- 2. only serves up valid crow cv/env options based on crow_out_ param config
 function gen_voice_lookups()
@@ -898,9 +946,9 @@ function update_voice_params()
     end
   end
 end
-  
-  
--- return first number from a string
+   
+    
+    -- return first number from a string
 function find_number(string)
   return tonumber(string.match (string, "%d+"))
 end
@@ -1182,13 +1230,21 @@ end
 
 
 function set_crow_clock(source)
-  crow_div = clock_names[params:get('crow_clock_index')][1]
+  crow_clock_div = clock_names[params:get('crow_clock_index')][1]
   -- crow_slew = clock.get_beat_sec() / global_clock_div --- divisior should be PPQN
 end
 
 
 function divisions_string(index) 
   if index == 0 then return('Off') else return(division_names[index][2]) end
+end
+
+
+function crow_trigger_string(index)
+  -- if index == 56 then
+    -- return(params:get('clock_source') == 4 and 'N/A' or 'CV1') else 
+      return(crow_trigger_names[index][2])
+    -- end
 end
 
 
@@ -1504,13 +1560,14 @@ end
  -- Clock to control sequence events including chord pre-load, chord/seq sequence, and crow clock out
 function sequence_clock(sync_val)
   transport_state = 'starting'
+  local clock_source = params:string('clock_source')
   print(transport_state)
 
   -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
-  if params:string('clock_source') == 'internal' then
+  if clock_source == 'internal' then
     -- clock.sync(chord_div / global_clock_div)
     clock.sync(1) -- this is not ideal but need to look into skipping and resetting via params:set('clock_reset') further
-  elseif params:string('clock_source') == 'link' then
+  elseif clock_source == 'link' then
     clock.sync(params:get('link_quantum'))
   elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
     clock.sync(sync_val)  -- uses sync_val arg (chord_div / global_clock_div) to sync on the correct beat of an already running MIDI clock
@@ -1545,10 +1602,48 @@ function sequence_clock(sync_val)
     
     -- STOP LOGIC DEPENDING ON CLOCK SOURCE
     -- Immediate or instant stop
+
     if stop == true then
+      
+      if clock_source == 'link' then
         
-      -- When internally clocked, stop is quantized to occur at the end of the chord step. todo p1 also use this when running off norns link beat_count
-      if params:string('clock_source') == 'internal' or params:string('clock_source') == 'midi' then
+        if link_stop_source == 'norns' then
+          if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
+            -- print('Transport stopping at clock_step ' .. clock_step .. ', clock_start_method: '.. clock_start_method)
+            clock.link.stop()
+            clock_step = clock_step - 1, 0
+            transport_multi_stop()
+            transport_active = false
+            transport_state = 'paused'
+            print(transport_state)
+            stop = false
+            start = false
+            link_stop_source = nil
+          end      
+        
+        -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+        -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+        -- todo p2 look at options for a start/continue mode for external sources that support this
+        else
+          transport_multi_stop()
+          -- print('Transport stopping at clock_step ' .. clock_step .. ', clock_start_method: '.. clock_start_method)
+          
+          if arranger_active then
+            print(transport_state)
+          else
+            reset_pattern()
+          end
+          transport_active = false
+          reset_arrangement()
+          transport_state = 'stopped'
+          stop = false
+        end
+      
+
+      -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+      -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+      -- todo p1 also use this when running off norns link beat_count
+      else
         if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
           -- print('Transport stopping at clock_step ' .. clock_step .. ', clock_start_method: '.. clock_start_method)
           clock_step = clock_step - 1, 0
@@ -1560,39 +1655,13 @@ function sequence_clock(sync_val)
           end
           stop = false
           start = false
-        end
-      elseif link_stop_source == 'norns' then
-        if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
-          -- print('Transport stopping at clock_step ' .. clock_step .. ', clock_start_method: '.. clock_start_method)
-          clock.link.stop()
-          clock_step = clock_step - 1, 0
-          transport_multi_stop()
-          transport_active = false
-          transport_state = 'paused'
-          print(transport_state)
-          stop = false
-          start = false
-          link_stop_source = nil
         end      
       
-      -- External clock_source. No quantization. Just resets pattern/arrangement immediately
-      -- todo p2 look at options for a start/continue mode for external sources that support this
-      else
-        transport_multi_stop()
-        -- print('Transport stopping at clock_step ' .. clock_step .. ', clock_start_method: '.. clock_start_method)
-        
-        if arranger_active then
-          print(transport_state)
-        else
-          reset_pattern()
-        end
-        transport_active = false
-        reset_arrangement()
-        transport_state = 'stopped'
-        stop = false
       end
-    end -- of stop handling
-    
+      
+    end -- of Stop handling
+      
+      
     
     -- ADVANCE SUB CLOCKS: advance_chord_pattern(), advance_seq_pattern(), Crow pulses
     if transport_active then -- check again
@@ -1622,14 +1691,22 @@ function sequence_clock(sync_val)
         end
       end
       
-      if params:get("crow_out_3") == 4 and clock_step % crow_div == 0 then
+      -- todo p0 take another look at this. I think the pulses may be sloppy.
+      if params:get("crow_out_3") == 4 and clock_step % crow_clock_div == 0 then
         -- crow.output[3]() --pulse defined in init
         crow.output[3].slew = 0
         crow.output[3].volts = 5
         crow.output[3].slew = 0.001 --Should be just less than 192 PPQN @ 300 BPM
         crow.output[3].volts = 0    
-        -- crow.output[3].slew = 0  -- 2023-10-20 moved to font
       end
+      
+      -- alternate mode for cv_harmonizer when using crow clock_source
+      --  should run after crow clock out
+      if crow_div ~= 0 then
+        if clock_step % crow_div == 0 then
+          crow.input[2].query()
+        end
+      end      
     end
     
     
@@ -2267,7 +2344,7 @@ function advance_seq_pattern()
       --   seq_1_shot_1 = false
       -- end
      end
-  end   
+  end
 end
 
 
@@ -2283,7 +2360,7 @@ function sample_crow(volts)
     local player = params:lookup_param("crow_voice_raw"):get_player()
     local dynamics = params:get('crow_dynamics') * .01
 
-    to_player(player, note, dynamics, seq_duration)
+    to_player(player, note, dynamics, crow_duration)
     
   end
   
@@ -3078,8 +3155,24 @@ function key(n,z)
               reset_arrangement()
             else
               reset_pattern()       
-            end 
+            end
           end
+          
+          elseif params:string('clock_source') == 'crow' then
+          if transport_state == 'starting' or transport_state == 'playing' then
+            stop = true
+            transport_state = 'pausing'
+            print(transport_state)        
+            clock_start_method = 'continue'
+            -- start = true
+          else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == 'pausing' or transport_state == 'paused' then
+            reset_external_clock()
+            if params:get('arranger') == 2 then
+              reset_arrangement()
+            else
+              reset_pattern()       
+            end
+          end          
         end
         
       end
@@ -3349,13 +3442,13 @@ function key(n,z)
           
         elseif params:string('clock_source') == 'midi' then
           if transport_active == false then
-            -- Needs to punch in on a valid clock division relative to clock.get_beats() for strum calculations to work
             clock.transport.start(chord_div / global_clock_div)
           else -- we can cancel a pending pause by pressing K3 before it fires
             stop = false
             transport_state = 'playing'
             print(transport_state)            
           end
+          
         elseif params:string('clock_source') == 'link' then
           if transport_active == false then
             -- disabling until issue with internal link start clobbering clocks is addressed
@@ -3365,6 +3458,15 @@ function key(n,z)
             transport_state = 'playing'
             print(transport_state)            
           end
+          
+        elseif params:string('clock_source') == 'crow' then
+          if transport_active == false then
+            clock.transport.start(1)  -- sync on next beat
+          else -- we can cancel a pending pause by pressing K3 before it fires
+            stop = false
+            transport_state = 'playing'
+            print(transport_state)            
+          end          
         end
       end
       -----------------------------------
