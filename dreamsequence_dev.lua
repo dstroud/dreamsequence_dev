@@ -62,14 +62,10 @@ function init()
   -- this way we can send a swung clock into Crow CV1 to get swing notes
   -- from the CV harmonizer while also driving the system clock
   function redefine_crow_input_1()
-    -- print('2. redefine_crow_input_1 called')
     if params:string('clock_source') == 'crow' then
-      -- print('3. crow clock_source confirmed')
       norns.crow.clock_enable = function()
-        --new style events so I don't think this will work with old Crow
         crow.input[1].change = process_crow_cv_1_change
         crow.input[1].mode('change',2,0.1,'rising')
-        -- print('4. redefined norns.crow.clock_enable')
       end
       norns.crow.clock_enable()
     end
@@ -90,13 +86,13 @@ function init()
         print('Crow compatibility mode enabled per https://github.com/monome/crow/pull/463')
         crow_trigger = function()
           if crow_div == 0 then
-            crow.send("input[2].query = function() stream_handler(1, input[2].volts) end")  -- todo p0 test on older crow fw. IDK what the 1 is!
+            crow.send("input[2].query = function() stream_handler(2, input[2].volts) end")
             crow.input[2].query()
           end
         end
       else
         crow_trigger = function()
-          -- todo p2 should just overwrite function so nothing happens. Not sure how to do that and maintain crow clock_source though
+          -- todo p2 could just overwrite function so nothing happens. Not sure how to do that and maintain crow clock_source though
           if crow_div == 0 then
             crow.input[2].query()
           end
@@ -104,12 +100,11 @@ function init()
       end
       crow.input[2].stream = sample_crow
       crow.input[2].mode("none")
-      -- TODO: could do a gate with "both" for ADSR envelope
+      -- todo idea: could do a gate with "both" for ADSR envelope so this can do passthrough note duration
       if params:get('clock_source') ~= 4 then
         crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
         crow.input[1].change = crow_trigger
       end
-      -- print('1. calling redefine_crow_input_1')
       redefine_crow_input_1()
     end
   )
