@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 23102401 @modularbeat
+-- 23102501 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 230526 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23102401'
+  version = '23102501'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -47,6 +47,33 @@ function init()
   nb.players["crow para"] = nil
   nb.players["jf kit"] = nil
   nb.players["jf mpe"] = nil
+
+
+  -- called by crow.input[1].change when clock_source = crow
+  -- passes through original event for crow clock
+  -- adds crow_trigger()
+  function process_crow_cv_1_change(v)
+    norns.crow.send[[tell('change',1,1)]]
+    crow_trigger()
+    -- print('adding crow_trigger()')
+  end
+
+  -- modifies norns.crow.clock_enable to also call crow_trigger()
+  -- this way we can send a swung clock into Crow CV1 to get swing notes
+  -- from the CV harmonizer while also driving the system clock
+  function redefine_crow_input_1()
+    -- print('2. redefine_crow_input_1 called')
+    if params:string('clock_source') == 'crow' then
+      -- print('3. crow clock_source confirmed')
+      norns.crow.clock_enable = function()
+        --new style events so I don't think this will work with old Crow
+        crow.input[1].change = process_crow_cv_1_change
+        crow.input[1].mode('change',2,0.1,'rising')
+        -- print('4. redefined norns.crow.clock_enable')
+      end
+      norns.crow.clock_enable()
+    end
+  end
 
   -- thanks @dndrks for this little bit of magic to check ^^crow^^ version!!
   norns.crow.events.version = function(...)
@@ -82,10 +109,12 @@ function init()
         crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
         crow.input[1].change = crow_trigger
       end
+      -- print('1. calling redefine_crow_input_1')
+      redefine_crow_input_1()
     end
   )
 
-  
+
   crow.ii.jf.event = function(e, value)
     if e.name == 'mode' then
       -- print('preinit jf.mode = '..value)
@@ -146,6 +175,18 @@ function init()
         end
       end
     end
+    
+    -- revert changes made to clock_enable
+    norns.crow.clock_enable = function()
+      -- directly set the change event on crow so it conforms to old-style event names
+      norns.crow.send[[
+        input[1].change = function()
+          tell('change',1,1)
+        end
+        input[1].mode('change',2,0.1,'rising')
+      ]]
+    end
+
   end
   
   
@@ -847,7 +888,8 @@ end
 -- Assorted functions junkdrawer
 -----------------------------------------------
 
--- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
+  
+  -- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
 -- 1. shortens MIDI player names to port # and voice_count (sorry, outta space!)
 -- 2. only serves up valid crow cv/env options based on crow_out_ param config
 function gen_voice_lookups()
@@ -1203,8 +1245,11 @@ function divisions_string(index)
 end
 
 
-function crow_trigger_string(index) 
-  if index == 56 then return('CV1') else return(crow_trigger_names[index][2]) end
+function crow_trigger_string(index)
+  -- if index == 56 then
+    -- return(params:get('clock_source') == 4 and 'N/A' or 'CV1') else 
+      return(crow_trigger_names[index][2])
+    -- end
 end
 
 
