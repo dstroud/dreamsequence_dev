@@ -273,10 +273,10 @@ function init()
   params:add_group('arranger_group', 'ARRANGER', 2)
 
   params:add_option('arranger', 'Arranger', {'Off', 'On'}, 1)
-  params:set_action('arranger', function() grid_redraw(); update_arranger_active() end)
+  params:set_action('arranger', function() update_arranger_active() end)
   
   params:add_option('playback', 'Playback', {'1-shot','Loop'}, 2)
-  params:set_action('playback', function() grid_redraw(); arranger_ending() end)
+  params:set_action('playback', function() arranger_ending() end)
   -- params:add_option('crow_assignment', 'Crow 4', {'Reset', 'On/high', 'V/pattern', 'Chord', 'Pattern'},1) -- todo
   
     
@@ -636,10 +636,8 @@ function init()
   seconds_remaining = 0
   chord_no = 0
   pattern_keys = {}
-  -- arranger_pattern_keys = {}
   arranger_pattern_key_first = nil -- simpler way to identify the first key held down so we can handle this as a "copy" action and know when to act on it or ignore it. Don't need a whole table.
   arranger_loop_key_count = 0 -- rename arranger_events_strip_key_count?
-  -- arranger_pattern_key_interrupt = false -- todo p1 probably not needed
   key_counter = 4
   pattern_key_count = 0
   chord_key_count = 0
@@ -805,7 +803,7 @@ function init()
       params:set('crow_pullup', param_option_to_index('crow_pullup', prefs.crow_pullup) or 2)
     end
   
-  grid_redraw()
+  grid_dirty = true
   redraw()
   end
 
@@ -848,13 +846,18 @@ function init()
   params:set_action('mode', function() build_scale(); update_chord_action() end)
 
   
+  grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
+  grid_redraw_metro:start()
+  grid_dirty = true
+
+
   countdown_timer = metro.init()
   countdown_timer.event = countdown -- call the 'countdown' function below,
   countdown_timer.time = .1 -- 1/10s
   countdown_timer.count = -1 -- for.evarrr
   countdown_timer:start()
   
-  grid_redraw()
+  grid_dirty = true
   redraw()
 end
 
@@ -884,7 +887,14 @@ end
 -----------------------------------------------
 
   
-  -- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
+function grid_refresh()
+  if grid_dirty then
+    grid_redraw()
+    grid_dirty = false
+  end
+end
+
+-- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
 -- 1. shortens MIDI player names to port # and voice_count (sorry, outta space!)
 -- 2. only serves up valid crow cv/env options based on crow_out_ param config
 function gen_voice_lookups()
@@ -1099,7 +1109,7 @@ function pattern_rotate_abs(source)
     current_rotation_seq = offset
     
   end
-  grid_redraw()
+  grid_dirty = true
 end
 
 
@@ -1123,7 +1133,7 @@ function pattern_shift_abs(source)
     end    
     current_shift_chord = offset  
   end
-  grid_redraw()
+  grid_dirty = true
 end
 
 
@@ -1135,7 +1145,7 @@ function pattern_length(source)
   else
     seq_pattern_length[source] = params:get('seq_pattern_length_' .. source)
   end
-  grid_redraw()
+  grid_dirty = true
 end
 
 
@@ -1708,13 +1718,6 @@ function sequence_clock(sync_val)
         end
       end      
     end
-    
-    
-    -- UPDATE GRID
-    if grid_dirty == true then
-      grid_redraw()
-      grid_dirty = false
-    end
   
   
     -- SET SYNC WITHIN LOOP
@@ -1742,7 +1745,7 @@ function calc_seconds_remaining()
 function countdown()
   calc_seconds_remaining()
   fast_blinky = fast_blinky ~ 1
-  grid_redraw() -- todo p0 only keep if we are adding grid flashing
+  grid_dirty = true -- for fast_blinky scrolling pattern indicator. todo p0 performance: big grid redraw driver
   redraw()  
 end
     
@@ -1802,7 +1805,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   get_next_chord()
   chord_raw = next_chord
   gen_dash('reset_pattern')
-  grid_redraw()
+  grid_dirty = true
   redraw()
 end
 
@@ -2997,7 +3000,7 @@ function g.key(x,y,z)
 
   end
   redraw()
-  grid_redraw()
+  grid_dirty = true
 end
 
 
@@ -3048,10 +3051,8 @@ function key(n,z)
       if arranger_loop_key_count > 0 and interaction ~= 'arranger_shift' then -- interaction == nil then
         arranger_queue = event_edit_segment
         -- jumping arranger queue cancels pattern change on key up
-        -- print('setting arranger_pattern_key_interrupt to TRUE')
-        -- arranger_pattern_key_interrupt = true -- don't change pattern on g.key up
         if arranger_queue <= arranger_length then arranger_one_shot_last_pattern = false end -- instantly de-blink glyph
-        grid_redraw()
+        grid_dirty = true
       
       elseif screen_view_name == 'Events' then
        
@@ -3101,7 +3102,7 @@ function key(n,z)
         end
         
         gen_dash('K2 events editor closed') -- update events strip in dash after making changes in events editor
-        grid_redraw()
+        grid_dirty = true
         
         
       ----------------------------------------
@@ -3209,7 +3210,7 @@ function key(n,z)
         elseif grid_view_name == 'Seq' then       
           seq_generator('run')
         end
-      grid_redraw()
+      grid_dirty = true
       
       ---------------------------------------------------------------------------
       -- Event Editor --
@@ -3223,7 +3224,7 @@ function key(n,z)
         event_edit_active = false
         screen_view_name = 'Events'
         interaction = nil
-        grid_redraw()
+        grid_dirty = true
   
       -- K3 saves event to events
       elseif screen_view_name == 'Events' then
@@ -3403,13 +3404,13 @@ function key(n,z)
           end
           event_saved = true
           
-          grid_redraw()
+          grid_dirty = true
         
         else
           screen_view_name = 'Session'
           event_key_count = 0
           gen_dash('K3 events saved') -- update events strip in dash after making changes in events editor
-          grid_redraw()
+          grid_dirty = true
         end
 
       ----------------------------------
@@ -3491,7 +3492,7 @@ function enc(n,d)
   -- todo p1 more refined switching between clamped and raw deltas depending on the use-case
   -- local d = util.clamp(d, -1, 1)
   
-  -- Reserved for scrolling/extending Arranger, Chord, Seq sequences
+  -- Scrolling/extending Arranger, Chord, Seq patterns
   if n == 1 then
     local d = util.clamp(d, -1, 1)
     -- ------- SCROLL ARRANGER GRID VIEW--------
@@ -3500,13 +3501,13 @@ function enc(n,d)
     --   grid_redraw()
     -- end
     --------- SCROLL PATTERN VIEWS -----------
-      if grid_view_name == 'Chord' or screen_view_name == 'Events' then
+    if grid_view_name == 'Chord' or screen_view_name == 'Events' then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_chord_pattern_length -  rows)
-      grid_redraw() -- redundant?
-  elseif grid_view_name == 'Seq' then
+      grid_dirty = true
+    elseif grid_view_name == 'Seq' then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_seq_pattern_length -  rows)
-      grid_redraw() -- redundant?
-  end
+      grid_dirty = true
+    end
   
   -- n == ENC 2 ------------------------------------------------
   elseif n == 2 then
@@ -3514,7 +3515,7 @@ function enc(n,d)
       local d = util.clamp(d, -1, 1)
       if (grid_view_name == 'Chord' or grid_view_name == 'Seq') then-- Chord/Seq 
         rotate_pattern(grid_view_name, d)
-        grid_redraw()            
+        grid_dirty = true            
       end
    
     elseif screen_view_name == 'Events' and event_saved == false then
@@ -3535,7 +3536,7 @@ function enc(n,d)
       local d = util.clamp(d, -1, 1)
       if (grid_view_name == 'Chord' or grid_view_name == 'Seq') then-- Chord/Seq 
         transpose_pattern(grid_view_name, d)
-        grid_redraw()
+        grid_dirty = true
       end
         
     ----------------------    
@@ -3597,10 +3598,7 @@ function enc(n,d)
       interaction = 'arranger_shift'
       d_cuml = util.clamp(d_cuml + d, -64, 64)
       
-      -- an event paste was just performed so block any change on the final key release
-      -- todo p2 thought: can probably set a special interaction that works in place of arranger_pattern_key_interrupt
-      -- arranger_pattern_key_interrupt = true
-      grid_redraw()
+      grid_dirty = true
   
     elseif screen_view_name == 'Session' then
       if menu_index == 0 then
