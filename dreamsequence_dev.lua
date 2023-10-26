@@ -283,7 +283,7 @@ function init()
   ------------------
   -- GLOBAL PARAMS --
   ------------------
-  params:add_group('global', 'GLOBAL', 11)
+  params:add_group('global', 'GLOBAL', 12)
   
   params:add_number('mode', 'Mode', 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
   
@@ -296,15 +296,18 @@ function init()
   params:set_action('crow_out_2',function() gen_voice_lookups(); update_voice_params() end)
   
   params:add_option('crow_out_3', 'Crow out 3', {'Off', 'CV', 'Env', 'Clock'}, 4)
-  params:set_action('crow_out_3',function() gen_voice_lookups(); update_voice_params() end)  
+  params:set_action('crow_out_3',function(val) gen_voice_lookups(); update_voice_params() end)  
 
   params:add_option('crow_out_4', 'Crow out 4', {'Off', 'CV', 'Env', 'Events'}, 4)
   params:set_action('crow_out_4',function() gen_voice_lookups(); update_voice_params() end)  
   
   -- Crow clock uses hybrid notation/PPQN
-  params:add_number('crow_clock_index', 'Crow clock', 1, 65, 18,function(param) return crow_clock_string(param:get()) end)
-  params:set_action('crow_clock_index',function() set_crow_clock() end)  
-
+  params:add_number('crow_clock_index', 'Crow rate', 1, 65, 18,function(param) return crow_clock_string(param:get()) end)
+  params:set_action('crow_clock_index',function() set_crow_clock() end)
+  
+  params:add_number('crow_clock_offset', 'Crow offset', -100, 0, -10)--, ms_string())
+  params:set_action('crow_clock_offset', function(ms) crow_clock_offset = ms_to_beats(ms) end)
+  
   params:add_number('dedupe_threshold', 'Dedupe <', 0, 10, div_to_index('1/32'), function(param) return divisions_string(param:get()) end)
   params:set_action('dedupe_threshold', function() dedupe_threshold() end)
   
@@ -866,7 +869,7 @@ end
   -- UPDATE_MENUS. todo p2: can be optimized by only calculating the current view+page or when certain actions occur
 function update_menus()
   -- GLOBAL MENU 
-    menus[1] = {'mode', 'transpose', 'clock_tempo', 'clock_source', 'crow_out_1', 'crow_out_2', 'crow_out_3', 'crow_out_4', 'crow_clock_index', 'dedupe_threshold', 'chord_preload', 'chord_generator', 'seq_generator'}
+    menus[1] = {'mode', 'transpose', 'clock_tempo', 'clock_source', 'crow_out_1', 'crow_out_2', 'crow_out_3', 'crow_out_4', 'crow_clock_index', 'crow_clock_offset', 'dedupe_threshold', 'chord_preload', 'chord_generator', 'seq_generator'}
   
   -- CHORD MENU
   menus[2] = {'chord_voice', 'chord_type', 'chord_octave', 'chord_range', 'chord_max_notes', 'chord_inversion', 'chord_style', 'chord_strum_length', 'chord_timing_curve', 'chord_div_index', 'chord_duration_index', 'chord_dynamics', 'chord_dynamics_ramp'}
@@ -886,7 +889,16 @@ end
 -- Assorted functions junkdrawer
 -----------------------------------------------
 
-  
+
+-- takes offset (milliseconds) input and converts to a beat-based value suitable for clock.sync offset
+-- called by offset param action and clock.tempo_change_handler() callback
+function ms_to_beats(ms)
+  -- local offset = ms / 1000 / clock.get_beat_sec()
+  -- local offset = ms / 1000 * clock.get_tempo() / 60
+  return(ms / 1000 * clock.get_tempo() / 60)
+end
+
+
 function grid_refresh()
   if grid_dirty then
     grid_redraw()
@@ -1372,8 +1384,8 @@ end
 
 -- Callback function when system tempo changes
 function clock.tempo_change_handler()  
-  dedupe_threshold()
-  -- todo: think about other tempo-based things that are not generated dynamically
+  dedupe_threshold()  
+  crow_clock_offset = ms_to_beats(params:get('crow_clock_offset'))
 end  
 
 
@@ -1591,6 +1603,25 @@ function sequence_clock(sync_val)
   -- metro.free(countdown_timer.id)
   countdown_timer:start()
   
+  print('debug----------------------')
+  -- transport state-dependent crow clock with offset
+  -- todo p1 need an action on crow_out_3 to call coroutine when clock is set to 3 (if off)
+  -- clock.cancel(crow_transport_clock)
+  crow_transport_clock = clock.run(function()
+    -- print('starting state-dependent crow clock')
+    while transport_active and params:get("crow_out_3") == 4 do
+      local crow_out = 3 --params:get("clock_crow_out")-1
+      if crow_out > 0 then
+        print('crow clock pulse')
+        crow.output[crow_out].volts = 10
+        clock.sleep(60/(2*clock.get_tempo()*4)) --params:get("clock_crow_out_div"))) todo get div
+        crow.output[crow_out].volts = 0
+      end
+      clock.sync(1/params:get("clock_crow_out_div"), crow_clock_offset)
+    end
+  end)
+  
+  
   while transport_active do
     
   -- SEND MIDI CLOCK START/CONTINUE MESSAGES
@@ -1680,11 +1711,12 @@ function sequence_clock(sync_val)
       end
     
       if clock_step % chord_div == 0 then
+        -- print('debug', global_clock_div, chord_div, clock_step, clock.get_beats())
         advance_chord_pattern()
         grid_dirty = true
         redraw() -- To update chord readout
       end
-  
+      
       if clock_step % seq_div == 0 then
         local seq_start_on_1 = params:get('seq_start_on_1')
         if seq_start_on_1 == 1 then -- Seq end
@@ -1700,23 +1732,30 @@ function sequence_clock(sync_val)
           grid_dirty = true      
         end
       end
+    
+      -- -- shitty v1 slew clock      
+      -- if params:get("crow_out_3") == 4 and clock_step % crow_clock_div == 0 then
+      --   crow.output[3].slew = 0
+      --   crow.output[3].volts = 5
+      --   crow.output[3].slew = 0.001 --Should be just less than 192 PPQN @ 300 BPM
+      --   crow.output[3].volts = 0    
+      -- end
       
-      -- todo p0 take another look at this. I think the pulses may be sloppy.
-      if params:get("crow_out_3") == 4 and clock_step % crow_clock_div == 0 then
-        -- crow.output[3]() --pulse defined in init
-        crow.output[3].slew = 0
-        crow.output[3].volts = 5
-        crow.output[3].slew = 0.001 --Should be just less than 192 PPQN @ 300 BPM
-        crow.output[3].volts = 0    
-      end
+      -- -- v2 pulse clock
+      -- -- todo move pulse calc somewhere else
+      -- if params:get("crow_out_3") == 4 and clock_step % crow_clock_div == 0 then
+      --   local pulse = 60/(2*clock.get_tempo()*params:get("clock_crow_out_div"))
+      --   local pulse = "pulse("..pulse..", 10, 1)"
+      --   crow.output[4].action = pulse
+      --   crow.output[4]()
+      -- end
       
       -- alternate mode for cv_harmonizer when using crow clock_source
-      --  should run after crow clock out
-      if crow_div ~= 0 then
-        if clock_step % crow_div == 0 then
-          crow.input[2].query()
-        end
-      end      
+      if crow_div ~= 0 and clock_step % crow_div == 0 then
+        crow.input[2].query()
+      end
+    
+    
     end
   
   
