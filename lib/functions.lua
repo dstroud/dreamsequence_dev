@@ -35,37 +35,37 @@ function gen_event_tables()
 event_subcategories = {}
 event_indices = {}
 
-for i, entry in ipairs(events_lookup) do
-  local category = entry.category
-  local subCategory = entry.subcategory
-
-  -- Generate event_subcategories table
-  if not event_subcategories[category] then
-    event_subcategories[category] = {}
-  end
-
-  -- Check if the subcategory already exists in the table
-  local exists = false
-  for _, value in ipairs(event_subcategories[category]) do
-    if value == subCategory then
-       exists = true
-      break
+  for i, entry in ipairs(events_lookup) do
+    local category = entry.category
+    local subCategory = entry.subcategory
+  
+    -- Generate event_subcategories table
+    if not event_subcategories[category] then
+      event_subcategories[category] = {}
+    end
+  
+    -- Check if the subcategory already exists in the table
+    local exists = false
+    for _, value in ipairs(event_subcategories[category]) do
+      if value == subCategory then
+         exists = true
+        break
+      end
+    end
+  
+    -- Add the subcategory to the table if it doesn't exist
+    if not exists then
+       table.insert(event_subcategories[category], subCategory)
+    end
+  
+    -- Generate event_indices
+    local combination = category .. "_" .. subCategory
+    if not event_indices[combination] then
+      event_indices[combination] = {first_index = i, last_index = i}
+    else
+      event_indices[combination].last_index = i
     end
   end
-
-  -- Add the subcategory to the table if it doesn't exist
-  if not exists then
-     table.insert(event_subcategories[category], subCategory)
-  end
-
-  -- Generate event_indices
-  local combination = category .. "_" .. subCategory
-  if not event_indices[combination] then
-    event_indices[combination] = {first_index = i, last_index = i}
-  else
-    event_indices[combination].last_index = i
-  end
-end
 
 end
 
@@ -127,10 +127,11 @@ end
     
         
 -- Event Crow trigger out
-function crow_event_trigger()
-  if params:get('crow_out_3') == 4 then
-    crow.output[3].action = 'pulse(.001,10,1)' -- (time,level,polarity)
-    crow.output[3]()
+function crow_event_trigger(out)
+  local out = tonumber(out)
+  if params:get('crow_out_'..out) == 4 then
+    crow.output[out].action = 'pulse(.01,10,1)' -- (time,level,polarity)
+    crow.output[out]()
   end
 end
 

@@ -229,6 +229,7 @@ function init()
   for i = 1, #events_lookup do
     event_categories[i] = events_lookup[i].category
   end
+
   
   -- Generate subcategories lookup tables
   gen_event_tables()
@@ -323,8 +324,8 @@ function init()
   ------------------
   -- EVENT PARAMS --
   ------------------
-  --todo p3 generate from events_lookup or derivative
-  params:add_option('event_category', 'Category', {'Global', 'Chord', 'Seq', 'MIDI harmonizer', 'CV harmonizer'}, 1)
+  --todo p3 generate dynamically from events_lookup or derivative
+  params:add_option('event_category', 'Category', {'Global', 'Chord', 'Seq', 'MIDI harmonizer', 'CV harmonizer', 'Crow events'}, 1)
   params:hide(params.lookup['event_category'])
   
   -- options will be dynamically swapped out based on the current event_global param
@@ -1620,7 +1621,7 @@ function sequence_clock(sync_val)
   --------------------
   -- CROW CLOCK OUT --
   --------------------
-  -- transport state-dependent crow clock
+  -- transport state dependent crow clock
   clock.run(function()
     while transport_active do
       
@@ -2034,7 +2035,7 @@ function do_events()
           local limit_max = event_path.limit_max
           local operation = event_path.operation
           local action = event_path.action or nil
-          local action_var = event_path.action_var or nil
+          local args = event_path.args or nil
           
           if event_type == 'param' then
             if operation == 'Set' then
@@ -2071,32 +2072,42 @@ function do_events()
               params:set(event_name, 1)
               params:set(event_name, 0)
             end
-          else -- functions
-            -- currently the only function ops are Trigger and Discreet. So we just need to have a check for Random. Will likely need to expand this later.
-            if operation == 'Random' then
-              if limit == 'On' then
-                local value = math.random(limit_min, limit_max)
-                _G[event_name](value)
+          else -- FUNCTIONS
+            -- currently the only function ops are Triggers. Will likely need to expand Operation checks if there are other types.
+            -- elseif operation == 'Random' then
+            --   if limit == 'On' then
+            --     local value = math.random(limit_min, limit_max)
+            --     _G[event_name](value)
                 
-                -- currently not using actions other than param actions which will fire automatically.
-                -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
-                if action ~= nil then
-                  _G[action](action_var)
-                end                
-              else
-                -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                local value = math.random(event_range[1], event_range[2])
-                _G[event_name](value)
+            --     -- currently not using actions other than param actions which will fire automatically.
+            --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
+            --     if action ~= nil then
+            --       _G[action](args)
+            --     end                
+            --   else
+            --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
+            --     local value = math.random(event_range[1], event_range[2])
+            --     _G[event_name](value)
                 
-                -- currently not using actions other than param actions which will fire automatically.
-                -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
-                if action ~= nil then
-                  _G[action](action_var)
-                end                    
-              end
-            else
+            --     -- currently not using actions other than param actions which will fire automatically.
+            --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
+            --     if action ~= nil then
+            --       _G[action](args)
+            --     end                    
+            --   end
+            -- else
+            
+            -- Some function events can have faux ids that are just used to store the event
+            -- Actual functions will be called as "actions" which can include extra args
+            -- e.g. this allows us to use have crow_event_trigger function and the output is determined via args
+            -- print('DEBUG FN TYPE' .. type(_G[event_name]))
+            if type(_G[event_name]) == 'function' then
               _G[event_name](value)
             end
+            if action ~= nil then
+              _G[action](args)
+            end
+            
           end
         end
       end
@@ -3310,7 +3321,7 @@ function key(n,z)
           -- Set, Increment, Wander, Random
           local operation = params:string('event_operation') -- changed to id which will need to be looked up and turned into an id
           local action = events_lookup[event_index].action
-          local action_var_1 = events_lookup[event_index].action_var
+          local args = events_lookup[event_index].args
           
           local limit = params:string(operation == 'Random' and 'event_op_limit_random' or 'event_op_limit')
           -- variant for 'Random' op -- todo p1 make sure we can store here and get it loaded into the right param correctly
@@ -3341,6 +3352,7 @@ function key(n,z)
                 event_type = event_type,
                 value_type = value_type,
                 operation = operation,  -- sorta redundant but we do use it to simplify reads
+                -- value = 
                 probability = probability
               }
               
@@ -3452,10 +3464,10 @@ function key(n,z)
           -- Extra fields are added if action is assigned to param/function
           if action ~= nil then
             events[event_edit_segment][event_edit_step][event_edit_lane].action = action
-            events[event_edit_segment][event_edit_step][event_edit_lane].action_var_1 = action_var_1
+            events[event_edit_segment][event_edit_step][event_edit_lane].args = args
             
             print('>> action = ' .. action)
-            print('>> action_var_1 = ' .. (action_var_1 or 'nil'))
+            print('>> args = ' .. (args or 'nil'))
           end
           
           -- Back to event overview
