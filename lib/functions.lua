@@ -128,9 +128,9 @@ end
         
 -- Event Crow trigger out
 function crow_event_trigger()
-  if params:get('crow_out_4') == 4 then
-    crow.output[4].action = 'pulse(.001,10,1)' -- (time,level,polarity)
-    crow.output[4]()
+  if params:get('crow_out_3') == 4 then
+    crow.output[3].action = 'pulse(.001,10,1)' -- (time,level,polarity)
+    crow.output[3]()
   end
 end
 
