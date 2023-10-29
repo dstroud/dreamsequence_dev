@@ -28,3 +28,5 @@ nb = include("lib/nb/lib/nb")
 
 -- bundled crow nb voice
 include("lib/crow")
+
+include("lib/mod")  -- todo move to mod once I figure out how to load engine there
