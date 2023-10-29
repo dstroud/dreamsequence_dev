@@ -561,6 +561,7 @@ function init()
   -----------------------------
   -- INIT STUFF
   -----------------------------
+  -- redraw_count = 0 -- todo p0 debug remove
   start = false
   transport_state = 'stopped'
   clock_start_method = 'start'
@@ -807,7 +808,7 @@ function init()
     end
   
   grid_dirty = true
-  redraw()
+  -- screen_dirty = true -- redraw()
   end
 
 
@@ -853,15 +854,15 @@ function init()
   grid_redraw_metro:start()
   grid_dirty = true
 
-
+  -- screen refresh and blinkies
   countdown_timer = metro.init()
-  countdown_timer.event = countdown -- call the 'countdown' function below,
-  countdown_timer.time = .1 -- 1/10s
-  countdown_timer.count = -1 -- for.evarrr
+  countdown_timer.event = countdown
+  countdown_timer.time = 1/15
+  countdown_timer.count = -1
   countdown_timer:start()
   
   grid_dirty = true
-  redraw()
+  -- screen_dirty = true -- redraw()
 end
 
 
@@ -1595,7 +1596,6 @@ function sequence_clock(sync_val)
   transport_state = 'playing'
   print(transport_state)
     
-  -- Clock used to refresh arranger countdown timer 10x a second
   -- resetting does not seem to be necessary but I figure it can result in marginally better countdown timing?
   -- metro.free(countdown_timer.id)
   countdown_timer:start()
@@ -1710,7 +1710,7 @@ function sequence_clock(sync_val)
         -- print('debug', global_clock_div, chord_div, clock_step, clock.get_beats())
         advance_chord_pattern()
         grid_dirty = true
-        redraw() -- To update chord readout
+        -- screen_dirty = true -- redraw() -- To update chord readout
       end
       
       -- --------------------
@@ -1814,11 +1814,6 @@ function clock.transport.start(sync_value)
     transport_active = true
     -- Clock for chord/seq/arranger sequences
     sequence_clock_id = clock.run(sequence_clock, sync_value)
-  
-    -- -- Clock used to refresh arranger countdown timer 10x a second
-    -- -- resetting does not seem to be necessary but I figure it will result in better countdown timing?
-    -- metro.free(countdown_timer.id)
-    -- countdown_timer:start()
   end
 end
 
@@ -1840,7 +1835,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   chord_raw = next_chord
   gen_dash('reset_pattern')
   grid_dirty = true
-  redraw()
+  -- screen_dirty = true -- redraw()
 end
 
 
@@ -3049,7 +3044,7 @@ function g.key(x,y,z)
     end
 
   end
-  redraw()
+  -- screen_dirty = true -- redraw()
   grid_dirty = true
 end
 
@@ -3140,7 +3135,7 @@ function key(n,z)
           end
           event_saved = true
           
-          redraw()
+          -- screen_dirty = true -- redraw()
           
           
         -------------------------------------------
@@ -3532,7 +3527,7 @@ function key(n,z)
       event_k2 = false
     end
   end
-  redraw()
+  -- screen_dirty = true -- redraw()
 end
 
 
@@ -3663,7 +3658,7 @@ function enc(n,d)
     end
   
   end -- n
-  redraw()
+  -- screen_dirty = true -- redraw()
 end
 
 
@@ -4013,6 +4008,11 @@ end
 -------------------------
 -- todo p1: this can be improved quite a bit by just having these custom screens be generated at the key/g.key level. Should be a fun refactor.
 function redraw()
+  -- if transport_active then
+    -- redraw_count = redraw_count + 1
+    -- print('redraw_count = '..redraw_count)
+  -- end
+  
   screen.clear()
   local dash_x = 94
       
