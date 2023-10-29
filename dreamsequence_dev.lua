@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 23102501 @modularbeat
+-- 23102801 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 230526 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23102501'
+  version = '23102801'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -122,25 +122,14 @@ function init()
   
   
   function capture_preinit()
-    -- preinit_clock_source = params:get('clock_source')
-    -- print('preinit_clock_source = ' .. preinit_clock_source)
-    -- preinit_clock_crow_out = params:get('clock_crow_out')
-    -- print('preinit_clock_crow_out = ' .. preinit_clock_crow_out)
     preinit_jf_mode = clock.run(
       function()
-        clock.sleep(0.005) -- a small hold for usb round-trip
+        clock.sleep(0.005) -- a small hold for usb round-trip -- not sure this is needed any more
         crow.ii.jf.get ('mode') -- will trigger the above .event function
         -- Activate JF Synthesis mode here so it happens after the hold
         crow.ii.jf.mode(1)
       end
     )
-  
-    -- If syncing to Crow clock, turn this off since we need to use Crow inputs for harmonizer. Revert in cleanup()
-    -- if preinit_clock_source == 4 then params:set('clock_source',1) end
-    
-    -- Turn off system Crow clock out so it doesn't conflict with DS' custom one. Revert in cleanup()
-    -- Todo p2 look at dynamically turning this on/off rather than use the DS custom clock. Or allow choice.
-    -- params:set('clock_crow_out', 1)
   end
   capture_preinit()
 
@@ -149,14 +138,6 @@ function init()
   function cleanup()
     clock.link.stop()
     
-    -- if preinit_clock_source == 4 then 
-      -- params:set('clock_source', preinit_clock_source)
-      -- print('Restoring clock_source to ' .. preinit_clock_source)
-    -- end
-    -- if preinit_clock_crow_out ~= 1 then 
-      -- params:set('clock_crow_out', preinit_clock_crow_out)
-      -- print('Restoring clock_crow_out to ' .. preinit_clock_crow_out)
-    -- end
     if preinit_jf_mode == 0 then
       crow.ii.jf.mode(preinit_jf_mode)
       print('Restoring jf.mode to ' .. preinit_jf_mode)
@@ -207,11 +188,6 @@ function init()
 
   init_generator()
   
-  -- midi stuff
-  -- midi_device = {} -- container for connected MIDI devices
-  -- midi_device_names = {} -- container for their names
-  -- refresh_midi_devices()
-  
   -- events init
   local events_lookup_names = {}
   local events_lookup_ids = {}
@@ -229,7 +205,16 @@ function init()
   for i = 1, #events_lookup do
     event_categories[i] = events_lookup[i].category
   end
-  
+
+  event_categories_unique = {}
+  for i = 1, #event_categories do
+    if i == 1 then
+      table.insert(event_categories_unique, event_categories[i])
+    elseif event_categories[i] ~= event_categories_unique[#event_categories_unique] then
+      table.insert(event_categories_unique, event_categories[i])
+    end
+  end
+
   -- Generate subcategories lookup tables
   gen_event_tables()
   -- Derivatives:
@@ -289,22 +274,25 @@ function init()
   
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
   
-  params:add_option('crow_out_1', 'Crow out 1', {'Off', 'CV', 'Env'}, 2)
+  params:add_option('crow_out_1', 'Crow out 1', {'Off', 'CV', 'Env', 'Events'}, 2)
   params:set_action('crow_out_1',function() gen_voice_lookups(); update_voice_params() end)  
   
-  params:add_option('crow_out_2', 'Crow out 2', {'Off', 'CV', 'Env'}, 3)
+  params:add_option('crow_out_2', 'Crow out 2', {'Off', 'CV', 'Env', 'Events'}, 3)
   params:set_action('crow_out_2',function() gen_voice_lookups(); update_voice_params() end)
   
-  params:add_option('crow_out_3', 'Crow out 3', {'Off', 'CV', 'Env', 'Clock'}, 4)
+
+  params:add_option('crow_out_3', 'Crow out 3', {'Off', 'CV', 'Env', 'Events'}, 4)
+  -- params:set_action('crow_out_3',function() crow_clock_config(); gen_voice_lookups(); update_voice_params() end)  
   params:set_action('crow_out_3',function() gen_voice_lookups(); update_voice_params() end)  
 
-  params:add_option('crow_out_4', 'Crow out 4', {'Off', 'CV', 'Env', 'Events'}, 4)
+  params:add_option('crow_out_4', 'Crow out 4', {'Off', 'CV', 'Env', 'Events', 'Clock'}, 5)
+  -- params:set_action('crow_out_4',function() crow_clock_config(); gen_voice_lookups(); update_voice_params() end)  
   params:set_action('crow_out_4',function() gen_voice_lookups(); update_voice_params() end)  
-  
-  -- Crow clock uses hybrid notation/PPQN
-  params:add_number('crow_clock_index', 'Crow clock', 1, 65, 18,function(param) return crow_clock_string(param:get()) end)
-  params:set_action('crow_clock_index',function() set_crow_clock() end)  
 
+  -- Crow clock uses hybrid notation/PPQN
+  params:add_number('crow_clock_index', 'Crow Clk', 1, 65, 7,function(param) return crow_clock_string(param:get()) end)
+  params:set_action('crow_clock_index',function(param) set_crow_clock(param) end)    
+  
   params:add_number('dedupe_threshold', 'Dedupe <', 0, 10, div_to_index('1/32'), function(param) return divisions_string(param:get()) end)
   params:set_action('dedupe_threshold', function() dedupe_threshold() end)
   
@@ -320,8 +308,7 @@ function init()
   ------------------
   -- EVENT PARAMS --
   ------------------
-  --todo p3 generate from events_lookup or derivative
-  params:add_option('event_category', 'Category', {'Global', 'Chord', 'Seq', 'MIDI harmonizer', 'CV harmonizer'}, 1)
+  params:add_option('event_category', 'Category', event_categories_unique, 1)
   params:hide(params.lookup['event_category'])
   
   -- options will be dynamically swapped out based on the current event_global param
@@ -887,6 +874,13 @@ end
 -----------------------------------------------
 
   
+-- -- takes offset (milliseconds) input and converts to a beat-based value suitable for clock.sync offset
+-- -- called by offset param action and clock.tempo_change_handler() callback
+-- function ms_to_beats(ms)
+--   return(ms / 1000 * clock.get_tempo() / 60)
+-- end
+
+
 function grid_refresh()
   if grid_dirty then
     grid_redraw()
@@ -1235,13 +1229,12 @@ end
 
 
 function crow_clock_string(index) 
-  return(clock_names[index][2])
+  return(crow_clock_lookup[index][2])
 end
 
 
-function set_crow_clock(source)
-  crow_clock_div = clock_names[params:get('crow_clock_index')][1]
-  -- crow_slew = clock.get_beat_sec() / global_clock_div --- divisior should be PPQN
+function set_crow_clock(param)
+  crow_clock_div = crow_clock_lookup[param][1]
 end
 
 
@@ -1372,8 +1365,8 @@ end
 
 -- Callback function when system tempo changes
 function clock.tempo_change_handler()  
-  dedupe_threshold()
-  -- todo: think about other tempo-based things that are not generated dynamically
+  dedupe_threshold()  
+  -- crow_clock_offset = ms_to_beats(params:get('crow_clock_offset'))
 end  
 
 
@@ -1554,20 +1547,20 @@ function get_chord_name(root_num, scale_type, roman_chord_type)
   end
   if degree == nil then return nil end
 
-  local inv = string.lower(inv_string)
-  local inversion = 0
-  local inversioncodes = { "b", "c", "d", "e", "f", "g" }
-  for i,v in pairs(inversioncodes) do
-    if(v == inv) then
-      inversion = i
-      break
-    end
-  end  
+  -- local inv = string.lower(inv_string)
+  -- local inversion = 0
+  -- local inversioncodes = { "b", "c", "d", "e", "f", "g" }
+  -- for i,v in pairs(inversioncodes) do
+  --   if(v == inv) then
+  --     inversion = i
+  --     break
+  --   end
+  -- end  
   return(chord_type)
 end
   
   
- -- Clock to control sequence events including chord pre-load, chord/seq sequence, and crow clock out
+ -- Clock to control sequence events including chord pre-load, chord/seq sequence
 function sequence_clock(sync_val)
   transport_state = 'starting'
   local clock_source = params:string('clock_source')
@@ -1590,6 +1583,24 @@ function sequence_clock(sync_val)
   -- resetting does not seem to be necessary but I figure it can result in marginally better countdown timing?
   -- metro.free(countdown_timer.id)
   countdown_timer:start()
+  
+  -- --------------------
+  -- -- CROW CLOCK OUT --
+  -- --------------------
+  -- v3 clock.sync-based implementation of crow clock which is the same as norns system crow clock (but transport active only). Keeping as backup since this is probably less susceptible to jitter but it has Issues: 
+  -- 1. can't turn on and off at start of arranger with events (co-routine begins before events fire)
+  -- 2. prone to getting ahead of MIDI start out so first cv harmonizer note can be dropped
+  -- 3. can't span more than 1 measure (inconsistent start beat issue)
+  -- clock.run(function()
+  --   while transport_active do
+  --     if params:get('crow_out_4') == 5 then
+  --       crow.output[4].volts = 10
+  --       clock.sleep(60/(2*clock.get_tempo()*params:get("crow_clock_index")))
+  --       crow.output[4].volts = 0
+  --     end
+  --     clock.sync(1/params:get("crow_clock_index"))
+  --   end
+  -- end)
   
   while transport_active do
     
@@ -1678,13 +1689,30 @@ function sequence_clock(sync_val)
       if (clock_step + chord_preload_tics) % chord_div == 0 then
         get_next_chord()
       end
-    
+      
       if clock_step % chord_div == 0 then
+        -- print('debug', global_clock_div, chord_div, clock_step, clock.get_beats())
         advance_chord_pattern()
         grid_dirty = true
         redraw() -- To update chord readout
       end
-  
+      
+      -- --------------------
+      -- -- CROW CLOCK OUT --
+      -- --------------------
+      -- v4 hybrid clock. uses co-routine for sleep pulse (more reliable waveform shape than crow pulse)
+      -- can also span measures (beyond PPQN!) and be switched by events, even on initial play
+      if clock_step % crow_clock_div == 0 then
+        if params:get('crow_out_4') == 5 then
+          crow.output[4].volts = 10
+          clock.run(function()
+            clock.sleep(120/(clock.get_tempo()*192/crow_clock_div))
+            crow.output[4].volts = 0
+          end)
+        end
+      end
+
+      
       if clock_step % seq_div == 0 then
         local seq_start_on_1 = params:get('seq_start_on_1')
         if seq_start_on_1 == 1 then -- Seq end
@@ -1700,23 +1728,14 @@ function sequence_clock(sync_val)
           grid_dirty = true      
         end
       end
-      
-      -- todo p0 take another look at this. I think the pulses may be sloppy.
-      if params:get("crow_out_3") == 4 and clock_step % crow_clock_div == 0 then
-        -- crow.output[3]() --pulse defined in init
-        crow.output[3].slew = 0
-        crow.output[3].volts = 5
-        crow.output[3].slew = 0.001 --Should be just less than 192 PPQN @ 300 BPM
-        crow.output[3].volts = 0    
+
+      -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
+      -- todo feature: add delay here for external sequencer race condition
+      if crow_div ~= 0 and clock_step % crow_div == 0 then
+        crow.input[2].query()
       end
-      
-      -- alternate mode for cv_harmonizer when using crow clock_source
-      --  should run after crow clock out
-      if crow_div ~= 0 then
-        if clock_step % crow_div == 0 then
-          crow.input[2].query()
-        end
-      end      
+    
+    
     end
   
   
@@ -1970,7 +1989,7 @@ function do_events()
           local limit_max = event_path.limit_max
           local operation = event_path.operation
           local action = event_path.action or nil
-          local action_var = event_path.action_var or nil
+          local args = event_path.args or nil
           
           if event_type == 'param' then
             if operation == 'Set' then
@@ -2007,32 +2026,42 @@ function do_events()
               params:set(event_name, 1)
               params:set(event_name, 0)
             end
-          else -- functions
-            -- currently the only function ops are Trigger and Discreet. So we just need to have a check for Random. Will likely need to expand this later.
-            if operation == 'Random' then
-              if limit == 'On' then
-                local value = math.random(limit_min, limit_max)
-                _G[event_name](value)
+          else -- FUNCTIONS
+            -- currently the only function ops are Triggers. Will likely need to expand Operation checks if there are other types.
+            -- elseif operation == 'Random' then
+            --   if limit == 'On' then
+            --     local value = math.random(limit_min, limit_max)
+            --     _G[event_name](value)
                 
-                -- currently not using actions other than param actions which will fire automatically.
-                -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
-                if action ~= nil then
-                  _G[action](action_var)
-                end                
-              else
-                -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                local value = math.random(event_range[1], event_range[2])
-                _G[event_name](value)
+            --     -- currently not using actions other than param actions which will fire automatically.
+            --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
+            --     if action ~= nil then
+            --       _G[action](args)
+            --     end                
+            --   else
+            --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
+            --     local value = math.random(event_range[1], event_range[2])
+            --     _G[event_name](value)
                 
-                -- currently not using actions other than param actions which will fire automatically.
-                -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
-                if action ~= nil then
-                  _G[action](action_var)
-                end                    
-              end
-            else
+            --     -- currently not using actions other than param actions which will fire automatically.
+            --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
+            --     if action ~= nil then
+            --       _G[action](args)
+            --     end                    
+            --   end
+            -- else
+            
+            -- Some function events can have faux ids that are just used to store the event
+            -- Actual functions will be called as "actions" which can include extra args
+            -- e.g. this allows us to use have crow_event_trigger function and the output is determined via args
+            -- print('DEBUG FN TYPE' .. type(_G[event_name]))
+            if type(_G[event_name]) == 'function' then
               _G[event_name](value)
             end
+            if action ~= nil then
+              _G[action](args)
+            end
+            
           end
         end
       end
@@ -3246,7 +3275,7 @@ function key(n,z)
           -- Set, Increment, Wander, Random
           local operation = params:string('event_operation') -- changed to id which will need to be looked up and turned into an id
           local action = events_lookup[event_index].action
-          local action_var_1 = events_lookup[event_index].action_var
+          local args = events_lookup[event_index].args
           
           local limit = params:string(operation == 'Random' and 'event_op_limit_random' or 'event_op_limit')
           -- variant for 'Random' op -- todo p1 make sure we can store here and get it loaded into the right param correctly
@@ -3277,6 +3306,7 @@ function key(n,z)
                 event_type = event_type,
                 value_type = value_type,
                 operation = operation,  -- sorta redundant but we do use it to simplify reads
+                -- value = 
                 probability = probability
               }
               
@@ -3388,10 +3418,10 @@ function key(n,z)
           -- Extra fields are added if action is assigned to param/function
           if action ~= nil then
             events[event_edit_segment][event_edit_step][event_edit_lane].action = action
-            events[event_edit_segment][event_edit_step][event_edit_lane].action_var_1 = action_var_1
+            events[event_edit_segment][event_edit_step][event_edit_lane].args = args
             
             print('>> action = ' .. action)
-            print('>> action_var_1 = ' .. (action_var_1 or 'nil'))
+            print('>> args = ' .. (args or 'nil'))
           end
           
           -- Back to event overview
