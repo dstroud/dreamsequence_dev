@@ -127,11 +127,59 @@ end
     
         
 -- Event Crow trigger out
-function crow_event_trigger(out)
+function crow_trigger(out)
   local out = tonumber(out)
   if params:get('crow_out_'..out) == 4 then
     crow.output[out].action = 'pulse(.01,10,1)' -- (time,level,polarity)
     crow.output[out]()
+  end
+end
+
+
+-- Event crow_5v_8_steps
+-- 5 volts evenly spaced over 8 steps (including buffer on ends)
+function crow_5v_8_steps_1(step)
+  local out = 1
+  local volts = 5
+  local steps = 8
+  if params:get('crow_out_'..out) == 4 then
+    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
+  end
+end
+
+
+-- Event crow_5v_8_steps
+-- 5 volts evenly spaced over 8 steps (including buffer on ends)
+function crow_5v_8_steps_2(step)
+  local out = 2
+  local volts = 5
+  local steps = 8
+  if params:get('crow_out_'..out) == 4 then
+    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
+  end
+end
+
+
+-- Event crow_5v_8_steps
+-- 5 volts evenly spaced over 8 steps (including buffer on ends)
+function crow_5v_8_steps_3(step)
+  local out = 3
+  local volts = 5
+  local steps = 8
+  if params:get('crow_out_'..out) == 4 then
+    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
+  end
+end
+
+
+-- Event crow_5v_8_steps
+-- 5 volts evenly spaced over 8 steps (including buffer on ends)
+function crow_5v_8_steps_4(step)
+  local out = 4
+  local volts = 5
+  local steps = 8
+  if params:get('crow_out_'..out) == 4 then
+    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
   end
 end
 

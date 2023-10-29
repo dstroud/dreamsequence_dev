@@ -59,8 +59,12 @@ events_lookup = {										--
 {	category= 'CV harmonizer', 	subcategory= 'Notes', 	event_type= 'param', 	id= 'crow_duration_index', 	name= 'Duration', 	value_type= 'continuous', 	formatter= 'divisions_string', 			},
 {	category= 'CV harmonizer', 	subcategory= 'Notes', 	event_type= 'param', 	id= 'crow_dynamics', 	name= 'Dynamics', 	value_type= 'continuous', 	formatter= 'percent', 			},
 -- Crow events										
-{	category= 'Crow events', 	subcategory= 'Crow out 1', 	event_type= 'function', 	id= 'crow_event_trigger_1', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_event_trigger', 	args= '1', 	},
-{	category= 'Crow events', 	subcategory= 'Crow out 2', 	event_type= 'function', 	id= 'crow_event_trigger_2', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_event_trigger', 	args= '2', 	},
-{	category= 'Crow events', 	subcategory= 'Crow out 3', 	event_type= 'function', 	id= 'crow_event_trigger_3', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_event_trigger', 	args= '3', 	},
-{	category= 'Crow events', 	subcategory= 'Crow out 4', 	event_type= 'function', 	id= 'crow_event_trigger_4', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_event_trigger', 	args= '4', 	},
+{	category= 'Crow events', 	subcategory= 'Out 1', 	event_type= 'function', 	id= 'crow_trigger_1', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_trigger', 	args= '1', 	},
+{	category= 'Crow events', 	subcategory= 'Out 1', 	event_type= 'param', 	id= 'crow_5v_8_steps_1', 	name= '5v 8-steps', 	value_type= 'continuous', 				},
+{	category= 'Crow events', 	subcategory= 'Out 2', 	event_type= 'function', 	id= 'crow_trigger_2', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_trigger', 	args= '2', 	},
+{	category= 'Crow events', 	subcategory= 'Out 2', 	event_type= 'param', 	id= 'crow_5v_8_steps_2', 	name= '5v 8-steps', 	value_type= 'continuous', 				},
+{	category= 'Crow events', 	subcategory= 'Out 3', 	event_type= 'function', 	id= 'crow_trigger_3', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_trigger', 	args= '3', 	},
+{	category= 'Crow events', 	subcategory= 'Out 3', 	event_type= 'param', 	id= 'crow_5v_8_steps_3', 	name= '5v 8-steps', 	value_type= 'continuous', 				},
+{	category= 'Crow events', 	subcategory= 'Out 4', 	event_type= 'function', 	id= 'crow_trigger_4', 	name= 'Trigger out', 	value_type= 'trigger', 		action= 'crow_trigger', 	args= '4', 	},
+{	category= 'Crow events', 	subcategory= 'Out 4', 	event_type= 'param', 	id= 'crow_5v_8_steps_4', 	name= '5v 8-steps', 	value_type= 'continuous', 				},
 }										-- end

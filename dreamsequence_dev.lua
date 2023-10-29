@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 23102801 @modularbeat
+-- 231029 01 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 230526 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23102801'
+  version = '23102901'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -309,15 +309,15 @@ function init()
   -- EVENT PARAMS --
   ------------------
   params:add_option('event_category', 'Category', event_categories_unique, 1)
-  params:hide(params.lookup['event_category'])
+  params:hide('event_category')
   
   -- options will be dynamically swapped out based on the current event_global param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
   params:add_option('event_subcategory', 'Subcategory', event_subcategories['Global'], 1)
-  params:hide(params.lookup['event_subcategory'])
+  params:hide('event_subcategory')
  
   params:add_option('event_name', 'Event', events_lookup_names, 1) -- Default value overwritten later in Init
-  params:hide(params.lookup['event_name'])
+  params:hide('event_name')
   
   -- options will be dynamically swapped out based on the current event_name param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
@@ -325,30 +325,46 @@ function init()
   event_operation_options_discreet = {'Set', 'Random'}
   event_operation_options_trigger = {'Trigger'} 
   params:add_option('event_operation', 'Operation', _G['event_operation_options_' .. events_lookup[1].value_type], 1)
-  params:hide(params.lookup['event_operation'])
+  params:hide('event_operation')
 
   -- todo p1 needs paramcontrol if this is even still used?
   params:add_number('event_value', 'Value', -9999, 9999, get_default_event_value())
-  params:hide(params.lookup['event_value'])
+  params:hide('event_value')
 
   params:add_number('event_probability', 'Probability', 0, 100, 100, function(param) return percent(param:get()) end)
-  params:hide(params.lookup['event_probability'])
+  params:hide('event_probability')
   
   params:add_option('event_op_limit', 'Limit', {'Off', 'Clamp', 'Wrap'}, 1)
   params:set_action('event_op_limit',function() gen_menu_events() end)
-  params:hide(params.lookup['event_op_limit'])
+  params:hide('event_op_limit')
 
   params:add_option('event_op_limit_random', 'Limit', {'Off', 'On'}, 1)
   params:set_action('event_op_limit_random',function() gen_menu_events() end)
-  params:hide(params.lookup['event_op_limit_random'])
+  params:hide('event_op_limit_random')
 
   params:add_number('event_op_limit_min', 'Min', -9999, 9999, 0)
-  params:hide(params.lookup['event_op_limit_min'])
+  params:hide('event_op_limit_min')
   
   params:add_number('event_op_limit_max', 'Max', -9999, 9999, 0)
-  params:hide(params.lookup['event_op_limit_max'])
+  params:hide('event_op_limit_max')
   
+  params:add_number('crow_5v_8_steps_1', '5v 8-steps', 1, 8, 1)
+  params:set_action('crow_5v_8_steps_1', function(param) crow_5v_8_steps_1(param) end)
+  params:hide('crow_5v_8_steps_1')
+  
+  params:add_number('crow_5v_8_steps_2', '5v 8-steps', 1, 8, 1)
+  params:set_action('crow_5v_8_steps_2', function(param) crow_5v_8_steps_2(param) end)
+  params:hide('crow_5v_8_steps_2')
+  
+  params:add_number('crow_5v_8_steps_3', '5v 8-steps', 1, 8, 1)
+  params:set_action('crow_5v_8_steps_3', function(param) crow_5v_8_steps_3(param) end)
+  params:hide('crow_5v_8_steps_3')
+  
+  params:add_number('crow_5v_8_steps_4', '5v 8-steps', 1, 8, 1)
+  params:set_action('crow_5v_8_steps_4', function(param) crow_5v_8_steps_4(param) end)
+  params:hide('crow_5v_8_steps_4')
 
+  
   ------------------
   -- CHORD PARAMS --
   ------------------
@@ -659,7 +675,7 @@ function init()
   seq_pattern_length = {8,8,8,8}
   active_seq_pattern = 1
   seq_pattern_position = 0
-  player_note_history = {}  -- todo p2 performance of having one vs dynamically created history for each voice
+  note_history = {}  -- todo p2 performance of having one vs dynamically created history for each voice
   dedupe_threshold()
   reset_clock() -- will turn over to step 0 on first loop
   get_next_chord()
@@ -1735,7 +1751,6 @@ function sequence_clock(sync_val)
         crow.input[2].query()
       end
     
-    
     end
   
   
@@ -1776,11 +1791,11 @@ function timing_clock()
     clock.sync(1/global_clock_div)
 
     -- history table including player value. Downside is that each note has to check against note history for all notes irrespective of voice
-    for i = #player_note_history, 1, -1 do -- Steps backwards to account for table.remove messing with [i]
-      player_note_history[i].step = player_note_history[i].step - 1
-      if player_note_history[i].step == 0 then
-        player_note_history[i].player:note_off(player_note_history[i].note)
-        table.remove(player_note_history, i)
+    for i = #note_history, 1, -1 do -- Steps backwards to account for table.remove messing with [i]
+      note_history[i].step = note_history[i].step - 1
+      if note_history[i].step == 0 then
+        note_history[i].player:note_off(note_history[i].note)
+        table.remove(note_history, i)
       end
     end
   
@@ -2168,51 +2183,57 @@ end
 -- todo relocate!
 function to_player(player, note, dynamics, duration)
 
-  -- todo check if player_note_history exists and create if not?
+  -- todo check if note_history exists and create if not?
   -- also need to keep a list of players to run countdown functions on
   
   local note_on_time = util.time()
   player_play_note = true
-  player_note_history_insert = true
+  note_history_insert = true
   
-  -- -- Check for duplicate notes and process according to dedupe_threshold setting
-  for i = 1, #player_note_history do
-    if player_note_history[i].player == player and player_note_history[i].note == note then
-      -- Preserves longer note-off duration to avoid weirdness around a which-note-was first race condition. Ex: if a sustained chord and a staccato note play at approximately the same time, the chord's note will sustain without having to worry about which came first.
+  for i = 1, #note_history do
+    -- Check for duplicate notes and process according to dedupe_threshold setting
+    if note_history[i].player == player and note_history[i].note == note then
       
-      player_note_history[i].step = math.max(duration, player_note_history[i].step)
-      player_note_history_insert = false -- Don't insert a new note-off record since we just updated the duration
+      -- Preserve longer note-off duration to avoid which-note-was-first race condition. 
+      -- Ex: if a sustained chord and a staccato note play at approximately the same time, the chord's note will sustain without having to worry about order
+      note_history[i].step = math.max(duration, note_history[i].step)
+      note_history_insert = false -- Don't insert a new note-off record since we just updated the duration
 
-      if params:get('dedupe_threshold') > 1 and (note_on_time - player_note_history[i].note_on_time) < dedupe_threshold_s then
-        -- print(('Deduped ' .. note_on_time - midi_note_history[i][4]) .. ' | ' .. dedupe_threshold_s)
+      if params:get('dedupe_threshold') > 1 and (note_on_time - note_history[i].note_on_time) < dedupe_threshold_s then
+        -- print(('Deduped ' .. note_on_time - note_history[i].note_on_time) .. ' | ' .. dedupe_threshold_s)
         player_play_note = false -- Prevent duplicate note from playing
       end
     
       -- Always update any existing note_on_time, even if a note wasn't played. 
       -- Otherwise the note duration may be extended but the gap between note_on_time and current time grows indefinitely and no dedupe occurs.
       -- Alternative is to not extend the duration when dedupe_threshold > 0 and a duplicate is found
-      player_note_history[i].note_on_time = note_on_time
+      note_history[i].note_on_time = note_on_time
     end
   end
 
-  -- if note is already playing, send a note-off before note_on is sent again
-  -- else add note into midi_note_history_insert to be turned off later
-  if player_note_history_insert == false then
-    player:note_off(note)
-  else
-    table.insert(player_note_history, {
-      step = duration,
-      player = player,
-      note = note,
-      note_on_time = note_on_time
-    })
-  end
+
+  -- if we're going to play a note...
+  if player_play_note == true then
+    
+    -- existing (or updated) note duration exists
+    -- MIDI/ex requires that we send a note-off for every note-on so immediately fire a note-off 
+    if note_history_insert == false then
+      player:note_off(note)
+      
+    -- no other note duration exists so insert a new note record into the history table
+    else
+      table.insert(note_history, {
+        step = duration,
+        player = player,
+        note = note,
+        note_on_time = note_on_time
+      })
+    end
   
   -- Play note
-  if player_play_note == true then
     player:note_on(note, dynamics)
   end
-  
+
 end
 
 
