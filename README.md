@@ -23,9 +23,7 @@
 
 4. A new "Trigger" param in CV harmonizer provides options for triggering the harmonizer voltage sampling on a schedule or when a trigger is received at Crow in 1 (default). The former works best for continuous or random voltage sources and might not produce expected results with clock-synced modules that produced stepped voltage changes right on the beat (sequencers, for instance). Scheduled sampling may occur before the round trip of Crow clock out>>pitch change>>sampling can occur.
 
-No promises about whether or not this becomes the next version of Dreamsequence but I'd like to hear your feedback before making any decisions.
-
-***Misc and feedback requests:***
+***Misc:***
 1. Crow events have been moved from Global into their own categories for each out, 1-4. There's also a new event "5v 8-steps" event for driving my sequential switch (Vice Virga) that maybe works with similar devices (0.31v, 0.94v, 1.56v, 2.19v, 2.81v, 3.44v, 4.06v, 4.69v). I'd like to have more configurable events along these lines but it'll take some work so take-it-or-leave-it.
 
 2. Crow clock out is improved but please do let me know if you see anything weird. I've had issues in the past with Marbles flipping out and deciding the clock is like a million BPM which spams Norns until it locks up. So maybe this will help.
