@@ -29,7 +29,7 @@ end
 
 local function add_player(cv, env)
     local player = {
-        ext = "_"..cv.."_"..env,
+        -- ext = "_"..cv.."_"..env,
         count = 0,
         tuning = false,
     }
@@ -42,7 +42,7 @@ local function add_player(cv, env)
                 params:add_control("nb_crow_freq_"..i, "tuned to", controlspec.new(20, 4000, 'exp', 0, 440, 'Hz', 0.0003))
                 params:add_binary("nb_crow_tune_"..i, "tune", "trigger")
                 params:set_action("nb_crow_tune_"..i, function()
-                    self:tune()
+                    self:tune(i)
                 end)
                 params:hide("nb_crow_cv_"..i)
             end
@@ -154,12 +154,11 @@ local function add_player(cv, env)
         end
     end
 
-    function player:tune()
-        print("OMG TUNING")
+    -- modified from usual nb_crow since env source is variable
+    function player:tune(cv)
+        print("OMG TUNING: Turn down Norns monitor level, patch oscillator to Norns left input bypassing VCA...")
         self.tuning = true
         crow.output[cv].volts = 0
-        crow.output[env].volts = 5
-
         local p = poll.set("pitch_in_l")
         p.callback = function(f) 
             print("in > "..string.format("%.2f",f))
@@ -170,10 +169,9 @@ local function add_player(cv, env)
         clock.run(function()
              clock.sleep(10)
              p:stop()
-             crow.output[env].volts = 0
-             -- crow.input[1].mode('none')
              clock.sleep(0.2)
              self.tuning = false
+             print("Tuning done!")
         end)
     end
     note_players["crow_ds "..cv.."/"..env] = player
