@@ -1,4 +1,4 @@
-glyphs = {'playing', 'paused', 'stopped', 'loop', 'one-shot'}
+glyphs = {"playing", "paused", "stopped", "loop", "one-shot"}
 
 
 glyphs.playing = {
