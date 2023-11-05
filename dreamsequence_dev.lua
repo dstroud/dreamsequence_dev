@@ -163,6 +163,7 @@ function init()
       ]]
     end
 
+    my_lattice:destroy()
   end
   
   
@@ -373,7 +374,8 @@ function init()
   chord_div = 192 -- seems to be some race-condition when loading pset, index value 15, and setting this via param action so here we go
   
   params:add_number("chord_div_index", "Step length", 1, 57, 15, function(param) return divisions_string(param:get()) end)
-  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
+  -- post-bang action
+  -- params:set_action("chord_div_index",function(val) chord_div = division_names[val][1]; sprocket_chord:set_division(chord_div/global_clock_div/4) end)
 
   nb:add_param("chord_voice_raw", "Voice raw")
   params:hide("chord_voice_raw")
@@ -465,8 +467,9 @@ function init()
   params:set_action("seq_reset_1",function() seq_pattern_position = 0 end)
   
   params:add_number("seq_div_index_1", "Step length", 1, 57, 8, function(param) return divisions_string(param:get()) end)
-  params:set_action("seq_div_index_1", function(val) seq_div = division_names[val][1] end)
-  
+  -- post-bang
+  -- params:set_action("seq_div_index_1", function(val) seq_div = division_names[val][1]; sprocket_seq:set_division(seq_div/global_clock_div/4) end)
+ 
   nb:add_param("seq_voice_raw_1", "Voice raw")
   params:hide("seq_voice_raw_1")
 
@@ -848,8 +851,250 @@ function init()
   
   -- Some actions need to be added post-bang. I forget why but something to do with setting the chord readout?
   params:set_action("mode", function() build_scale(); update_chord_action() end)
+  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1]; sprocket_chord:set_division(chord_div/global_clock_div/4) end)
+  params:set_action("seq_div_index_1", function(val) seq_div = division_names[val][1]; sprocket_seq:set_division(seq_div/global_clock_div/4) end)
 
+  my_lattice = lattice:new{
+    auto = true,
+    ppqn = 48
+  }
+
+   -- Clock to control sequence events including chord pre-load, chord/seq sequence
+-- function sequence_clock(sync_val)
+--   transport_state = "starting"
+--   local clock_source = params:string("clock_source")
+--   print(transport_state)
+
+--   -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
+--   if clock_source == "internal" then
+--     -- clock.sync(chord_div / global_clock_div)
+--     clock.sync(1) -- this is not ideal but need to look into skipping and resetting via params:set("clock_reset") further
+--   elseif clock_source == "link" then
+--     clock.sync(params:get("link_quantum"))
+--   elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
+--     clock.sync(sync_val)  -- uses sync_val arg (chord_div / global_clock_div) to sync on the correct beat of an already running MIDI clock
+--   end
+
+--   transport_state = "playing"
+--   print(transport_state)
+    
+--   -- resetting does not seem to be necessary but I figure it can result in marginally better countdown timing?
+--   -- metro.free(countdown_timer.id)
+--   countdown_timer:start()
   
+--   -- --------------------
+--   -- -- CROW CLOCK OUT --
+--   -- --------------------
+--   -- v3 clock.sync-based implementation of crow clock which is the same as norns system crow clock (but transport active only). Keeping as backup since this is probably less susceptible to jitter but it has Issues: 
+--   -- 1. can't turn on and off at start of arranger with events (co-routine begins before events fire)
+--   -- 2. prone to getting ahead of MIDI start out so first cv harmonizer note can be dropped
+--   -- 3. can't span more than 1 measure (inconsistent start beat issue)
+--   -- clock.run(function()
+--   --   while transport_active do
+--   --     if params:get("crow_out_4") == 5 then
+--   --       crow.output[4].volts = 10
+--   --       clock.sleep(60/(2*clock.get_tempo()*params:get("crow_clock_index")))
+--   --       crow.output[4].volts = 0
+--   --     end
+--   --     clock.sync(1/params:get("crow_clock_index"))
+--   --   end
+--   -- end)
+  
+--   while transport_active do
+    
+--   -- SEND MIDI CLOCK START/CONTINUE MESSAGES
+--     if start == true and stop ~= true then
+--       transport_active = true
+--     -- Send out MIDI start/continue messages
+--       if clock_start_method == "start" then
+--         transport_multi_start()  
+--       else
+--         transport_multi_continue()
+--       end
+--       clock_start_method = "continue"
+--       start = false
+--     end
+    
+    
+--     -- ADVANCE CLOCK_STEP
+--     clock_step = clock_step + 1
+    
+--     -- STOP LOGIC DEPENDING ON CLOCK SOURCE
+--     -- Immediate or instant stop
+
+--     if stop == true then
+      
+--       if clock_source == "link" then
+        
+--         if link_stop_source == "norns" then
+--           if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
+--             -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
+--             clock.link.stop()
+--             clock_step = clock_step - 1
+--             transport_multi_stop()
+--             transport_active = false
+--             transport_state = "paused"
+--             print(transport_state)
+--             stop = false
+--             start = false
+--             link_stop_source = nil
+--           end      
+        
+--         -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+--         -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+--         -- todo p2 look at options for a start/continue mode for external sources that support this
+--         else
+--           transport_multi_stop()
+--           -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
+          
+--           if arranger_active then
+--             print(transport_state)
+--           else
+--             reset_pattern()
+--           end
+--           transport_active = false
+--           reset_arrangement()
+--           transport_state = "stopped"
+--           stop = false
+--         end
+      
+
+--       -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+--       -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+--       -- todo p1 also use this when running off norns link beat_count
+--       else
+--         if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
+--           -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
+--           clock_step = clock_step - 1
+--           transport_multi_stop()
+--           transport_active = false
+--           if transport_state ~= "stopped" then -- Probably a better way of blocking this
+--             transport_state = "paused"
+--             print(transport_state)
+--           end
+--           stop = false
+--           start = false
+--         end      
+      
+--       end
+      
+--     end -- of Stop handling
+      
+      
+    
+--     -- ADVANCE SUB CLOCKS: advance_chord_pattern(), advance_seq_pattern(), Crow pulses
+--     if transport_active then -- check again
+--       if (clock_step + chord_preload_tics) % chord_div == 0 then
+--         get_next_chord()
+--       end
+
+  chord_div = 48  -- fix!
+
+  sprocket_chord = my_lattice:new_sprocket{
+    action = function(t) 
+      -- print("getting next chord", t) 
+      get_next_chord()  -- deprecate probably
+      advance_chord_pattern()
+      grid_dirty = true
+    end,
+    division = chord_div/global_clock_div/4, -- todo fix!
+    enabled = true
+  }
+
+  seq_div = 48  -- fix!
+
+  sprocket_seq_1 = my_lattice:new_sprocket{
+    action = function(t) 
+      local seq_start_on_1 = params:get("seq_start_on_1")
+      if seq_start_on_1 == 1 then -- Seq end
+        advance_seq_pattern()
+        grid_dirty = true
+      -- elseif seq_start_on_1 == 4 then  -- Cue
+      --   if seq_1_shot_1 == true then  -- seq_1_shot_1 is sort of an override for play_seq that takes priority when in seq_start_on_1 "cue" mode
+      --     advance_seq_pattern()
+      --     grid_dirty = true
+      --   end
+      elseif play_seq then
+        advance_seq_pattern()
+        grid_dirty = true      
+      end
+    end,
+    division = seq_div/global_clock_div/4, -- todo fix!
+    enabled = true
+  } 
+
+
+      
+--       -- --------------------
+--       -- -- CROW CLOCK OUT --
+--       -- --------------------
+--       -- v4 hybrid clock. uses co-routine for sleep pulse (more reliable waveform shape than crow pulse)
+--       -- can also span measures (beyond PPQN!) and be switched by events, even on initial play
+--       if clock_step % crow_clock_div == 0 then
+--         if params:get("crow_out_4") == 5 then
+--           crow.output[4].volts = 10
+--           clock.run(function()
+--             clock.sleep(120/(clock.get_tempo()*192/crow_clock_div))
+--             crow.output[4].volts = 0
+--           end)
+--         end
+--       end
+
+      
+--       if clock_step % seq_div == 0 then
+--         local seq_start_on_1 = params:get("seq_start_on_1")
+--         if seq_start_on_1 == 1 then -- Seq end
+--           advance_seq_pattern()
+--           grid_dirty = true
+--         -- elseif seq_start_on_1 == 4 then  -- Cue
+--         --   if seq_1_shot_1 == true then  -- seq_1_shot_1 is sort of an override for play_seq that takes priority when in seq_start_on_1 "cue" mode
+--         --     advance_seq_pattern()
+--         --     grid_dirty = true
+--         --   end
+--         elseif play_seq then
+--           advance_seq_pattern()
+--           grid_dirty = true      
+--         end
+--       end
+
+--       -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
+--       -- todo feature: add delay here for external sequencer race condition
+--       if crow_div ~= 0 and clock_step % crow_div == 0 then
+--         crow.input[2].query()
+--       end
+    
+--     end
+  
+  
+--     -- SET SYNC WITHIN LOOP
+--     -- if clock_step == 0 then print("clock_step 0, pre-global_clock_div sync " .. clock.get_beats()) end
+--     clock.sync(1/global_clock_div)
+--     -- if clock_step == 0 then print("clock_step 0, post-global_clock_div sync " .. clock.get_beats()) end
+
+--   end
+-- end
+  -- -- make some sprockets
+  -- sprocket_a = my_lattice:new_sprocket{
+  --   action = function(t) print("whole notes", t) end,
+  --   division = 1,
+  --   enabled = true
+  -- }
+  -- sprocket_b = my_lattice:new_sprocket{
+  --   action = function(t) print("half notes", t) end,
+  --   division = 1/2,
+  --   delay = 0.5
+  -- }
+  -- sprocket_c = my_lattice:new_sprocket{
+  --   action = function(t) print("quarter notes", t) end,
+  --   division = 1/4,
+  --   swing = 60
+  -- }
+  -- sprocket_d = my_lattice:new_sprocket{
+  --   action = function(t) print("eighth notes", t) end,
+  --   division = 1/8,
+  --   enabled = false
+  -- }
+
   grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
   grid_redraw_metro:start()
   grid_dirty = true
@@ -863,7 +1108,7 @@ function init()
   
   grid_dirty = true
   -- screen_dirty = true -- redraw()
-end
+end -- end of init
 
 
 
@@ -1578,190 +1823,189 @@ end
   
   
  -- Clock to control sequence events including chord pre-load, chord/seq sequence
-function sequence_clock(sync_val)
-  transport_state = "starting"
-  local clock_source = params:string("clock_source")
-  print(transport_state)
+-- function sequence_clock(sync_val)
+--   transport_state = "starting"
+--   local clock_source = params:string("clock_source")
+--   print(transport_state)
 
-  -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
-  if clock_source == "internal" then
-    -- clock.sync(chord_div / global_clock_div)
-    clock.sync(1) -- this is not ideal but need to look into skipping and resetting via params:set("clock_reset") further
-  elseif clock_source == "link" then
-    clock.sync(params:get("link_quantum"))
-  elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
-    clock.sync(sync_val)  -- uses sync_val arg (chord_div / global_clock_div) to sync on the correct beat of an already running MIDI clock
-  end
+--   -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
+--   if clock_source == "internal" then
+--     -- clock.sync(chord_div / global_clock_div)
+--     clock.sync(1) -- this is not ideal but need to look into skipping and resetting via params:set("clock_reset") further
+--   elseif clock_source == "link" then
+--     clock.sync(params:get("link_quantum"))
+--   elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
+--     clock.sync(sync_val)  -- uses sync_val arg (chord_div / global_clock_div) to sync on the correct beat of an already running MIDI clock
+--   end
 
-  transport_state = "playing"
-  print(transport_state)
+--   transport_state = "playing"
+--   print(transport_state)
     
-  -- resetting does not seem to be necessary but I figure it can result in marginally better countdown timing?
-  -- metro.free(countdown_timer.id)
-  countdown_timer:start()
+--   -- resetting does not seem to be necessary but I figure it can result in marginally better countdown timing?
+--   -- metro.free(countdown_timer.id)
+--   countdown_timer:start()
   
-  -- --------------------
-  -- -- CROW CLOCK OUT --
-  -- --------------------
-  -- v3 clock.sync-based implementation of crow clock which is the same as norns system crow clock (but transport active only). Keeping as backup since this is probably less susceptible to jitter but it has Issues: 
-  -- 1. can't turn on and off at start of arranger with events (co-routine begins before events fire)
-  -- 2. prone to getting ahead of MIDI start out so first cv harmonizer note can be dropped
-  -- 3. can't span more than 1 measure (inconsistent start beat issue)
-  -- clock.run(function()
-  --   while transport_active do
-  --     if params:get("crow_out_4") == 5 then
-  --       crow.output[4].volts = 10
-  --       clock.sleep(60/(2*clock.get_tempo()*params:get("crow_clock_index")))
-  --       crow.output[4].volts = 0
-  --     end
-  --     clock.sync(1/params:get("crow_clock_index"))
-  --   end
-  -- end)
+--   -- --------------------
+--   -- -- CROW CLOCK OUT --
+--   -- --------------------
+--   -- v3 clock.sync-based implementation of crow clock which is the same as norns system crow clock (but transport active only). Keeping as backup since this is probably less susceptible to jitter but it has Issues: 
+--   -- 1. can't turn on and off at start of arranger with events (co-routine begins before events fire)
+--   -- 2. prone to getting ahead of MIDI start out so first cv harmonizer note can be dropped
+--   -- 3. can't span more than 1 measure (inconsistent start beat issue)
+--   -- clock.run(function()
+--   --   while transport_active do
+--   --     if params:get("crow_out_4") == 5 then
+--   --       crow.output[4].volts = 10
+--   --       clock.sleep(60/(2*clock.get_tempo()*params:get("crow_clock_index")))
+--   --       crow.output[4].volts = 0
+--   --     end
+--   --     clock.sync(1/params:get("crow_clock_index"))
+--   --   end
+--   -- end)
   
-  while transport_active do
+--   while transport_active do
     
-  -- SEND MIDI CLOCK START/CONTINUE MESSAGES
-    if start == true and stop ~= true then
-      transport_active = true
-    -- Send out MIDI start/continue messages
-      if clock_start_method == "start" then
-        transport_multi_start()  
-      else
-        transport_multi_continue()
-      end
-      clock_start_method = "continue"
-      start = false
-    end
+--   -- SEND MIDI CLOCK START/CONTINUE MESSAGES
+--     if start == true and stop ~= true then
+--       transport_active = true
+--     -- Send out MIDI start/continue messages
+--       if clock_start_method == "start" then
+--         transport_multi_start()  
+--       else
+--         transport_multi_continue()
+--       end
+--       clock_start_method = "continue"
+--       start = false
+--     end
     
     
-    -- ADVANCE CLOCK_STEP
-    clock_step = clock_step + 1
+--     -- ADVANCE CLOCK_STEP
+--     clock_step = clock_step + 1
     
-    -- STOP LOGIC DEPENDING ON CLOCK SOURCE
-    -- Immediate or instant stop
+--     -- STOP LOGIC DEPENDING ON CLOCK SOURCE
+--     -- Immediate or instant stop
 
-    if stop == true then
+--     if stop == true then
       
-      if clock_source == "link" then
+--       if clock_source == "link" then
         
-        if link_stop_source == "norns" then
-          if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
-            -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
-            clock.link.stop()
-            clock_step = clock_step - 1
-            transport_multi_stop()
-            transport_active = false
-            transport_state = "paused"
-            print(transport_state)
-            stop = false
-            start = false
-            link_stop_source = nil
-          end      
+--         if link_stop_source == "norns" then
+--           if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
+--             -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
+--             clock.link.stop()
+--             clock_step = clock_step - 1
+--             transport_multi_stop()
+--             transport_active = false
+--             transport_state = "paused"
+--             print(transport_state)
+--             stop = false
+--             start = false
+--             link_stop_source = nil
+--           end      
         
-        -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
-        -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
-        -- todo p2 look at options for a start/continue mode for external sources that support this
-        else
-          transport_multi_stop()
-          -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
+--         -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+--         -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+--         -- todo p2 look at options for a start/continue mode for external sources that support this
+--         else
+--           transport_multi_stop()
+--           -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
           
-          if arranger_active then
-            print(transport_state)
-          else
-            reset_pattern()
-          end
-          transport_active = false
-          reset_arrangement()
-          transport_state = "stopped"
-          stop = false
-        end
+--           if arranger_active then
+--             print(transport_state)
+--           else
+--             reset_pattern()
+--           end
+--           transport_active = false
+--           reset_arrangement()
+--           transport_state = "stopped"
+--           stop = false
+--         end
       
 
-      -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-      -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-      -- todo p1 also use this when running off norns link beat_count
-      else
-        if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
-          -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
-          clock_step = clock_step - 1
-          transport_multi_stop()
-          transport_active = false
-          if transport_state ~= "stopped" then -- Probably a better way of blocking this
-            transport_state = "paused"
-            print(transport_state)
-          end
-          stop = false
-          start = false
-        end      
+--       -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+--       -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+--       -- todo p1 also use this when running off norns link beat_count
+--       else
+--         if (clock_step) % (chord_div) == 0 then  --stops at the end of the chord step
+--           -- print("Transport stopping at clock_step " .. clock_step .. ", clock_start_method: ".. clock_start_method)
+--           clock_step = clock_step - 1
+--           transport_multi_stop()
+--           transport_active = false
+--           if transport_state ~= "stopped" then -- Probably a better way of blocking this
+--             transport_state = "paused"
+--             print(transport_state)
+--           end
+--           stop = false
+--           start = false
+--         end      
       
-      end
+--       end
       
-    end -- of Stop handling
+--     end -- of Stop handling
       
       
     
-    -- ADVANCE SUB CLOCKS: advance_chord_pattern(), advance_seq_pattern(), Crow pulses
-    if transport_active then -- check again
-      if (clock_step + chord_preload_tics) % chord_div == 0 then
-        get_next_chord()
-      end
+--     -- ADVANCE SUB CLOCKS: advance_chord_pattern(), advance_seq_pattern(), Crow pulses
+--     if transport_active then -- check again
+--       if (clock_step + chord_preload_tics) % chord_div == 0 then
+--         get_next_chord()
+--       end
       
-      if clock_step % chord_div == 0 then
-        -- print("debug", global_clock_div, chord_div, clock_step, clock.get_beats())
-        advance_chord_pattern()
-        grid_dirty = true
-        -- screen_dirty = true -- redraw() -- To update chord readout
-      end
+--       if clock_step % chord_div == 0 then
+--         -- print("debug", global_clock_div, chord_div, clock_step, clock.get_beats())
+--         advance_chord_pattern()
+--         grid_dirty = true
+--         -- screen_dirty = true -- redraw() -- To update chord readout
+--       end
       
-      -- --------------------
-      -- -- CROW CLOCK OUT --
-      -- --------------------
-      -- v4 hybrid clock. uses co-routine for sleep pulse (more reliable waveform shape than crow pulse)
-      -- can also span measures (beyond PPQN!) and be switched by events, even on initial play
-      if clock_step % crow_clock_div == 0 then
-        if params:get("crow_out_4") == 5 then
-          crow.output[4].volts = 10
-          clock.run(function()
-            clock.sleep(120/(clock.get_tempo()*192/crow_clock_div))
-            crow.output[4].volts = 0
-          end)
-        end
-      end
+--       -- --------------------
+--       -- -- CROW CLOCK OUT --
+--       -- --------------------
+--       -- v4 hybrid clock. uses co-routine for sleep pulse (more reliable waveform shape than crow pulse)
+--       -- can also span measures (beyond PPQN!) and be switched by events, even on initial play
+--       if clock_step % crow_clock_div == 0 then
+--         if params:get("crow_out_4") == 5 then
+--           crow.output[4].volts = 10
+--           clock.run(function()
+--             clock.sleep(120/(clock.get_tempo()*192/crow_clock_div))
+--             crow.output[4].volts = 0
+--           end)
+--         end
+--       end
 
       
-      if clock_step % seq_div == 0 then
-        local seq_start_on_1 = params:get("seq_start_on_1")
-        if seq_start_on_1 == 1 then -- Seq end
-          advance_seq_pattern()
-          grid_dirty = true
-        -- elseif seq_start_on_1 == 4 then  -- Cue
-        --   if seq_1_shot_1 == true then  -- seq_1_shot_1 is sort of an override for play_seq that takes priority when in seq_start_on_1 "cue" mode
-        --     advance_seq_pattern()
-        --     grid_dirty = true
-        --   end
-        elseif play_seq then
-          advance_seq_pattern()
-          grid_dirty = true      
-        end
-      end
+--       if clock_step % seq_div == 0 then
+--         local seq_start_on_1 = params:get("seq_start_on_1")
+--         if seq_start_on_1 == 1 then -- Seq end
+--           advance_seq_pattern()
+--           grid_dirty = true
+--         -- elseif seq_start_on_1 == 4 then  -- Cue
+--         --   if seq_1_shot_1 == true then  -- seq_1_shot_1 is sort of an override for play_seq that takes priority when in seq_start_on_1 "cue" mode
+--         --     advance_seq_pattern()
+--         --     grid_dirty = true
+--         --   end
+--         elseif play_seq then
+--           advance_seq_pattern()
+--           grid_dirty = true      
+--         end
+--       end
 
-      -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
-      -- todo feature: add delay here for external sequencer race condition
-      if crow_div ~= 0 and clock_step % crow_div == 0 then
-        crow.input[2].query()
-      end
+--       -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
+--       -- todo feature: add delay here for external sequencer race condition
+--       if crow_div ~= 0 and clock_step % crow_div == 0 then
+--         crow.input[2].query()
+--       end
     
-    end
+--     end
   
   
-    -- SET SYNC WITHIN LOOP
-    -- if clock_step == 0 then print("clock_step 0, pre-global_clock_div sync " .. clock.get_beats()) end
-    clock.sync(1/global_clock_div)
-    -- if clock_step == 0 then print("clock_step 0, post-global_clock_div sync " .. clock.get_beats()) end
+--     -- SET SYNC WITHIN LOOP
+--     -- if clock_step == 0 then print("clock_step 0, pre-global_clock_div sync " .. clock.get_beats()) end
+--     clock.sync(1/global_clock_div)
+--     -- if clock_step == 0 then print("clock_step 0, post-global_clock_div sync " .. clock.get_beats()) end
 
-  end
-end
-
+--   end
+-- end
 
 function calc_seconds_remaining()
   if arranger_active then
@@ -1813,7 +2057,8 @@ function clock.transport.start(sync_value)
     stop = false -- 2023-07-19 added so when arranger stops in 1-shot and then external clock stops, it doesn't get stuck
     transport_active = true
     -- Clock for chord/seq/arranger sequences
-    sequence_clock_id = clock.run(sequence_clock, sync_value)
+    -- sequence_clock_id = clock.run(sequence_clock, sync_value)
+    my_lattice:start()
   end
 end
 
