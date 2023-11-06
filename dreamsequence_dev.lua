@@ -1180,7 +1180,7 @@ function div_to_index(string)
 end
 
 
--- This previously was used to define a single destination for sending out MIDI clock (and transport). Now we"re using this to look up the system clock destinations and logging those so we send transport messages to all destinations. Fix: this gets called a lot just to be safe, but is probably only needed when the clock params are touched (callback?) or when starting transport.
+-- This previously was used to define a single destination for sending out MIDI clock (and transport). Now we're using this to look up the system clock destinations and logging those so we send transport messages to all destinations. Fix: this gets called a lot just to be safe, but is probably only needed when the clock params are touched (callback?) or when starting transport.
 function transport_midi_update()
   -- Find out which ports Norns is sending MIDI clock on so we know where to send transport messages
   midi_transport_ports = {}
@@ -1512,7 +1512,7 @@ function get_chord_name(root_num, scale_type, roman_chord_type)
     elseif added_string == "13" then
       chord_type = "Major 13"
     else
-      chord_type = "" -- "Major" -- nil because we"re no longer spelling out maj/min
+      chord_type = "" -- "Major" -- nil because we're no longer spelling out maj/min
     end
   else -- lowercase degree, assume minor in most circumstances
     if is_augmented then
@@ -1585,8 +1585,12 @@ function sequence_clock(sync_val)
 
   -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
   if clock_source == "internal" then
-    -- clock.sync(chord_div / global_clock_div)
-    clock.sync(1) -- this is not ideal but need to look into skipping and resetting via params:set("clock_reset") further
+    -- ok so we're starting on beat 1 and *should* start on beat 0
+    -- can't sync to beat 0, however, and resetting beat count via params:set("clock_reset", 1) calls clock.transport.start() which causes an infinite loop
+    -- sorta doesn't matter since we are doing relative beat counts via clock_step
+    -- but might mess up mods, etc...
+    clock.sync(1)
+    -- print("clock beat " .. clock.get_beats())
   elseif clock_source == "link" then
     clock.sync(params:get("link_quantum"))
   elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
@@ -1859,7 +1863,7 @@ end
 -- Used when resetting view K3 or when jumping to chord pattern immediately via g.key press
 -- Link can't be reset. Sending a stop then start will just result in stopping.
 function reset_external_clock()
-  -- If we"re sending MIDI clock out, send a stop msg
+  -- If we're sending MIDI clock out, send a stop msg
   -- Tell the transport to Start on the next sync of sequence_clock
   if transport_active then
     transport_multi_stop()
@@ -1871,7 +1875,7 @@ end
 
 
 function advance_chord_pattern()
-  chord_pattern_retrig = true -- indicates when we"re on a new chord seq step for CV harmonizer auto-rest logic
+  chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
   local seq_start_on_1 = params:get("seq_start_on_1")
   local seq_reset_on_1 = params:get("seq_reset_on_1")
   local arrangement_reset = false
@@ -1883,7 +1887,7 @@ function advance_chord_pattern()
     -- TODO: Really need a global var for when in a reset state (arranger_position == 0 and chord_pattern_position == 0)
     if (arranger_position == 0 and chord_pattern_position == 0) or chord_pattern_position >= chord_pattern_length[active_chord_pattern] then
       
-      -- This variable is only set when the "arranger" param is "On" and we"re moving into a new Arranger segment (or after reset)
+      -- This variable is only set when the "arranger" param is "On" and we're moving into a new Arranger segment (or after reset)
       arranger_active = true
       
       -- Check if it's the last pattern in the arrangement.
@@ -2207,7 +2211,7 @@ function to_player(player, note, dynamics, duration)
   end
 
 
-  -- if we"re going to play a note...
+  -- if we're going to play a note...
   if player_play_note == true then
     
     -- existing (or updated) note duration exists
@@ -2388,7 +2392,7 @@ function advance_seq_pattern()
     local seq_start_on_1 = params:get("seq_start_on_1")
     if seq_start_on_1 ~= 1 then -- seq end
       play_seq = false
-      -- if seq_start_on_1 == 4 then -- Only reset if we"re currently in Event start_on mode. Could go either way here.
+      -- if seq_start_on_1 == 4 then -- Only reset if we're currently in Event start_on mode. Could go either way here.
       --   seq_1_shot_1 = false
       -- end
      end
@@ -2767,7 +2771,7 @@ function g.key(x,y,z)
           
         else -- Subsequent keys down paste event
           local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
-          -- But first check if the events we"re working with are populated
+          -- But first check if the events we're working with are populated
           local og_event_populated = events[event_edit_segment][y + pattern_grid_offset][x] ~= nil
           local copied_event_populated = events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil
 
@@ -2868,7 +2872,7 @@ function g.key(x,y,z)
   
           -- Subsequent keys down paste all arranger events in segment, but not the segment pattern
           -- arranger shift interaction will block this
-          -- implicit here that more than 1 key is held down so we"re pasting
+          -- implicit here that more than 1 key is held down so we're pasting
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
             print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
@@ -2908,7 +2912,7 @@ function g.key(x,y,z)
           for i = 1, max_chord_pattern_length do
             chord_pattern[y][i] = chord_pattern[pattern_copy_source][i]
           end
-          -- If we"re pasting to the currently viewed active_chord_pattern, do it via param so we update param + table.
+          -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param + table.
           if y == active_chord_pattern then
             params:set("chord_pattern_length", chord_pattern_length[pattern_copy_source])
           -- Otherwise just update the table.
@@ -3242,7 +3246,7 @@ function key(n,z)
           if params:string("clock_source") == "internal" then
             local prev_transport_state = transport_state
             reset_external_clock()
-            -- don't reset arranger it's confusing if we generate on, say, pattern 3 and then Arranger is reset and we"re now on pattern 1.
+            -- don't reset arranger it's confusing if we generate on, say, pattern 3 and then Arranger is reset and we're now on pattern 1.
             reset_pattern()
             if transport_state ~= prev_transport_state then
               transport_state = prev_transport_state
@@ -3305,7 +3309,7 @@ function key(n,z)
           -- Keep track of how many events are populated in this step so we don't have to iterate through them all later
           local step_event_count = events[event_edit_segment][event_edit_step].populated or 0
 
-          -- If we"re saving over a previously-nil event, increment the step populated count          
+          -- If we're saving over a previously-nil event, increment the step populated count          
           if events[event_edit_segment][event_edit_step][event_edit_lane] == nil then
             events[event_edit_segment][event_edit_step].populated = step_event_count + 1
 
@@ -3469,6 +3473,11 @@ function key(n,z)
         if params:string("clock_source") == "internal" then
           -- todo p0 evaluate this vs transport_state
           if transport_active == false then
+            
+            -- can use this to skip clock.sync(1)
+            -- also calls clock.transport.start()
+            -- but throws timing of quantized stop off (play/pause drifts...)
+            -- params:set("clock_reset", 1)
             clock.transport.start()
           else -- we can cancel a pending pause by pressing K3 before it fires
             stop = false
@@ -3951,7 +3960,7 @@ function gen_dash(source)
     -- 3. Current arranger segment is turned off, resulting in it picking up a different pattern (either the previous pattern or wrapping around to grab the last pattern. arranger_padded shenanigans)
     -- 4. We DO want this to update if the arranger is reset (arranger_position = 0, however)
     
-    -- Note: arranger_position == i idenifies if we"re on the active segment. Implicitly false when arranger is reset (arranger_position 0) todo p2 make local
+    -- Note: arranger_position == i idenifies if we're on the active segment. Implicitly false when arranger is reset (arranger_position 0) todo p2 make local
     if arranger_position == i then
       -- todo p2 would be nice to rewrite this so these can be local
       if arranger_active == true then
