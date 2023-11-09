@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231108 01 @modularbeat
+-- 231109 01 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,11 +37,11 @@ norns.version.required = 230526 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "23110801"
+  version = "23110901"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
-    -- suppress default nb_crow mod players-- they come back on next nb init
+    -- suppress some default nb_crow and nb_jf mod players-- they come back on next nb init
   nb.players["crow 1/2"] = nil
   nb.players["crow 3/4"] = nil
   nb.players["crow para"] = nil
@@ -425,6 +425,7 @@ function init()
 
   params:add_option("seq_note_map_1", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode"}, 1)
   
+  -- todo p1 rename these and update documentation: {"Repeat", "Chord step", "Chord", "Cue"}
   params:add_option("seq_start_on_1", "Start on", {"Seq end", "Step", "Chord", "Cue"}, 1)
   -- params:set_save("seq_start_on_1", false)
   -- params:hide(params.lookup["seq_start_on_1"])
@@ -847,36 +848,43 @@ function init()
   
   params:bang()
 
-  
+  -- has to be run to resync sprockets after div change... but NOT doing this results in some pretty spectacular stuff too.
+  -- might want to pass an offset value here to get weird
+  function reset_phase_sprocket_seq_1(offset)
+    sprocket_seq_1.phase = (sprocket_seq_1.division * my_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay)) + offset
+  end
+
   -- Some actions need to be added post-bang. I forget why but something to do with setting the chord readout?
   params:set_action("mode", function() build_scale(); update_chord_action() end)
   params:set_action("chord_div_index",function(val) chord_div = division_names[val][1]; sprocket_chord:set_division(chord_div/global_clock_div/4) end)
-  params:set_action("seq_div_index_1", function(val) seq_div = division_names[val][1]; sprocket_seq:set_division(seq_div/global_clock_div/4) end)
+  -- params:set_action("seq_div_index_1", function(val) 
+  --     seq_div = division_names[val][1]; 
+  --     sprocket_seq_1:set_division(seq_div/global_clock_div/4);
+  --     reset_phase_sprocket_seq_1(0)
+  -- end)
 
   my_lattice = lattice:new{
     auto = true,
     ppqn = 96
   }
-
-  chord_div = 192  -- fix!
+  -- chord_div = 192  -- fix!
   chord_swing = 50
   
-
   sprocket_transport = my_lattice:new_sprocket{
     action = function(t) 
-    print("beat "..round(clock.get_beats(),2), 
-          "pos "..(my_lattice.transport or 0), 
-          "phase "..(sprocket_transport.phase or ""), 
-          "sprocket_transport action"
-        )  
+    -- print("beat "..round(clock.get_beats(),2), 
+    --       "pos "..(my_lattice.transport or 0), 
+    --       "phase "..(sprocket_transport.phase or ""), 
+    --       "sprocket_transport action"
+    --     )  
 
     if stop == true then
       local clock_source = params:string("clock_source")
-      print("beat "..round(clock.get_beats(),2), 
-      "pos "..(my_lattice.transport or 0), 
-      "phase "..(sprocket_transport.phase or ""), 
-      "STOPPING TRANSPORT"
-      )  
+      -- print("beat "..round(clock.get_beats(),2), 
+      -- "pos "..(my_lattice.transport or 0), 
+      -- "phase "..(sprocket_transport.phase or ""), 
+      -- "STOPPING TRANSPORT"
+      -- )  
 
       if clock_source == "link" then
         if link_stop_source == "norns" then
@@ -942,13 +950,16 @@ function init()
       -- sprocket_transport.phase = sprocket_transport.phase + 3
       -- sprocket_chord.phase = sprocket_chord.phase + 3
       -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
-      
+
+      -- -- option to re-sync out-of-phase sprocket
+      -- reset_phase_sprocket_seq_1(0)
+
     end -- of Stop handling
   
 
 
     end,
-    division = 1, --chord_div/global_clock_div/4
+    division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
     -- delay = (my_lattice.ppqn - 1) / my_lattice.ppqn, -- optional logic to stop near the end of the beat
     order = 1,
     enabled = true
@@ -957,23 +968,49 @@ function init()
 
   sprocket_chord = my_lattice:new_sprocket{
     action = function(t) 
+
+      -- -- update seq div first so this can be superceded by events
+      -- if type(sprocket_seq_1) == "table" then -- find a better way. Only for init when sprocket_seq has yet to be created
+      --   local newdiv = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+      --   -- print("sprocket_seq_1.division = " .. sprocket_seq_1.division)
+      --   -- print("newdiv = " .. newdiv)
+      --   if sprocket_seq_1.division ~= newdiv then 
+      --     print("SETTING NEW DIV")
+      --     sprocket_seq_1:set_division(newdiv)
+      --     reset_phase_sprocket_seq_1(0)
+      --   end
+      -- end
+
       -- print("sprocket_chord action firing", t) 
       get_next_chord()  -- deprecate probably or move to new sprocket
       advance_chord_pattern()
       grid_dirty = true 
     end,
-    division = 1, -- chord_div/global_clock_div/4, -- todo fix!
+    -- some weirdness here around order in which param actions fire. So we do it the hard way at sprocket init
+    division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
     swing = chord_swing,
-    order = 3,
+    order = 2,
     enabled = true
   }
     
   
-  seq_div = 24 -- fix!
+  -- seq_div = 24 -- fix!
   seq_swing = 50
 
   sprocket_seq_1 = my_lattice:new_sprocket{
     action = function(t) 
+
+      -- may want to place after seq_start_on_1 check
+      -- seq_div = division_names[val][1];
+      -- local newdiv = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+      
+      -- to update seq div at the end of the current div's phase
+      -- if sprocket_seq_1.division ~= newdiv then 
+      --   sprocket_seq_1:set_division(newdiv)
+      --   -- reset_phase_sprocket_seq_1(0)
+      -- end
+
+
       local seq_start_on_1 = params:get("seq_start_on_1")
       if seq_start_on_1 == 1 then -- Seq end
         advance_seq_pattern()
@@ -987,11 +1024,19 @@ function init()
         advance_seq_pattern()
         grid_dirty = true      
       end
+
+      print("beat "..round(clock.get_beats(),2), 
+      "pos "..(my_lattice.transport or 0), 
+      "phase "..(sprocket_transport.phase or ""), 
+      "sprocket_seq_1 action")
+
     end,
-    division = 1/8, --seq_div/global_clock_div/4, -- todo fix!
+    -- some weirdness here around order in which param actions fire. So we do it the hard way at sprocket init
+    division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4,
     swing = seq_swing,
     enabled = true
   } 
+  
   
 
   grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
@@ -1118,8 +1163,19 @@ function find_number(string)
   return tonumber(string.match (string, "%d+"))
 end
 
-
--- -- check if string ends with, uh, ends_with
+function set_sprocket_div_seq_1()
+  print("set_sprocket_div_seq_1() called")
+  if type(sprocket_seq_1) == "table" then -- find a better way. Only for init when sprocket_seq has yet to be created
+    local newdiv = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+    -- print("sprocket_seq_1.division = " .. sprocket_seq_1.division)
+    -- print("newdiv = " .. newdiv)
+    if sprocket_seq_1.division ~= newdiv then 
+      sprocket_seq_1:set_division(newdiv)
+      -- reset_phase_sprocket_seq_1(0)
+    end
+  end
+end
+      -- -- check if string ends with, uh, ends_with
 -- function ends_with(string, ends_with)
 --   return string:sub(-#ends_with) == ends_with
 -- end
@@ -2033,6 +2089,9 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   chord_raw = next_chord
   gen_dash("reset_pattern")
   grid_dirty = true
+
+  -- option to re-sync out-of-phase sprocket
+  -- reset_phase_sprocket_seq_1(0)
   -- screen_dirty = true -- redraw()
 end
 
@@ -2567,8 +2626,12 @@ end
 function advance_seq_pattern()
   if seq_pattern_position > seq_pattern_length[active_seq_pattern] or arranger_retrig == true then
     seq_pattern_position = 1
+    set_sprocket_div_seq_1()
   else  
     seq_pattern_position = util.wrap(seq_pattern_position + 1, 1, seq_pattern_length[active_seq_pattern])
+      if seq_pattern_position == 1 then
+        set_sprocket_div_seq_1()
+      end
   end
 
   if seq_pattern[active_seq_pattern][seq_pattern_position] > 0 then
@@ -2582,6 +2645,7 @@ function advance_seq_pattern()
 
   end
   
+  -- todo p2: look at this because I don't know why this would ever get triggered?
   if seq_pattern_position >= seq_pattern_length[active_seq_pattern] then
     local seq_start_on_1 = params:get("seq_start_on_1")
     if seq_start_on_1 ~= 1 then -- seq end
@@ -2591,6 +2655,7 @@ function advance_seq_pattern()
       -- end
      end
   end
+
 end
 
 
