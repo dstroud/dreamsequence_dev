@@ -2677,7 +2677,9 @@ function advance_seq_pattern()
     -- stuff for sprocket resetting 
     if params:get("seq_reset_on_1") == 3 and next_pos == 1 then
       local newdiv = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
-      local valid_div = (my_lattice.transport)%(my_lattice.ppqn*4*newdiv) == 0
+      local swing_val = 2 * sprocket_seq_1.swing / 100 -- needs to get OLD swing value. Can't do it on the fly probably
+      -- local valid_div = (my_lattice.transport)%(my_lattice.ppqn*4*newdiv) == 0 -- for no swing
+      local valid_div = (my_lattice.transport)%(my_lattice.ppqn*4*newdiv * swing_val) == 0
 
       --------------------------------------------------
       -- SMALL < LARGE DIV CHANGE
@@ -2708,6 +2710,7 @@ function advance_seq_pattern()
           params:set("seq_duration_index_1", params:get("seq_div_index_1"))
           local phase_offset = 1
           sprocket_seq_1.phase = phase_offset
+          sprocket_seq_1.downbeat = false --wag
           print("PHASE_OFFSET = " .. phase_offset)
 
         -- implicit!
@@ -2722,7 +2725,7 @@ function advance_seq_pattern()
         "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
         "sprocket_seq_1 action")
         
-        else
+        else --valid_div == false so we're blocking this one
           sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
           params:set("seq_duration_index_1", params:get("seq_div_index_1"))
 
@@ -2730,6 +2733,7 @@ function advance_seq_pattern()
           local phase_offset = (my_lattice.transport % (my_lattice.ppqn * 4*newdiv)) + 1
 
           sprocket_seq_1.phase = phase_offset
+          sprocket_seq_1.downbeat = true --wag. But I think setting this to true means the next (valid) beat will be false
           print("PHASE_OFFSET = " .. phase_offset)
           block_seq_note = true
 
