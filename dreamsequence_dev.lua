@@ -468,7 +468,10 @@ function init()
   
   params:add_number("seq_div_index_1", "Step length", 1, 57, 8, function(param) return divisions_string(param:get()) end)
   -- params:set_action("seq_div_index_1", function(val) seq_div = division_names[val][1] end)
-  
+  -- params:set_action("seq_div_index_1", function(val) params:set("seq_duration_index_1", val) end)  -- temporary - for debugging but would be a nice feature!
+
+  params:add_number("seq_swing_1", "Swing", 1, 99, 50)
+
   nb:add_param("seq_voice_raw_1", "Voice raw")
   params:hide("seq_voice_raw_1")
 
@@ -860,6 +863,11 @@ function init()
   -- Some actions need to be added post-bang. I forget why but something to do with setting the chord readout?
   params:set_action("mode", function() build_scale(); update_chord_action() end)
   params:set_action("chord_div_index",function(val) chord_div = division_names[val][1]; sprocket_chord:set_division(chord_div/global_clock_div/4) end)
+
+  params:set_action("seq_swing_1", function(val)
+    sprocket_seq_1:set_swing(val)
+  end)
+
   -- params:set_action("seq_div_index_1", function(val) 
   --     seq_div = division_names[val][1]; 
   --     sprocket_seq_1:set_division(seq_div/global_clock_div/4);
@@ -876,7 +884,7 @@ function init()
   sprocket_transport = my_lattice:new_sprocket{
     action = function(t) 
     -- print("beat "..round(clock.get_beats(),2), 
-    --       "pos "..(my_lattice.transport or 0), 
+    --       "pos "..string.format("%05d", (my_lattice.transport or 0)), 
     --       "phase "..(sprocket_transport.phase or ""), 
     --       "sprocket_transport action"
     --     )  
@@ -884,7 +892,7 @@ function init()
     if stop == true then
       local clock_source = params:string("clock_source")
       -- print("beat "..round(clock.get_beats(),2), 
-      -- "pos "..(my_lattice.transport or 0), 
+      -- "pos "..string.format("%05d", (my_lattice.transport or 0)), 
       -- "phase "..(sprocket_transport.phase or ""), 
       -- "STOPPING TRANSPORT"
       -- )  
@@ -894,7 +902,7 @@ function init()
             clock.link.stop()
             
             print("beat "..round(clock.get_beats(),2), 
-            "pos "..(my_lattice.transport or 0), 
+            "pos "..string.format("%05d", (my_lattice.transport or 0)), 
             "phase "..(sprocket_transport.phase or ""), 
             "clock.link.stop sent"
             )  
@@ -998,7 +1006,7 @@ function init()
     
   
   -- seq_div = 24 -- fix!
-  seq_swing = 50
+  -- seq_swing = 50
 
   function init_sprocket_seq_1(div)
     -- if type(sprocket_seq_1) == "table" then
@@ -1022,7 +1030,7 @@ function init()
         end
 
         -- print("beat "..round(clock.get_beats(),2), 
-        -- "pos "..(my_lattice.transport or 0), 
+        -- "pos "..string.format("%05d", (my_lattice.transport or 0)), 
         -- "phase "..(sprocket_seq_1.phase or ""), 
         -- "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
         -- "sprocket_seq_1 action")
@@ -1031,7 +1039,7 @@ function init()
       -- some weirdness here around order in which param actions fire. So we do it the hard way at sprocket init
       -- division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4,
       division = div,
-      swing = seq_swing,
+      swing = params:get("seq_swing_1"),
       enabled = true
     } 
   end
@@ -1067,7 +1075,7 @@ function update_menus()
   menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_dynamics", "chord_dynamics_ramp"}
  
   -- SEQ MENU
-    menus[3] = {"seq_voice_1", "seq_note_map_1", "seq_start_on_1", "seq_reset_on_1", "seq_octave_1", "seq_rotate_1","seq_shift_1", "seq_div_index_1", "seq_duration_index_1", "seq_dynamics_1"}
+    menus[3] = {"seq_voice_1", "seq_note_map_1", "seq_start_on_1", "seq_reset_on_1", "seq_octave_1", "seq_rotate_1", "seq_shift_1", "seq_div_index_1", "seq_swing_1", "seq_duration_index_1", "seq_dynamics_1"}
 
   -- MIDI HARMONIZER MENU
   menus[4] = {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"}
@@ -2064,7 +2072,7 @@ function clock.transport.start(sync_value)
 
     -- print("starting lattice")
     -- transport_state = "playing" -- new
-    print("beat "..round(clock.get_beats(),2), "pos "..(my_lattice.transport or 0), "phase "..(sprocket_transport.phase or ""), "my_lattice:start")  
+    print("beat "..round(clock.get_beats(),2), "pos "..string.format("%05d", (my_lattice.transport or 0)), "phase "..(sprocket_transport.phase or ""), "my_lattice:start")  
     my_lattice:start()
   end)
 
@@ -2669,48 +2677,78 @@ function advance_seq_pattern()
     -- stuff for sprocket resetting 
     if params:get("seq_reset_on_1") == 3 and next_pos == 1 then
       local newdiv = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+      local valid_div = (my_lattice.transport)%(my_lattice.ppqn*4*newdiv) == 0
 
-      -- need to block next note and wait until phase has been adjusted
+      --------------------------------------------------
+      -- SMALL < LARGE DIV CHANGE
+      --------------------------------------------------
       if sprocket_seq_1.division < newdiv then
 
         print("-----------------------------------")
         debug_change_count = debug_change_count + 1
-        print("DIV CHANGE " .. debug_change_count .. ": " .. sprocket_seq_1.division .. " < " .. newdiv, "pos " .. (my_lattice.transport or 0), ((my_lattice.transport % my_lattice.ppqn) == 0 and "SAFE" or "DANGER!!!"))
-        sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+        print("DIV CHANGE " .. debug_change_count,
+          round(sprocket_seq_1.division, 2) .. " < " .. round(newdiv, 3), 
+          "lattice beat " .. round(my_lattice.transport / my_lattice.ppqn, 3),
+          "relative beat " .. round((my_lattice.transport % my_lattice.ppqn) / my_lattice.ppqn, 3),
+          "pos " .. (my_lattice.transport or 0),          
+          -- ((my_lattice.transport % my_lattice.ppqn) == 0 and "SAFE" or "DANGER!!!"),
+          -- ((((my_lattice.transport / my_lattice.ppqn) % (newdiv)) < .00001) and "SAFE" or "DANGER!!!")
+          valid_div == true and "VALID" or "INVALID"  -- whether current lattice beat is valid for this div
+        )
 
-        -- to always block
-        block_seq_note = true
+        -- print("lattice beat " .. my_lattice.transport / my_lattice.ppqn)
 
-        -- -- testing disabling the even beat check which seems to work OK??
-        -- -- "uneven" beat division so we'll need to adjust sprocket offset
-        -- if (my_lattice.transport % my_lattice.ppqn) ~= 0 then
-        --   block_seq_note = true -- suppress playing of current note
-        -- else
-        --   seq_pattern_position = next_pos -- play the note
-        --   -- the above doesn't work with default phase_offset and would need to be changed
-        -- end
+        -- Begining on an even beat so we can advance seq and play note!
+        -- if (my_lattice.transport % my_lattice.ppqn) == 0 then
 
-          -- calculate the time remaining until the next valid quantum of newdiv
-          -- wag on the + 1 part- not sure if this is needed because of timing
-          -- todo p1 optimize!
-          -- local phase_offset = (((1 - my_lattice.transport / (my_lattice.ppqn * 4)) * (my_lattice.ppqn * 4*newdiv)) % (my_lattice.ppqn * 4*newdiv)) + 1
-          local phase_offset = (my_lattice.transport % (my_lattice.ppqn * 4*newdiv)) -- + 1
-
-          -- not entirely sure why I have to add one, but it seems to be a problem when the value is 0 so... don't do that I guess?
-          local phase_offset = phase_offset == 0 and 0 or phase_offset + 1
-          -- local phase_offset = math.max(phase_offset, 0)
+        -- if ((my_lattice.transport / my_lattice.ppqn) % (newdiv)) < .00001 then
+        if valid_div == true then
+          -- reset_sprocket_div_seq_1()  -- doesn't exist ehh??
+          sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+          params:set("seq_duration_index_1", params:get("seq_div_index_1"))
+          local phase_offset = 1
           sprocket_seq_1.phase = phase_offset
-          print("SCENARIO B PHASE_OFFSET = " .. phase_offset)
+          print("PHASE_OFFSET = " .. phase_offset)
 
-        -- end
+        -- implicit!
+        -- block_seq_note = false
+
+        -- important: advance pattern
+        seq_pattern_position = next_pos
 
         print("beat "..round(clock.get_beats(),2), 
-        "pos "..(my_lattice.transport or 0), 
+        "pos "..string.format("%05d", (my_lattice.transport or 0)), 
         "phase "..(sprocket_seq_1.phase or ""), 
         "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
-        "sprocket_seq_1 action",
-      " NOTE BLOCKED")
+        "sprocket_seq_1 action")
+        
+        else
+          sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+          params:set("seq_duration_index_1", params:get("seq_div_index_1"))
 
+          -- not entirely sure why I have to add one but okay
+          local phase_offset = (my_lattice.transport % (my_lattice.ppqn * 4*newdiv)) + 1
+
+          sprocket_seq_1.phase = phase_offset
+          print("PHASE_OFFSET = " .. phase_offset)
+          block_seq_note = true
+
+          print("beat "..round(clock.get_beats(),2), 
+          "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+          "phase "..(sprocket_seq_1.phase or ""), 
+          "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
+          "sprocket_seq_1 action",
+        " NOTE BLOCKED")
+        end
+          -- print("SCENARIO B PHASE_OFFSET = " .. phase_offset)
+
+        -- end
+
+
+
+      --------------------------------------------------
+      -- LARGE > SMALL DIV CHANGE
+      --------------------------------------------------
       -- not yet sure what to do when moving from a larger div to smaller one but we're on an off-beat
       elseif sprocket_seq_1.division > newdiv then
 
@@ -2721,6 +2759,8 @@ function advance_seq_pattern()
           debug_change_count = debug_change_count + 1
           print("DIV CHANGE " .. debug_change_count .. ": " .. sprocket_seq_1.division .. " > " .. newdiv, "pos " .. (my_lattice.transport or 0), ((my_lattice.transport % my_lattice.ppqn) == 0 and "SAFE" or "DANGER!!!"))
           sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
+          params:set("seq_duration_index_1", params:get("seq_div_index_1"))
+
           if (my_lattice.transport % my_lattice.ppqn) ~= 0 then 
 
             -- -- TODO
@@ -2742,7 +2782,8 @@ function advance_seq_pattern()
           end       
 
           print("beat "..round(clock.get_beats(),2), 
-          "pos "..(my_lattice.transport or 0), 
+          "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+
           "phase "..(sprocket_seq_1.phase or ""), 
           "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
           "sprocket_seq_1 action")
@@ -2752,7 +2793,7 @@ function advance_seq_pattern()
         seq_pattern_position = next_pos
 
         print("beat "..round(clock.get_beats(),2), 
-        "pos "..(my_lattice.transport or 0), 
+        "pos "..string.format("%05d", (my_lattice.transport or 0)), 
         "phase "..(sprocket_seq_1.phase or ""), 
         "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
         "sprocket_seq_1 action")
@@ -2762,7 +2803,7 @@ function advance_seq_pattern()
       seq_pattern_position = next_pos
 
       print("beat "..round(clock.get_beats(),2), 
-      "pos "..(my_lattice.transport or 0), 
+      "pos "..string.format("%05d", (my_lattice.transport or 0)), 
       "phase "..(sprocket_seq_1.phase or ""), 
       "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
       "sprocket_seq_1 action")
