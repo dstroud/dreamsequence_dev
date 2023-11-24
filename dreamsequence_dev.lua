@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231030 02 @modularbeat
+-- 231124 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -32,12 +32,12 @@ end
 extra_rows = rows - 8
 include(norns.state.shortname.."/lib/includes")
 
-norns.version.required = 230526 -- update when new musicutil lib drops
+norns.version.required = 231114 -- update when new musicutil lib drops
 
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23103002'
+  version = '23112401'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -857,7 +857,7 @@ function init()
   -- screen refresh and blinkies
   countdown_timer = metro.init()
   countdown_timer.event = countdown
-  countdown_timer.time = 1/15
+  countdown_timer.time = 0.1 -- 1/15
   countdown_timer.count = -1
   countdown_timer:start()
   
@@ -911,13 +911,37 @@ end
 function gen_voice_lookups()
   voice_param_options = {}
   voice_param_index = {}
+
+  local vport_names = {}
+  for k,v in pairs(midi.vports) do  
+    vport_names[k] = v.name
+  end  
+  
+  local function trim_menu(string)
+    return util.trim_string_to_width(string, 63)
+  end
+  
   for i = 1, params:lookup_param("chord_voice_raw").count do
     local option = params:lookup_param("chord_voice_raw").options[i]
 
       -- identify connected MIDI players and rename
       if nb.players[option] ~= nil and nb.players[option].conn ~= nil then
-        local option = "midi port " .. nb.players[option].conn.device.port .. (nb.voice_count > 1 and ("(" .. string.match(option, "(%d+)$") .. ")") or "")
-        table.insert(voice_param_options, option)
+        
+        local function find_vport(name)
+          for k,v in pairs(midi.vports) do
+            if v.name == name then
+              return k
+            end
+          end
+        end
+
+        local vport_name = nb.players[option].conn.name
+        -- can't rely on nb.players[option].conn.device.port since nbout doesn't set this :/
+        local port = find_vport(vport_name)
+        local voice = string.match(option, "(%d+)$")
+        local name = string.lower(vport_name)
+        local option = "midi " .. port .. "." .. voice .. " " .. name
+        table.insert(voice_param_options, trim_menu(option))
         table.insert(voice_param_index, i)
         
       -- mask any unwanted crow_ds players  
@@ -938,7 +962,7 @@ function gen_voice_lookups()
         
       -- other players pass through as-is
       else
-        table.insert(voice_param_options, option)
+        table.insert(voice_param_options, trim_menu(option))
         table.insert(voice_param_index, i)
       end
       
@@ -1774,13 +1798,20 @@ function calc_seconds_remaining()
   end
 
 
--- Clock used to redraw screen 10x a second for arranger countdown timer
--- Also used to set blinkies
+-- 1/10s timer used to calculate arranger countdown timer and do transport/grid blinkies
 function countdown()
   calc_seconds_remaining()
   fast_blinky = fast_blinky ~ 1
-  grid_dirty = true -- for fast_blinky scrolling pattern indicator. todo p0 performance: big grid redraw driver
-  redraw()  
+  -- todo p0 performance: big grid redraw driver.
+  -- maybe flag if 128-key grid has pattern length >8 steps
+  grid_dirty = true -- for fast_blinky scrolling pattern indicator.
+end
+
+function refresh()
+  -- refresh = refresh or -1 + 1
+  -- if refresh % 3 == 0 then -- 60fps / 3 == 20 fps refresh
+    redraw()  -- fuck it let's sandbag with 60fps!
+  -- end 
 end
     
     
@@ -4328,25 +4359,14 @@ function redraw()
         screen.level(menu_index == i and 15 or 3)
         
         -- Generate menu and draw <> indicators for scroll range
-        session_menu_trunc = 16
         if menu_index == i then
           local range = params:get_range(menus[page_index][i])
           local menu_value_suf = params:get(menus[page_index][i]) == range[1] and '>' or ''
           local menu_value_pre = params:get(menus[page_index][i]) == range[2] and '<' or ' '
-          local session_menu_txt = first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. menu_value_pre .. string.sub(params:string(menus[page_index][i]), 1, session_menu_trunc) .. menu_value_suf
-
-          -- text extents and my attempt to fix it still are not reliable so we'll just chop it off with black rect LOL
-          -- while text_width(session_menu_txt) > 94 do -- screen.text_extents(session_menu_txt) > 90 do -
-          --   session_menu_trunc = session_menu_trunc - 1
-          --   session_menu_txt = first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. menu_value_pre .. string.sub(params:string(menus[page_index][i]), 1, session_menu_trunc) .. menu_value_suf
-          -- end
-          
-          local session_menu_txt = util.trim_string_to_width(session_menu_txt, 90)
-          
+          local session_menu_txt = first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. menu_value_pre .. params:string(menus[page_index][i]) .. menu_value_suf
           screen.text(session_menu_txt)
         else  
-          screen.text(util.trim_string_to_width(first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. ' ' .. string.sub(params:string(menus[page_index][i]), 1, 16), 90))
-          
+          screen.text(first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. ' ' .. params:string(menus[page_index][i]))
         end
         line = line + 1
       end
