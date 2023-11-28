@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231124 @modularbeat
+-- 231127 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 231114 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23112401'
+  version = '23112701'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -147,7 +147,7 @@ function init()
     for i = 1, 4 do             -- cv
       for j = 0, 4 do           -- env
         if i ~= j then
-            nb.players["crow_ds "..i.."/"..j] = nil
+          nb.players["crow_ds "..i.."/"..j] = nil
         end
       end
     end
@@ -420,7 +420,7 @@ function init()
   ------------------
   -- SEQ PARAMS --
   ------------------
-  params:add_group('seq', 'SEQ', 15)
+  params:add_group('seq', 'SEQ', 16)
 
   params:add_option("seq_note_map_1", "Notes", {'Triad', '7th', 'Mode+Transp.', 'Mode'}, 1)
   
@@ -467,6 +467,9 @@ function init()
   params:add_number('seq_div_index_1', 'Step length', 1, 57, 8, function(param) return divisions_string(param:get()) end)
   params:set_action('seq_div_index_1', function(val) seq_div = division_names[val][1] end)
   
+  params:add_number("seq_swing_1", "Swing", 1, 99, 50)
+  -- params:set_action('seq_swing_1', function(val) seq_counter_offset = round((val - 50) * .01 * global_clock_div) end)
+
   nb:add_param("seq_voice_raw_1", "Voice raw")
   params:hide("seq_voice_raw_1")
 
@@ -570,6 +573,11 @@ function init()
   timing_clock_id = clock.run(timing_clock) --Start a new timing clock to handle note-off
 
   build_scale()
+
+  seq_counter = 0
+  seq_offset = 0
+  seq_target = 0
+  seq_downbeat = true -- wag
 
   -- Send out MIDI stop on launch if clock ports are enabled
   transport_multi_stop()  
@@ -876,7 +884,7 @@ function update_menus()
   menus[2] = {'chord_voice', 'chord_type', 'chord_octave', 'chord_range', 'chord_max_notes', 'chord_inversion', 'chord_style', 'chord_strum_length', 'chord_timing_curve', 'chord_div_index', 'chord_duration_index', 'chord_dynamics', 'chord_dynamics_ramp'}
  
   -- SEQ MENU
-    menus[3] = {'seq_voice_1', 'seq_note_map_1', 'seq_start_on_1', 'seq_reset_on_1', 'seq_octave_1', 'seq_rotate_1','seq_shift_1', 'seq_div_index_1', 'seq_duration_index_1', 'seq_dynamics_1'}
+    menus[3] = {'seq_voice_1', 'seq_note_map_1', 'seq_start_on_1', 'seq_reset_on_1', 'seq_octave_1', 'seq_rotate_1','seq_shift_1', 'seq_div_index_1', 'seq_swing_1', 'seq_duration_index_1', 'seq_dynamics_1'}
 
   -- MIDI HARMONIZER MENU
   menus[4] = {'midi_voice', 'midi_note_map', 'midi_harmonizer_in_port', 'midi_octave', 'midi_duration_index', 'midi_dynamics'}
@@ -1753,7 +1761,9 @@ function sequence_clock(sync_val)
       end
 
       
-      if clock_step % seq_div == 0 then
+      
+      -- if (clock_step - (seq_counter_offset or 0)) % seq_div == 0 then
+      if clock_step == seq_target then
         local seq_start_on_1 = params:get('seq_start_on_1')
         if seq_start_on_1 == 1 then -- Seq end
           advance_seq_pattern()
@@ -1767,6 +1777,18 @@ function sequence_clock(sync_val)
           advance_seq_pattern()
           grid_dirty = true      
         end
+
+        -- move into advance_seq_pattern()?
+        -- next: how to handle div changes
+          if seq_downbeat == true then
+            seq_offset = round((params:get("seq_swing_1") - 50) * .01 * global_clock_div)
+            seq_target = clock_step + seq_div + seq_offset
+          else
+            seq_target = clock_step + seq_div - seq_offset
+          end
+          
+          seq_downbeat = not seq_downbeat
+          print("seq_target " .. seq_target)
       end
 
       -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
