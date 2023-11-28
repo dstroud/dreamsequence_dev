@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231126 @modularbeat
+-- 231128 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 231114 -- todo update with new musicutil
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "23112601"
+  version = "23112801"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -2697,11 +2697,10 @@ end
 
 
 function advance_seq_pattern()
-
-local play = true
+  local play = true
   -- todo: handling setting up/downbeat after div change
 
-  Downbeat setting
+  -- Downbeat setting
   -- 1. For valid div. Test with 0 swing. Calc up/downbeat based on the current logic and set downbeat bool. 
   --    Print and then adjust swing. Check in DAW with 0 swing and make sure it’s consistent relative to absolute beat/transport. 
   --    Eg it’s not enough to just validate beat div. We have to adjust up/downbeat in case swing is added later.
@@ -2771,15 +2770,20 @@ local play = true
           -- local phase_offset = 1
           -- sprocket_seq_1.phase = phase_offset
           
-          if reset_downbeat == true then
-            sprocket_seq_1.downbeat = false -- always force a downbeat on div change
-          else -- let downbeat flip as usual
-          end
+          -- if reset_downbeat == true then
+          --   sprocket_seq_1.downbeat = false -- always force a downbeat on div change
+          -- else -- let downbeat flip as usual
+          -- end
 
           -- -- check if the current transport is a downbeat or not for the NEW div
           -- -- then set it (even if it's a valid div we need to set this for swing)
+          -- pretty sure this works. OKAY!
           local downbeat = (my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division) % 2 == 1)
-          -- sprocket_seq_1.downbeat = downbeat
+          if sprocket_seq_1.downbeat ~= downbeat then
+            print("valid_div changing downbeat from " .. tostring(sprocket_seq_1.downbeat) .. " to " .. tostring(downbeat))            
+            sprocket_seq_1.downbeat = downbeat
+          end
+          
 
           seq_pattern_position = next_pos -- advance pattern
 
@@ -2792,39 +2796,61 @@ local play = true
             "swing_val "..swing_val,
             "beat "..round(clock.get_beats(),2)          
           )
+          
         else --invalid beat division. Block advancement and adjust sprocket phase
           sprocket_seq_1.division = new_div
           params:set("seq_duration_index_1", params:get("seq_div_index_1")) -- debugging
 
-          -- possible that we also need to add swing to the following depending on reset_downbeat pref?
-          -- and should this be additive with existing phase?
-          -- issue is that we're assuming the next beat will be a downbeat and that's not necessarily true
-          -- issue: how to determine if the upcoming beat is going to be an up or downbeat in advance?
-          local phase_offset = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
-          sprocket_seq_1.phase = phase_offset
+          -- Step 1: set the phase relative to new_div
+          -- e.g. 33
+          local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
+          -- print("old phase = " .. sprocket_seq_1.phase .. ", new phase = " .. new_phase)
+          sprocket_seq_1.phase = new_phase
 
-          -- we won't know if it's downbeat or upbeat until the next time sprocket action runs... hmm
-          if reset_downbeat == true then
-            sprocket_seq_1.downbeat = true -- flip to false on next valid step
-          else
-            sprocket_seq_1.downbeat = not sprocket_seq_1.downbeat
-          end
+          -- Step 2: calculate pulses until we can pickup on a non-swing beat
+          -- e.g. 1/8*96*4 = 48
+          local pickup_phase_std = math.floor((new_div * my_lattice.ppqn * 4)) -- no swing_val. May move +1 up to here
+          -- e.g. 48 - 33 + 1 = 16
+          local pulses_to_pickup_std = pickup_phase_std - sprocket_seq_1.phase + 1 -- +1 is because we have to exceed this beat
+          -- e.g. 2432 + 16 = 2448
+          local pickup_beat_std = my_lattice.transport + pulses_to_pickup_std
 
-          -- -- check if the current transport is a downbeat or not for the NEW div
-          -- -- then set it (even if it's a valid div we need to set this for swing)
-          local downbeat = (my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division) % 2 == 1)
-          -- sprocket_seq_1.downbeat = downbeat
+          -----------------------------------------------
+          -- technically we don't need section 3 since we can check downbeat on the std beat
+          -- however, I think this might be needed if we allow swing <50% in which case we'll want to 
+          -- check on the earlier pickup beat
+
+          -- Step 3: calculate pulses until we can pickup on a swing beat
+          -- e.g. 1/8*96*4 *2*60/100 = 57.6 rounded down to 57
+          local pickup_phase_swing = math.floor((new_div * my_lattice.ppqn * 4 * swing_val)) -- * swing_val. May move +1 up to here
+          -- e.g. 57 - 33 + 1 = 25
+          local pulses_to_pickup_swing = pickup_phase_swing - sprocket_seq_1.phase + 1 -- +1 is because we have to exceed this beat
+          -- e.g. 2432 + 25 = 2457 (as in example)
+          local pickup_beat_swing = my_lattice.transport + pulses_to_pickup_swing
+          -----------------------------------------------
+
+          -- Step 4: Check if pickup_beat_std is an upbeat or downbeat and apply inverse here
+          -- e.g. 2448/(96*4*1/8)%2 == 1/FALSE
+          local downbeat = pickup_beat_std/(96*4*1/8)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+          sprocket_seq_1.downbeat = downbeat  -- all the above for this little thing
+
+          -- if downbeat == true then
+          --   print("Resuming on pickup_beat_STD  " .. pickup_beat_std)
+          -- else
+          --   print("Resuming on pickup_beat_SWING  " .. pickup_beat_swing)
+          -- end
           
           print(
             "transport "..string.format("%05d", (my_lattice.transport or 0)), 
             "phase "..sprocket_seq_1.phase,
             -- "db_flip = "..tostring(sprocket_seq_1.phase > sprocket_seq_1.division * my_lattice.ppqn * swing_val),
-            "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
-            tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
+            "downbeat "..tostring(sprocket_seq_1.downbeat), 
+            -- tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
             "swing_val "..swing_val,
             "beat "..round(clock.get_beats(),2), 
             "BLOCKED",
-            "db_calc "..tostring(downbeat)
+            downbeat == true and ("Resuming on pickup_beat_STD  " .. pickup_beat_std) or 
+            ("Resuming on pickup_beat_SWING  " .. pickup_beat_swing)
           )
 
           play = false
@@ -2838,7 +2864,7 @@ local play = true
           "phase "..sprocket_seq_1.phase,
           -- "db_flip = "..tostring(sprocket_seq_1.phase > sprocket_seq_1.division * my_lattice.ppqn * swing_val),
           "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
-          tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
+          -- tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
           "swing_val "..swing_val,
           "beat "..round(clock.get_beats(),2) 
         )
@@ -2851,7 +2877,7 @@ local play = true
         "phase "..sprocket_seq_1.phase,
         -- "db_flip = "..tostring(sprocket_seq_1.phase > sprocket_seq_1.division * my_lattice.ppqn * swing_val),
         "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
-        tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
+        -- tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
         "swing_val "..swing_val,
         "beat "..round(clock.get_beats(),2) 
       )
