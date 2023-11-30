@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231129 @modularbeat
+-- 231130 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -37,7 +37,7 @@ norns.version.required = 231114 -- todo update with new musicutil
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "23112901"
+  version = "23113001"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -370,11 +370,12 @@ function init()
   -- CHORD PARAMS --
   ------------------
   params:add_group("chord", "CHORD", 16)
-  
-  chord_div = 192 -- seems to be some race-condition when loading pset, index value 15, and setting this via param action so here we go
-  
+
   params:add_number("chord_div_index", "Step length", 1, 57, 15, function(param) return divisions_string(param:get()) end)
-  -- params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
+  -- action required here for pset loading. Will then be redefined post-bang with action for lattice
+  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
+  -- chord_div needs to be set *before* the bang happens
+  chord_div = division_names[params:get("chord_div_index")][1]
 
   nb:add_param("chord_voice_raw", "Voice raw")
   params:hide("chord_voice_raw")
@@ -853,91 +854,75 @@ function init()
   end
   
   params:bang()
-
-  -- has to be run to resync sprockets after div change... but NOT doing this results in some pretty spectacular stuff too.
-  -- might want to pass an offset value here to get weird
-  -- function reset_phase_sprocket_seq_1(offset)
-    -- sprocket_seq_1.phase = (sprocket_seq_1.division * my_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay)) + offset
-    -- sprocket_seq_1.phase = 0
-    -- sprocket_reset_seq_1 = true
-  -- end
-
-  -- Some actions need to be added post-bang. I forget why but something to do with setting the chord readout?
+  -- Some actions need to be added post-bang. 
+  -- I forget why but something to do with setting the chord readout?
   params:set_action("mode", function() build_scale(); update_chord_action() end)
+
+  -- Redefine action, this time with sprocket stuff (which will probably be removed later in which case this can be dropped?)
   params:set_action("chord_div_index",function(val) chord_div = division_names[val][1]; sprocket_chord:set_division(chord_div/global_clock_div/4) end)
 
-  params:set_action("seq_swing_1", function(val)
-    sprocket_seq_1:set_swing(val)
-  end)
+  params:set_action("seq_swing_1", function(val) sprocket_seq_1:set_swing(val) end)
 
-  -- params:set_action("seq_div_index_1", function(val) 
-  --     seq_div = division_names[val][1]; 
-  --     sprocket_seq_1:set_division(seq_div/global_clock_div/4);
-  --     reset_phase_sprocket_seq_1(0)
-  -- end)
 
   my_lattice = lattice:new{
     auto = true,
     ppqn = 96
   }
-  -- chord_div = 192  -- fix!
-  chord_swing = 50
   
   sprocket_transport = my_lattice:new_sprocket{
     action = function(t) 
-    -- print("beat "..round(clock.get_beats(),2), 
-    --       "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-    --       "phase "..(sprocket_transport.phase or ""), 
-    --       "sprocket_transport action"
-    --     )  
-
-    if stop == true then
-      local clock_source = params:string("clock_source")
       -- print("beat "..round(clock.get_beats(),2), 
-      -- "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-      -- "phase "..(sprocket_transport.phase or ""), 
-      -- "STOPPING TRANSPORT"
-      -- )  
+      --       "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+      --       "phase "..(sprocket_transport.phase or ""), 
+      --       "sprocket_transport action"
+      --     )  
 
-      if clock_source == "link" then
-        if link_stop_source == "norns" then
-            clock.link.stop()
-            
-            print("beat "..round(clock.get_beats(),2), 
-            "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-            "phase "..(sprocket_transport.phase or ""), 
-            "clock.link.stop sent"
-            )  
+      if stop == true then
+        local clock_source = params:string("clock_source")
+        -- print("beat "..round(clock.get_beats(),2), 
+        -- "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+        -- "phase "..(sprocket_transport.phase or ""), 
+        -- "STOPPING TRANSPORT"
+        -- )  
 
-            transport_multi_stop()
-            transport_active = false
-            transport_state = "paused"
-            print(transport_state)
-            stop = false
-            start = false
-            link_stop_source = nil
-        
-        -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
-        -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
-        -- todo p2 look at options for a start/continue mode for external sources that support this
-        else
-          transport_multi_stop()            
-          if arranger_active then
-            print(transport_state)
+        if clock_source == "link" then
+          if link_stop_source == "norns" then
+              clock.link.stop()
+              
+              print("beat "..round(clock.get_beats(),2), 
+              "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+              "phase "..(sprocket_transport.phase or ""), 
+              "clock.link.stop sent"
+              )  
+
+              transport_multi_stop()
+              transport_active = false
+              transport_state = "paused"
+              print(transport_state)
+              stop = false
+              start = false
+              link_stop_source = nil
+          
+          -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+          -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+          -- todo p2 look at options for a start/continue mode for external sources that support this
           else
-            reset_pattern()
+            transport_multi_stop()            
+            if arranger_active then
+              print(transport_state)
+            else
+              reset_pattern()
+            end
+            transport_active = false
+            reset_arrangement()
+            transport_state = "stopped"
+            stop = false
           end
-          transport_active = false
-          reset_arrangement()
-          transport_state = "stopped"
-          stop = false
-        end
-      
-
-      -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-      -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-      -- todo p1 also use this when running off norns link beat_count
-      else
+        
+        -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+        -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+        -- todo p1 also use this when running off norns link beat_count
+        else
           transport_multi_stop()
           transport_active = false
           if transport_state ~= "stopped" then -- Probably a better way of blocking this
@@ -946,32 +931,30 @@ function init()
           end
           stop = false
           start = false
-      
-      end
+        end
 
-      -- for all clock sources
-      my_lattice:stop()
+        -- for all clock sources
+        my_lattice:stop()
 
-      -- roll back sprocket phase one tick (when stopping at the the beginning of the beat)
-      sprocket_transport.phase = sprocket_transport.phase - 1
-      sprocket_chord.phase = sprocket_chord.phase - 1
-      sprocket_seq_1.phase = sprocket_seq_1.phase - 1
+        -- roll back sprocket phase one tick (when stopping at the the beginning of the beat)
+        sprocket_transport.phase = sprocket_transport.phase - 1
+        sprocket_chord.phase = sprocket_chord.phase - 1
+        sprocket_seq_1.phase = sprocket_seq_1.phase - 1
 
-      -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
-      -- -- but sometimes doesn't. IDK.
-      -- my_lattice.transport = -1
-      -- sprocket_transport.phase = sprocket_transport.phase + 3
-      -- sprocket_chord.phase = sprocket_chord.phase + 3
-      -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
+        -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
+        -- -- but sometimes doesn't. IDK.
+        -- my_lattice.transport = -1
+        -- sprocket_transport.phase = sprocket_transport.phase + 3
+        -- sprocket_chord.phase = sprocket_chord.phase + 3
+        -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
 
-      -- -- option to re-sync out-of-phase sprocket
-      -- reset_phase_sprocket_seq_1(0)
+        -- -- option to re-sync out-of-phase sprocket
+        -- reset_phase_sprocket_seq_1(0)
 
-    end -- of Stop handling
+      end -- of Stop handling
   
-
-
     end,
+
     division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
     -- delay = (my_lattice.ppqn - 1) / my_lattice.ppqn, -- optional logic to stop near the end of the beat
     order = 1,
@@ -979,84 +962,57 @@ function init()
   }
 
 
-  sprocket_chord = my_lattice:new_sprocket{
-    action = function(t) 
+  function init_sprocket_chord(div)
+    sprocket_chord = my_lattice:new_sprocket{
+      action = function(t) 
+        get_next_chord()  -- No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
+        advance_chord_pattern()
+        grid_dirty = true 
+      end,
+      division = div,
+      swing = 50, -- TODO!
+      order = 2,
+      enabled = true
+    }
+  end
+  -- some weirdness around order in which param actions fire. So we do via a function the first time.
+  init_sprocket_chord(division_names[params:get("chord_div_index")][1]/global_clock_div/4)
 
-      -- -- update seq div first so this can be superceded by events
-      -- if type(sprocket_seq_1) == "table" then -- find a better way. Only for init when sprocket_seq has yet to be created
-      --   local new_div = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
-      --   -- print("sprocket_seq_1.division = " .. sprocket_seq_1.division)
-      --   -- print("new_div = " .. new_div)
-      --   if sprocket_seq_1.division ~= new_div then 
-      --     print("SETTING NEW DIV")
-      --     sprocket_seq_1:set_division(new_div)
-      --     reset_phase_sprocket_seq_1(0)
-      --   end
-      -- end
-
-      -- print("sprocket_chord action firing", t) 
-      get_next_chord()  -- deprecate probably or move to new sprocket
-      advance_chord_pattern()
-      grid_dirty = true 
-    end,
-    -- some weirdness here around order in which param actions fire. So we do it the hard way at sprocket init
-    division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
-    swing = chord_swing,
-    order = 2,
-    enabled = true
-  }
-    
   
-  -- seq_div = 24 -- fix!
-  -- seq_swing = 50
-
   function init_sprocket_seq_1(div)
-    -- if type(sprocket_seq_1) == "table" then
-    --   sprocket_seq_1:destroy()
-    -- end
-
     sprocket_seq_1 = my_lattice:new_sprocket{
       action = function(t) 
         local seq_start_on_1 = params:get("seq_start_on_1")
         if seq_start_on_1 == 1 then -- Seq end
-        -- print(my_lattice.transport, sprocket_seq_1.downbeat)
-        -- print("db_flip = "..tostring(sprocket_seq_1.phase > sprocket_seq_1.division * my_lattice.ppqn * (2 * sprocket_seq_1.swing / 100)))
-
           advance_seq_pattern()
           grid_dirty = true
+
+        -- todo: see if this has any use? Commented out in 1.2.7  
         -- elseif seq_start_on_1 == 4 then  -- Cue
         --   if seq_1_shot_1 == true then  -- seq_1_shot_1 is sort of an override for play_seq that takes priority when in seq_start_on_1 "cue" mode
         --     advance_seq_pattern()
         --     grid_dirty = true
         --   end
+
         elseif play_seq then
           advance_seq_pattern()
           grid_dirty = true      
         end
 
-        -- print("beat "..round(clock.get_beats(),2), 
-        -- "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-        -- "phase "..(sprocket_seq_1.phase or ""), 
-        -- "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
-        -- "sprocket_seq_1 action")
-
       end,
-      -- some weirdness here around order in which param actions fire. So we do it the hard way at sprocket init
-      -- division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4,
+
       division = div,
       swing = params:get("seq_swing_1"),
       enabled = true
     } 
   end
-
+  -- some weirdness around order in which param actions fire. So we do via a function the first time. 
   init_sprocket_seq_1(division_names[params:get("seq_div_index_1")][1]/global_clock_div/4)
 
-  
-  
-
+  -- todo: seen some issues with grid freezing still. I thought this would fix it but maybe lower rate further.
   grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
-  grid_redraw_metro:start()
   grid_dirty = true
+  grid_redraw_metro:start()
 
   -- screen refresh and blinkies
   countdown_timer = metro.init()
@@ -1064,37 +1020,31 @@ function init()
   countdown_timer.time = 0.1 -- 1/15
   countdown_timer.count = -1
   countdown_timer:start()
-  
-  grid_dirty = true
-  -- screen_dirty = true -- redraw()
-end
 
-
-
-  -- UPDATE_MENUS. todo p2: can be optimized by only calculating the current view+page or when certain actions occur
-function update_menus()
-  -- GLOBAL MENU 
-    menus[1] = {"mode", "transpose", "clock_tempo", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
-  
-  -- CHORD MENU
-  menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_dynamics", "chord_dynamics_ramp"}
- 
-  -- SEQ MENU
-    menus[3] = {"seq_voice_1", "seq_note_map_1", "seq_start_on_1", "seq_reset_on_1", "seq_octave_1", "seq_rotate_1", "seq_shift_1", "seq_div_index_1", "seq_swing_1", "seq_accent_1", "seq_duration_index_1", "seq_dynamics_1"}
-
-  -- MIDI HARMONIZER MENU
-  menus[4] = {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"}
-
-  -- CV HARMONIZER MENU
-    menus[5] = {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index", "crow_dynamics"}
-end
+end -- end of init
 
 
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
-
   
+function update_menus()
+  -- GLOBAL MENU 
+  menus[1] = {"mode", "transpose", "clock_tempo", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
+  
+  -- CHORD MENU
+  menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_dynamics", "chord_dynamics_ramp"}
+ 
+  -- SEQ MENU
+  menus[3] = {"seq_voice_1", "seq_note_map_1", "seq_start_on_1", "seq_reset_on_1", "seq_octave_1", "seq_rotate_1", "seq_shift_1", "seq_div_index_1", "seq_swing_1", "seq_accent_1", "seq_duration_index_1", "seq_dynamics_1"}
+
+  -- MIDI HARMONIZER MENU
+  menus[4] = {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"}
+
+  -- CV HARMONIZER MENU
+  menus[5] = {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index", "crow_dynamics"}
+end
+
 -- -- takes offset (milliseconds) input and converts to a beat-based value suitable for clock.sync offset
 -- -- called by offset param action and clock.tempo_change_handler() callback
 -- function ms_to_beats(ms)
@@ -1174,7 +1124,7 @@ function gen_voice_lookups()
 end
 
 
--- updates voice selector options and sets (or resets) new param index after crow_out param changes
+-- updates voice selector options and sets (or resets) new param index after custom crow_out param changes
 function update_voice_params()
   -- todo p0 hit all voice params
   local sources = {"chord", "seq", "crow", "midi"}
@@ -1196,11 +1146,12 @@ function update_voice_params()
   end
 end
    
-    
-    -- return first number from a string
+
+-- return first number from a string
 function find_number(string)
   return tonumber(string.match (string, "%d+"))
 end
+
 
 function reset_lattice()  -- wag
   my_lattice.transport = 0
@@ -1209,12 +1160,14 @@ function reset_lattice()  -- wag
   reset_sprocket_seq_1("reset_lattice")
 end
 
+
 function reset_sprocket_transport(from)
   print("reset_sprocket_transport() called by " .. from)
   -- sprocket_transport.phase = -1
   sprocket_transport.phase = sprocket_transport.division * my_lattice.ppqn * 4 * (1 - sprocket_transport.delay)
   sprocket_chord.downbeat = false
 end
+
 
 function reset_sprocket_chord(from)
   print("reset_sprocket_chord() called by " .. from)
@@ -1224,6 +1177,7 @@ function reset_sprocket_chord(from)
   sprocket_chord.downbeat = false
 end
 
+
 function reset_sprocket_seq_1(from)
   print("reset_sprocket_seq_1() called by " .. from)
   sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
@@ -1231,6 +1185,7 @@ function reset_sprocket_seq_1(from)
   sprocket_seq_1.phase = sprocket_seq_1.division * my_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay)
   sprocket_seq_1.downbeat = false
 end
+
 
 function set_sprocket_seq_1_div() -- called by advance_chord_pattern to depending on reset_on method
   local new_div = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
@@ -1243,138 +1198,17 @@ function set_sprocket_seq_1_div() -- called by advance_chord_pattern to dependin
   end
 end
 
--- -- check if string ends with, uh, ends_with
--- function ends_with(string, ends_with)
---   return string:sub(-#ends_with) == ends_with
--- end
-  
-  
--- -- return .pset number as string assuming format is "dreamsequence-xxxx.pset"
--- function pset_number(string)
---   return string.sub(string, 15, string.len(string) - 5)
--- end
-
-
--- function init_cache()  
---   -- check /home/we/dust/data/dreamsequence/ for any .psets and store their "numbers" as strings in valid_psets
---   -- this table is used to search for matching table .data files that need to be loaded into the cache
---   script_data = util.scandir(norns.state.data)
---   valid_psets = {}
---   for i = 1, #script_data do
---     if ends_with(script_data[i], ".pset") then
---       table.insert(valid_psets, pset_number(script_data[i]))
---     end
---   end
---   -- cache all .psets and .data tables for numbered directories having a valid .pset
---   pset_data_cache = {}
---   for i = 1, #valid_psets do
---     cache(valid_psets[i])
---   end
--- end
-
-
--- function cache(number)  
---   local data_fp = norns.state.data..number.."/"
---   pset_data_cache[number] = {} -- init table using the preset number AS A STRING
---   manual_pset_cache(number)
-  
---   if util.file_exists(data_fp) then -- this can also fire upstream so might want to optimize
---     -- pset_data_cache[number] = {} -- init table using the preset number AS A STRING
---     misc = {}
---     for tables = 1,7 do
---       local tablename = pset_lookup[tables]
---       if util.file_exists(data_fp..tablename..".data") then
---         -- pset_data_cache[number] = {} -- init a table using the preset number AS A STRING
---         pset_data_cache[number][tablename] = tab.load(data_fp..tablename..".data")
---       print("table >> cache: " .. data_fp..tablename..".data")
---       end
---     end
---   end
--- end
-
-
-
---   -- hacked bit from paramset.lua
---   --- read from disk.
---   -- @tparam string filename either an absolute path, number (to read [scriptname]-[number].pset from local data folder) or nil (to read pset number specified by pset-last.txt in the data folder)
---   -- @tparam boolean silent if true, do not trigger parameter actions
---   -- TODO: does this also need to set norns.state.pset_last?
--- function manual_pset_cache(number, silent)
---     -- filename = filename
---   -- filename = filename or norns.state.pset_last
-  
---   local function unquote(s)
---     return s:gsub('^"', ''):gsub('"$', ''):gsub('\\"', '"')
---   end
-
---   -- local pset_number;
---   -- if type(filename) == "number" then
---     -- local n = filename
---     -- filename = norns.state.data .. norns.state.shortname
---     -- pset_number = string.format("%02d",n)
---     -- local pset_number = filename
---     filename = norns.state.data .. norns.state.shortname .. "-" .. number .. ".pset"
---   -- end
---   -- print(filename)
---   print("pset >> read: " .. filename)
---   local fd = io.open(filename, "r")
---   if fd then
---     io.close(fd)
---     local param_already_set = {}
---     pset_data_cache[number]["pset"] = {}
---     local line_count = 0 
---     for line in io.lines(filename) do
---       if util.string_starts(line, "--") then
---         params.name = string.sub(line, 4, -1)
---       else
---         local id, value = string.match(line, "(\".-\")%s*:%s*(.*)")
---         if id and value then
---           line_count = line_count + 1
---           pset_data_cache[number]["pset"][line_count] = {}
---           id = unquote(id)
---           local index = params.lookup[id]
---           if index and params.params[index] and not param_already_set[index] then
---             if tonumber(value) ~= nil then
---               pset_data_cache[number]["pset"][line_count].id = index
---               pset_data_cache[number]["pset"][line_count].value = tonumber(value)
---             elseif value == "-inf" then
---               pset_data_cache[number]["pset"][line_count].id = index
---               pset_data_cache[number]["pset"][line_count].value = -math.huge              
---             elseif value == "inf" then
---               pset_data_cache[number]["pset"][line_count].id = index
---               pset_data_cache[number]["pset"][line_count].value = math.huge      
---             elseif value then
---               pset_data_cache[number]["pset"][line_count].id = index
---               pset_data_cache[number]["pset"][line_count].value = value
---             end
---             param_already_set[index] = true
---           end
---         end
---       end
---     end
---     -- if self.action_read ~= nil then 
---     --   self.action_read(filename,silent,pset_number)
---     -- end
---   else
---     -- print("pset :: "..filename.." not read.")
---   end
--- end
-
 
 -- todo p3 move with other MusicUtil functions
 function build_scale()
-  -- print("build_scale " .. params:string("mode"))
-  -- builds scale for quantization. 14 steps + diatonic transposition offset
   notes_nums = MusicUtil.generate_scale_of_length(0, params:get("mode"), 7)
-  -- todo p2 might generate freqs for engine and use for chords too?
-  -- notes_freq = MusicUtil.note_nums_to_freqs(notes_nums) -- converts note numbers to an array of frequencies
 end
   
   --todo p3 move and can simplify by arg concats (rename pattern to active_chord_pattern)
 function pattern_rotate_abs(source)
   local new_rotation_val = params:get(source)
   if source == "seq_rotate_1" then
-    local offset = (new_rotation_val or 0) - (current_rotation_seq or 0) -- I actually have no idea why this requires the or 0 WTF??
+    local offset = new_rotation_val - (current_rotation_seq or 0)
     local length = seq_pattern_length[active_seq_pattern]
     local temp_seq_pattern = {}
     for i = 1, length do
@@ -1382,10 +1216,10 @@ function pattern_rotate_abs(source)
     end
     
     for i = 1, length do
-      seq_pattern[active_seq_pattern][i] = temp_seq_pattern[util.wrap(i - (offset - current_rotation_seq), 1, length)]
+      seq_pattern[active_seq_pattern][i] = temp_seq_pattern[util.wrap(i - (offset), 1, length)]
     end
     
-    current_rotation_seq = offset
+    current_rotation_seq = params:get(source)
     
   end
   grid_dirty = true
@@ -1395,22 +1229,23 @@ end
 --todo p3 move and can simplify by arg concats (rename pattern to active_chord_pattern)
 function pattern_shift_abs(source)
   local new_shift_val = params:get(source)
+  -- print("DEBUG SHIFT", (current_shift_seq or 0), new_shift_val)
   if source == "seq_shift_1" then
-    local offset = (new_shift_val or 0) - (current_shift_seq or 0) -- I actually have no idea why this requires the or 0 WTF??
+    local offset = new_shift_val - (current_shift_seq or 0)
     for y = 1, max_seq_pattern_length do
       if seq_pattern[active_seq_pattern][y] ~= 0 then
-        seq_pattern[active_seq_pattern][y] = util.wrap(seq_pattern[active_seq_pattern][y] + offset - current_shift_seq, 1, 14)
+        seq_pattern[active_seq_pattern][y] = util.wrap(seq_pattern[active_seq_pattern][y] + offset, 1, 14)
       end
     end    
-    current_shift_seq = offset
+    current_shift_seq = params:get(source)
   elseif source == "chord_shift" then
-    local offset = (new_shift_val or 0) - (current_shift_chord or 0) -- I actually have no idea why this requires the or 0 WTF??
+    local offset = new_shift_val - (current_shift_chord or 0)
     for y = 1, max_chord_pattern_length do
       if chord_pattern[active_chord_pattern][y] ~= 0 then
-        chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + offset - current_shift_chord, 1, 14)
+        chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + offset, 1, 14)
       end
     end    
-    current_shift_chord = offset  
+    current_shift_chord = params:get(source)  
   end
   grid_dirty = true
 end
@@ -2038,7 +1873,7 @@ end
 
 function calc_seconds_remaining()
   if arranger_active then
-    percent_step_elapsed = arranger_position == 0 and 0 or (math.max(clock_step,0) % chord_div / (chord_div-1))
+    percent_step_elapsed = arranger_position == 0 and 0 or (math.max(clock_step,0) % chord_div / (chord_div-1)) -- todo kill chord_div?
     seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
   else
     seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (steps_remaining_in_active_pattern or 0))
@@ -2593,9 +2428,7 @@ function play_chord()
       local dynamics = params:get("chord_dynamics") * .01
       local dynamics = dynamics + (dynamics * params:get("chord_dynamics_ramp") * .01 * elapsed)
       local dynamics = util.clamp(dynamics, 0, 1) -- per destination
-      local note = chord_transformed[i] + params:get("transpose") + 12 + (params:get("chord_octave") * 12) + 36 -- todo octave
-      
-      print("dynamics ", dynamics)
+      local note = chord_transformed[i] + params:get("transpose") + (params:get("chord_octave") * 12) + 48
       to_player(player, note, dynamics, chord_duration)
 
       if playback ~= "Off" and note_qty ~= 1 then
@@ -2759,7 +2592,7 @@ function advance_seq_pattern()
         debug_change_count = debug_change_count + 1
         
         sprocket_seq_1.division = new_div
-        -- params:set("seq_duration_index_1", params:get("seq_div_index_1")) -- todo: make a feature
+        params:set("seq_duration_index_1", params:get("seq_div_index_1")) -- todo: make a feature
 
         -- First check is to see if the current transport is "valid" for the new division
         if valid_div == true then
@@ -2932,6 +2765,7 @@ function advance_seq_pattern()
      end
   end
 end
+
 
 
 -- cv harmonizer input
