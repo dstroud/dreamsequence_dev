@@ -20,7 +20,6 @@
 -- Crow OUT 3: Clock out
 -- Crow OUT 4: Events out
 
-
 g = grid.connect()
 if type(g.device) == "table" then
   rows = g.device.rows or 8
@@ -572,6 +571,7 @@ function init()
   -- INIT STUFF
   -----------------------------
   -- redraw_count = 0 -- todo p0 debug remove
+  strum_clock = -1 -- fake initial clock id/thread
   debug_change_count = 0 -- todo remove
   start = false
   transport_state = "stopped"
@@ -872,102 +872,167 @@ function init()
     ppqn = 96
   }
   
-  sprocket_transport = my_lattice:new_sprocket{
-    action = function(t) 
-      -- print("beat "..round(clock.get_beats(),2), 
-      --       "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-      --       "phase "..(sprocket_transport.phase or ""), 
-      --       "sprocket_transport action"
-      --     )  
-
-      if stop == true then
-        local clock_source = params:string("clock_source")
-        -- print("beat "..round(clock.get_beats(),2), 
-        -- "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-        -- "phase "..(sprocket_transport.phase or ""), 
-        -- "STOPPING TRANSPORT"
-        -- )  
-
-        if clock_source == "link" then
-          if link_stop_source == "norns" then
-              clock.link.stop()
+  -- sprocket_transport = my_lattice:new_sprocket{
+  --   action = function(t) 
+  --     if stop == true then
+  --       local clock_source = params:string("clock_source")
+  --       if clock_source == "link" then
+  --         if link_stop_source == "norns" then
+  --             clock.link.stop()
               
-              print("beat "..round(clock.get_beats(),2), 
-              "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-              "phase "..(sprocket_transport.phase or ""), 
-              "clock.link.stop sent"
-              )  
+  --             print("beat "..round(clock.get_beats(),2), 
+  --             "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+  --             "phase "..(sprocket_transport.phase or ""), 
+  --             "clock.link.stop sent"
+  --             )  
 
-              transport_multi_stop()
-              transport_active = false
-              transport_state = "paused"
-              print(transport_state)
-              stop = false
-              start = false
-              link_stop_source = nil
+  --             transport_multi_stop()
+  --             transport_active = false
+  --             transport_state = "paused"
+  --             print(transport_state)
+  --             stop = false
+  --             start = false
+  --             link_stop_source = nil
           
-          -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
-          -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
-          -- todo p2 look at options for a start/continue mode for external sources that support this
-          else
-            transport_multi_stop()            
-            if arranger_active then
-              print(transport_state)
-            else
-              reset_pattern()
-            end
-            transport_active = false
-            reset_arrangement()
-            transport_state = "stopped"
-            stop = false
-          end
+  --         -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+  --         -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+  --         -- todo p2 look at options for a start/continue mode for external sources that support this
+  --         else
+  --           transport_multi_stop()            
+  --           if arranger_active then
+  --             print(transport_state)
+  --           else
+  --             reset_pattern()
+  --           end
+  --           transport_active = false
+  --           reset_arrangement()
+  --           transport_state = "stopped"
+  --           stop = false
+  --         end
         
-        -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-        -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-        -- todo p1 also use this when running off norns link beat_count
-        else
-          transport_multi_stop()
-          transport_active = false
-          if transport_state ~= "stopped" then -- Probably a better way of blocking this
+  --       -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+  --       -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+  --       -- todo p1 also use this when running off norns link beat_count
+  --       else
+  --         transport_multi_stop()
+  --         transport_active = false
+  --         if transport_state ~= "stopped" then -- Probably a better way of blocking this
+  --           transport_state = "paused"
+  --           print(transport_state)
+  --         end
+  --         stop = false
+  --         start = false
+  --       end
+
+  --       -- for all clock sources
+  --       my_lattice:stop()
+
+  --       -- roll back transport and sprocket phase one pulse (when stopping at the the beginning of the beat)
+  --       -- todo: test more with swing settings
+  --       my_lattice.transport = my_lattice.transport - 1
+  --       sprocket_transport.phase = sprocket_transport.phase - 1
+  --       sprocket_chord.phase = sprocket_chord.phase - 1
+  --       sprocket_seq_1.phase = sprocket_seq_1.phase - 1
+
+  --       -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
+  --       -- -- but sometimes doesn't. IDK.
+  --       -- my_lattice.transport = -1
+  --       -- sprocket_transport.phase = sprocket_transport.phase + 3
+  --       -- sprocket_chord.phase = sprocket_chord.phase + 3
+  --       -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
+
+  --       -- -- option to re-sync out-of-phase sprocket
+  --       -- reset_phase_sprocket_seq_1(0)
+
+  --     end -- of Stop handling
+  
+  --   end,
+
+  --   division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
+  --   -- delay = (my_lattice.ppqn - 1) / my_lattice.ppqn, -- optional logic to stop near the end of the beat
+  --   order = 1,
+  --   enabled = true
+  -- }
+
+  function stop_handler()
+    if stop == true then
+      local clock_source = params:string("clock_source")
+      if clock_source == "link" then
+        if link_stop_source == "norns" then
+            clock.link.stop()
+            
+            print("beat "..round(clock.get_beats(),2), 
+            "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+            "phase "..(sprocket_chord.phase or ""), 
+            "clock.link.stop sent"
+            )  
+
+            transport_multi_stop()
+            transport_active = false
             transport_state = "paused"
             print(transport_state)
+            stop = false
+            start = false
+            link_stop_source = nil
+        
+        -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+        -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+        -- todo p2 look at options for a start/continue mode for external sources that support this
+        else
+          transport_multi_stop()            
+          if arranger_active then
+            print(transport_state)
+          else
+            reset_pattern()
           end
+          transport_active = false
+          reset_arrangement()
+          transport_state = "stopped"
           stop = false
-          start = false
         end
+      
+      -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+      -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+      -- todo p1 also use this when running off norns link beat_count
+      else
+        transport_multi_stop()
+        transport_active = false
+        if transport_state ~= "stopped" then -- Probably a better way of blocking this
+          transport_state = "paused"
+          print(transport_state)
+        end
+        stop = false
+        start = false
+      end
 
-        -- for all clock sources
-        my_lattice:stop()
+      -- for all clock sources
+      my_lattice:stop()
 
-        -- roll back sprocket phase one tick (when stopping at the the beginning of the beat)
-        sprocket_transport.phase = sprocket_transport.phase - 1
-        sprocket_chord.phase = sprocket_chord.phase - 1
-        sprocket_seq_1.phase = sprocket_seq_1.phase - 1
+      -- roll back transport and sprocket phase one pulse (when stopping at the the beginning of the beat)
+      -- todo: test more with swing settings
+      my_lattice.transport = my_lattice.transport - 1
+      -- sprocket_transport.phase = sprocket_transport.phase - 1
+      sprocket_chord.phase = sprocket_chord.phase - 1
+      sprocket_seq_1.phase = sprocket_seq_1.phase - 1
 
-        -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
-        -- -- but sometimes doesn't. IDK.
-        -- my_lattice.transport = -1
-        -- sprocket_transport.phase = sprocket_transport.phase + 3
-        -- sprocket_chord.phase = sprocket_chord.phase + 3
-        -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
+      -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
+      -- -- but sometimes doesn't. IDK.
+      -- my_lattice.transport = -1
+      -- sprocket_transport.phase = sprocket_transport.phase + 3
+      -- sprocket_chord.phase = sprocket_chord.phase + 3
+      -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
 
-        -- -- option to re-sync out-of-phase sprocket
-        -- reset_phase_sprocket_seq_1(0)
+      -- -- option to re-sync out-of-phase sprocket
+      -- reset_phase_sprocket_seq_1(0)
 
-      end -- of Stop handling
-  
-    end,
-
-    division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
-    -- delay = (my_lattice.ppqn - 1) / my_lattice.ppqn, -- optional logic to stop near the end of the beat
-    order = 1,
-    enabled = true
-  }
+    end -- of Stop handling 
+  end  
 
 
   function init_sprocket_chord(div)
     sprocket_chord = my_lattice:new_sprocket{
       action = function(t) 
+        stop_handler()
         get_next_chord()  -- No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
         advance_chord_pattern()
         grid_dirty = true 
@@ -1158,18 +1223,18 @@ end
 
 function reset_lattice()  -- wag
   my_lattice.transport = 0
-  reset_sprocket_transport("reset_lattice")
+  -- reset_sprocket_transport("reset_lattice")
   reset_sprocket_chord("reset_lattice")
   reset_sprocket_seq_1("reset_lattice")
 end
 
 
-function reset_sprocket_transport(from)
-  print("reset_sprocket_transport() called by " .. from)
-  -- sprocket_transport.phase = -1
-  sprocket_transport.phase = sprocket_transport.division * my_lattice.ppqn * 4 * (1 - sprocket_transport.delay)
-  sprocket_chord.downbeat = false
-end
+-- function reset_sprocket_transport(from)
+--   print("reset_sprocket_transport() called by " .. from)
+--   -- sprocket_transport.phase = -1
+--   sprocket_transport.phase = sprocket_transport.division * my_lattice.ppqn * 4 * (1 - sprocket_transport.delay)
+--   sprocket_chord.downbeat = false
+-- end
 
 
 function reset_sprocket_chord(from)
@@ -1978,7 +2043,12 @@ function clock.transport.start(sync_value)
 
     -- print("starting lattice")
     -- transport_state = "playing" -- new
-    print("beat "..round(clock.get_beats(),2), "pos "..string.format("%05d", (my_lattice.transport or 0)), "phase "..(sprocket_transport.phase or ""), "my_lattice:start")  
+    print("transport "..string.format("%05d", (my_lattice.transport or 0)), 
+    "phase "..(sprocket_chord.phase or ""),
+    "beat "..round(clock.get_beats(),2),
+    "my_lattice:start")
+
+    -- print("beat "..round(clock.get_beats(),2), "pos "..string.format("%05d", (my_lattice.transport or 0)), "phase "..(sprocket_transport.phase or ""), "my_lattice:start")  
     my_lattice:start()
   end)
 
@@ -2577,9 +2647,10 @@ function play_chord()
   local note_sequence = 0
   local player = params:lookup_param("chord_voice_raw"):get_player()
 
-  clock.run(function()
+  clock.cancel(strum_clock) -- chord can be interrupted by another (due to swing)
+  strum_clock = clock.run(function()
+
     for i = start, finish, step do
-      
       local note_sequence = playback == "High-low" and (note_qty + 1 - i) or i  -- force counting upwards
       local elapsed = note_qty == 1 and 0 or (note_sequence - 1) / (note_qty - 1)
       local dynamics = params:get("chord_dynamics") * .01
@@ -2597,6 +2668,7 @@ function play_chord()
       
     end
   end)    
+ 
 end
 
 
