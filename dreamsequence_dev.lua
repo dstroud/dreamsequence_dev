@@ -268,7 +268,7 @@ function init()
   ------------------
   -- GLOBAL PARAMS --
   ------------------
-  params:add_group("global", "GLOBAL", 11)
+  params:add_group("global", "GLOBAL", 12)
   
   params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
   
@@ -290,8 +290,10 @@ function init()
   params:set_action("crow_out_4",function() gen_voice_lookups(); update_voice_params() end)  
 
   -- Crow clock uses hybrid notation/PPQN
-  params:add_number("crow_clock_index", "Crow Clk", 1, 65, 7,function(param) return crow_clock_string(param:get()) end)
+  params:add_number("crow_clock_index", "Crow clk", 1, 65, 7,function(param) return crow_clock_string(param:get()) end)
   params:set_action("crow_clock_index",function(param) set_crow_clock(param) end)    
+  
+  params:add_number("crow_clock_swing", "Crow swing", 50, 99, 50, function(param) return percent(param:get()) end)
   
   params:add_number("dedupe_threshold", "Dedupe <", 0, 10, div_to_index("1/32"), function(param) return divisions_string(param:get()) end)
   params:set_action("dedupe_threshold", function() dedupe_threshold() end)
@@ -535,7 +537,7 @@ function init()
   ------------------
   -- CV HARMONIZER PARAMS --
   ------------------
-  params:add_group("cv_harmonizer", "CV HARMONIZER", 9)
+  params:add_group("cv_harmonizer", "CV HARMONIZER", 10)
   
   nb:add_param("crow_voice_raw", "Voice raw")
   params:hide("crow_voice_raw")
@@ -544,7 +546,7 @@ function init()
   params:set_action("crow_voice", function(index) params:set("crow_voice_raw", voice_param_index[index]) end)
   
   params:add_number("crow_div_index", "Trigger", 1, 56, 56, function(param) return crow_trigger_string(param:get()) end)
-  params:set_action("crow_div_index", function(val) crow_div = crow_trigger_names[val][1] end)  
+  params:set_action("crow_div_index", function(val) crow_div = crow_trigger_names[val][1] end)  -- TODO CHECK THIS
   
   params:add_option("crow_note_map", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode"}, 1)
 
@@ -554,6 +556,8 @@ function init()
   params:set_action("crow_duration_index", function(val) crow_duration = division_names[val][1] end) -- pointless?
   
   params:add_number("crow_octave", "Octave", -4, 4, 0)
+  
+  params:add_number("cv_harm_swing", "Swing", 50, 99, 50, function(param) return percent(param:get()) end)
   
   params:add_number("crow_dynamics", "Dynamics", 0, 100, 70, function(param) return percent(param:get()) end)
 
@@ -865,6 +869,8 @@ function init()
 
   params:set_action("seq_swing_1", function(val) sprocket_seq_1:set_swing(val) end)
   params:set_action("chord_swing", function(val) sprocket_chord:set_swing(val) end)
+  params:set_action("cv_harm_swing", function(val) sprocket_cv_harm:set_swing(val) end)
+  params:set_action("crow_clock_swing", function(val) sprocket_crow_clock:set_swing(val) end)
 
 
   my_lattice = lattice:new{
@@ -872,87 +878,6 @@ function init()
     ppqn = 96
   }
   
-  -- sprocket_transport = my_lattice:new_sprocket{
-  --   action = function(t) 
-  --     if stop == true then
-  --       local clock_source = params:string("clock_source")
-  --       if clock_source == "link" then
-  --         if link_stop_source == "norns" then
-  --             clock.link.stop()
-              
-  --             print("beat "..round(clock.get_beats(),2), 
-  --             "pos "..string.format("%05d", (my_lattice.transport or 0)), 
-  --             "phase "..(sprocket_transport.phase or ""), 
-  --             "clock.link.stop sent"
-  --             )  
-
-  --             transport_multi_stop()
-  --             transport_active = false
-  --             transport_state = "paused"
-  --             print(transport_state)
-  --             stop = false
-  --             start = false
-  --             link_stop_source = nil
-          
-  --         -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
-  --         -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
-  --         -- todo p2 look at options for a start/continue mode for external sources that support this
-  --         else
-  --           transport_multi_stop()            
-  --           if arranger_active then
-  --             print(transport_state)
-  --           else
-  --             reset_pattern()
-  --           end
-  --           transport_active = false
-  --           reset_arrangement()
-  --           transport_state = "stopped"
-  --           stop = false
-  --         end
-        
-  --       -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-  --       -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-  --       -- todo p1 also use this when running off norns link beat_count
-  --       else
-  --         transport_multi_stop()
-  --         transport_active = false
-  --         if transport_state ~= "stopped" then -- Probably a better way of blocking this
-  --           transport_state = "paused"
-  --           print(transport_state)
-  --         end
-  --         stop = false
-  --         start = false
-  --       end
-
-  --       -- for all clock sources
-  --       my_lattice:stop()
-
-  --       -- roll back transport and sprocket phase one pulse (when stopping at the the beginning of the beat)
-  --       -- todo: test more with swing settings
-  --       my_lattice.transport = my_lattice.transport - 1
-  --       sprocket_transport.phase = sprocket_transport.phase - 1
-  --       sprocket_chord.phase = sprocket_chord.phase - 1
-  --       sprocket_seq_1.phase = sprocket_seq_1.phase - 1
-
-  --       -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
-  --       -- -- but sometimes doesn't. IDK.
-  --       -- my_lattice.transport = -1
-  --       -- sprocket_transport.phase = sprocket_transport.phase + 3
-  --       -- sprocket_chord.phase = sprocket_chord.phase + 3
-  --       -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
-
-  --       -- -- option to re-sync out-of-phase sprocket
-  --       -- reset_phase_sprocket_seq_1(0)
-
-  --     end -- of Stop handling
-  
-  --   end,
-
-  --   division = division_names[params:get("chord_div_index")][1]/global_clock_div/4,
-  --   -- delay = (my_lattice.ppqn - 1) / my_lattice.ppqn, -- optional logic to stop near the end of the beat
-  --   order = 1,
-  --   enabled = true
-  -- }
 
   function stop_handler()
     if stop == true then
@@ -1039,13 +964,33 @@ function init()
       end,
       division = div,
       swing = 50, -- TODO!
-      order = 2,
+      order = 1,
       enabled = true
     }
   end
   -- some weirdness around order in which param actions fire. So we do via a function the first time.
   init_sprocket_chord(division_names[params:get("chord_div_index")][1]/global_clock_div/4)
 
+  
+  function init_sprocket_crow_clock(div)
+    sprocket_crow_clock = my_lattice:new_sprocket{
+      action = function(t) 
+  
+        if params:get("crow_out_4") == 5 then
+          crow_clock_out()
+        end
+
+      end,
+
+      division = div,
+      swing = params:get("crow_clock_swing"),
+      order = 2,
+      enabled = true
+    } 
+  end
+  -- some weirdness around order in which param actions fire. So we do via a function the first time. 
+  init_sprocket_crow_clock(crow_clock_lookup[params:get("crow_clock_index")][1]/global_clock_div/4)
+  
   
   function init_sprocket_seq_1(div)
     sprocket_seq_1 = my_lattice:new_sprocket{
@@ -1077,7 +1022,39 @@ function init()
   -- some weirdness around order in which param actions fire. So we do via a function the first time. 
   init_sprocket_seq_1(division_names[params:get("seq_div_index_1")][1]/global_clock_div/4)
 
-  -- todo: seen some issues with grid freezing still. I thought this would fix it but maybe lower rate further.
+
+  function init_sprocket_cv_harm(div)
+    sprocket_cv_harm = my_lattice:new_sprocket{
+      action = function(t) 
+        -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
+        -- todo feature: add delay here for external sequencer race condition
+        
+        -- for now, this sprocket always runs but not necessarily the action. 
+        -- look into disabling sprocket when not needed (not sure if downbeat and phase can be reset using cv_harm_self_sample)
+        if crow_div ~= 0 then
+          cv_harm_self_sample()
+        end
+      end,
+
+      division = div,
+      swing = params:get("cv_harm_swing"),
+      enabled = true
+    } 
+  end
+  -- some weirdness around order in which param actions fire. So we do via a function the first time. 
+
+  -- Probably have it set to fastest div to resume on next valid beat
+  if crow_div == 0 then -- TODO WHAT ABOUT TRIGGER/0!!
+    -- don't init sprocket at all... or init but set to enabled = false
+    -- always need to init sprocket and keep it running for beat count?
+    -- just setting it to 1/4 for now
+    init_sprocket_cv_harm(48/global_clock_div/4)
+  else
+    init_sprocket_cv_harm(crow_trigger_names[params:get("crow_div_index")][1]/global_clock_div/4)
+  end
+  
+  
+  -- todo: seeing some issues with grid freezing still. I thought this would fix it but maybe lower rate further.
   grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
   grid_dirty = true
   grid_redraw_metro:start()
@@ -1098,7 +1075,7 @@ end -- end of init
   
 function update_menus()
   -- GLOBAL MENU 
-  menus[1] = {"mode", "transpose", "clock_tempo", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
+  menus[1] = {"mode", "transpose", "clock_tempo", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
   
   -- CHORD MENU
   menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"}
@@ -1110,7 +1087,7 @@ function update_menus()
   menus[4] = {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"}
 
   -- CV HARMONIZER MENU
-  menus[5] = {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index", "crow_dynamics"}
+  menus[5] = {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index","cv_harm_swing", "crow_dynamics"}
 end
 
 -- -- takes offset (milliseconds) input and converts to a beat-based value suitable for clock.sync offset
@@ -2994,6 +2971,114 @@ function advance_seq_pattern()
      end
   end
 end
+
+
+-- new function v1.3 to set new div values for cv harmonizer WRT swing
+-- todo maybe have one function that all of the sprockets can use for the shared div change bits
+function cv_harm_self_sample()
+  local play = true
+  
+  -- Relocate these below once done with debug
+  local new_div = crow_trigger_names[params:get("crow_div_index")][1] / global_clock_div / 4
+  local swing_val = 2 * sprocket_cv_harm.swing / 100
+  local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
+  -- probably add my_lattice.ppqn and ppc
+
+  if sprocket_cv_harm.division ~= new_div then
+    
+    sprocket_cv_harm.division = new_div
+
+    if valid_div == true then -- is current transport "valid" for the new division
+      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0 -- get downbeat state of current transport
+      if downbeat == false then -- "standard" beat (not swing) so we can play the step
+        if sprocket_cv_harm.downbeat ~= downbeat then
+          sprocket_cv_harm.downbeat = false -- probably not necessary but running this check for a bit to be certain
+          print("---------DEBUG INDICATES NEED TO SET DOWNBEAT = FALSE IN VALID DIV FLOW (cv_harm)")
+        end
+      else -- This beat is swing-capable but we have to handle based on whether swing is *active*
+        if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
+          play = false -- block sampling of note
+          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div * swing_val)) + 1
+          sprocket_cv_harm.phase = new_phase
+          sprocket_cv_harm.downbeat = false -- this will be flipped to true(swing) by Lattice the next action
+        else -- no swing is being applied. Sample and play the note right away.
+          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
+          sprocket_cv_harm.phase = new_phase
+          sprocket_cv_harm.downbeat = true -- this will be flipped to false(std) by Lattice the next action
+        end
+      end
+
+    else -- "invalid" beat division. Block sampling and adjust sprocket phase
+      play = false
+      local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
+      sprocket_cv_harm.phase = new_phase
+      local pickup_beat_std = my_lattice.transport + (new_div * my_lattice.ppqn * 4) - new_phase + 1
+      local downbeat = pickup_beat_std/(96*4*new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+      sprocket_cv_harm.downbeat = downbeat
+
+    end
+  end
+
+  if play == true then
+    crow.input[2].query()
+  end
+end
+
+
+-- todo maybe have one function that all of the sprockets can use for the shared div change bits
+function crow_clock_out()
+  local play = true
+  
+  -- Relocate these below once done with debug
+  local new_div = crow_clock_lookup[params:get("crow_clock_index")][1] / global_clock_div / 4
+  local swing_val = 2 * sprocket_crow_clock.swing / 100
+  local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
+  -- probably add my_lattice.ppqn and ppc
+
+  if sprocket_crow_clock.division ~= new_div then
+    
+    sprocket_crow_clock.division = new_div
+
+    if valid_div == true then -- is current transport "valid" for the new division
+      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0 -- get downbeat state of current transport
+      if downbeat == false then -- "standard" beat (not swing) so we can play the step
+        if sprocket_crow_clock.downbeat ~= downbeat then
+          sprocket_crow_clock.downbeat = false -- probably not necessary but running this check for a bit to be certain
+          print("---------DEBUG INDICATES NEED TO SET DOWNBEAT = FALSE IN VALID DIV FLOW (crow_clock_out)")
+        end
+      else -- This beat is swing-capable but we have to handle based on whether swing is *active*
+        if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
+          play = false -- block sampling of note
+          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div * swing_val)) + 1
+          sprocket_crow_clock.phase = new_phase
+          sprocket_crow_clock.downbeat = false -- this will be flipped to true(swing) by Lattice the next action
+        else -- no swing is being applied. Sample and play the note right away.
+          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
+          sprocket_crow_clock.phase = new_phase
+          sprocket_crow_clock.downbeat = true -- this will be flipped to false(std) by Lattice the next action
+        end
+      end
+
+    else -- "invalid" beat division. Block sampling and adjust sprocket phase
+      play = false
+      local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
+      sprocket_crow_clock.phase = new_phase
+      local pickup_beat_std = my_lattice.transport + (new_div * my_lattice.ppqn * 4) - new_phase + 1
+      local downbeat = pickup_beat_std/(96*4*new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+      sprocket_crow_clock.downbeat = downbeat
+
+    end
+  end
+
+  if play == true then
+    crow.output[4].volts = 10
+    clock.run(function()
+      clock.sleep(120/(clock.get_tempo()*192/crow_clock_div)) -- todo - adjust for swing. Lattice?
+      crow.output[4].volts = 0
+    end)
+  end
+end
+
 
 
 
