@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231130 @modularbeat
+-- 231222 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -13,8 +13,8 @@
 -- ENC 2: Select
 -- ENC 3: Edit
 --
--- Crow IN 1: CV in
--- Crow IN 2: Trigger in
+-- Crow IN 1: Trigger in
+-- Crow IN 2: CV in
 -- Crow OUT 1: V/oct out
 -- Crow OUT 2: Trigger/envelope out
 -- Crow OUT 3: Clock out
@@ -36,7 +36,7 @@ norns.version.required = 231114 -- todo update with new musicutil
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "23113001"
+  version = "23122201"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -3028,7 +3028,7 @@ end
 -- todo maybe have one function that all of the sprockets can use for the shared div change bits
 function crow_clock_out()
   local play = true
-  
+
   -- Relocate these below once done with debug
   local new_div = crow_clock_lookup[params:get("crow_clock_index")][1] / global_clock_div / 4
   local swing_val = 2 * sprocket_crow_clock.swing / 100
@@ -3040,12 +3040,11 @@ function crow_clock_out()
     sprocket_crow_clock.division = new_div
 
     if valid_div == true then -- is current transport "valid" for the new division
-      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0 -- get downbeat state of current transport
+      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0 -- derive downbeat state of current transport
       if downbeat == false then -- "standard" beat (not swing) so we can play the step
-        if sprocket_crow_clock.downbeat ~= downbeat then
-          sprocket_crow_clock.downbeat = false -- probably not necessary but running this check for a bit to be certain
-          print("---------DEBUG INDICATES NEED TO SET DOWNBEAT = FALSE IN VALID DIV FLOW (crow_clock_out)")
-        end
+        -- if sprocket_crow_clock.downbeat ~= downbeat then -- can simplify by removing this check and always setting
+          sprocket_crow_clock.downbeat = false
+        -- end
       else -- This beat is swing-capable but we have to handle based on whether swing is *active*
         if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
           play = false -- block sampling of note
@@ -3073,7 +3072,8 @@ function crow_clock_out()
   if play == true then
     crow.output[4].volts = 10
     clock.run(function()
-      clock.sleep(120/(clock.get_tempo()*192/crow_clock_div)) -- todo - adjust for swing. Lattice?
+      local swing_mod = sprocket_crow_clock.downbeat and (2 - swing_val) or swing_val
+      clock.sleep(120/(clock.get_tempo()*192/(crow_clock_div * swing_mod))) -- todo handle via lattice?
       crow.output[4].volts = 0
     end)
   end
