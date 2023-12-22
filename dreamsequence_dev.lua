@@ -135,7 +135,7 @@ function init()
 
   -- Reverts changes to crow and jf that might have been made by DS
   function cleanup()
-    my_lattice:destroy()
+    seq_lattice:destroy()
     clock.link.stop()
     
     if preinit_jf_mode == 0 then
@@ -873,9 +873,9 @@ function init()
   params:set_action("crow_clock_swing", function(val) sprocket_crow_clock:set_swing(val) end)
 
 
-  my_lattice = lattice:new{
+  seq_lattice = lattice:new{
     auto = true,
-    ppqn = 96
+    ppqn = 48
   }
   
 
@@ -887,7 +887,7 @@ function init()
             clock.link.stop()
             
             print("beat "..round(clock.get_beats(),2), 
-            "pos "..string.format("%05d", (my_lattice.transport or 0)), 
+            "pos "..string.format("%05d", (seq_lattice.transport or 0)), 
             "phase "..(sprocket_chord.phase or ""), 
             "clock.link.stop sent"
             )  
@@ -931,18 +931,18 @@ function init()
       end
 
       -- for all clock sources
-      my_lattice:stop()
+      seq_lattice:stop()
 
       -- roll back transport and sprocket phase one pulse (when stopping at the the beginning of the beat)
       -- todo: test more with swing settings
-      my_lattice.transport = my_lattice.transport - 1
+      seq_lattice.transport = seq_lattice.transport - 1
       -- sprocket_transport.phase = sprocket_transport.phase - 1
       sprocket_chord.phase = sprocket_chord.phase - 1
       sprocket_seq_1.phase = sprocket_seq_1.phase - 1
 
       -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
       -- -- but sometimes doesn't. IDK.
-      -- my_lattice.transport = -1
+      -- seq_lattice.transport = -1
       -- sprocket_transport.phase = sprocket_transport.phase + 3
       -- sprocket_chord.phase = sprocket_chord.phase + 3
       -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
@@ -955,7 +955,7 @@ function init()
 
 
   function init_sprocket_chord(div)
-    sprocket_chord = my_lattice:new_sprocket{
+    sprocket_chord = seq_lattice:new_sprocket{
       action = function(t) 
         stop_handler()
         get_next_chord()  -- No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
@@ -973,11 +973,17 @@ function init()
 
   
   function init_sprocket_crow_clock(div)
-    sprocket_crow_clock = my_lattice:new_sprocket{
+    sprocket_crow_clock = seq_lattice:new_sprocket{
       action = function(t) 
   
         if params:get("crow_out_4") == 5 then
-          crow_clock_out()
+          -- todo handle this with a div_change_x flag set by param
+          local new_div = crow_clock_lookup[params:get("crow_clock_index")][1] / global_clock_div / 4 -- optimize
+          if sprocket_crow_clock.division ~= new_div then
+            div_change_crow_clock_out(new_div)
+          else
+            crow_clock_out()
+          end
         end
 
       end,
@@ -993,7 +999,7 @@ function init()
   
   
   function init_sprocket_seq_1(div)
-    sprocket_seq_1 = my_lattice:new_sprocket{
+    sprocket_seq_1 = seq_lattice:new_sprocket{
       action = function(t) 
         local seq_start_on_1 = params:get("seq_start_on_1")
         if seq_start_on_1 == 1 then -- Seq end
@@ -1024,7 +1030,7 @@ function init()
 
 
   function init_sprocket_cv_harm(div)
-    sprocket_cv_harm = my_lattice:new_sprocket{
+    sprocket_cv_harm = seq_lattice:new_sprocket{
       action = function(t) 
         -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
         -- todo feature: add delay here for external sequencer race condition
@@ -1199,45 +1205,53 @@ end
 
 
 function reset_lattice()  -- wag
-  my_lattice.transport = 0
-  -- reset_sprocket_transport("reset_lattice")
+  seq_lattice.transport = 0
   reset_sprocket_chord("reset_lattice")
+  reset_sprocket_crow_clock("reset_lattice")
   reset_sprocket_seq_1("reset_lattice")
+  reset_sprocket_cv_harm("reset_lattice")
 end
-
-
--- function reset_sprocket_transport(from)
---   print("reset_sprocket_transport() called by " .. from)
---   -- sprocket_transport.phase = -1
---   sprocket_transport.phase = sprocket_transport.division * my_lattice.ppqn * 4 * (1 - sprocket_transport.delay)
---   sprocket_chord.downbeat = false
--- end
 
 
 function reset_sprocket_chord(from)
   print("reset_sprocket_chord() called by " .. from)
   sprocket_chord.division = division_names[params:get("chord_div_index")][1]/global_clock_div/4
-  -- sprocket_chord.phase = -1
-  sprocket_chord.phase = sprocket_chord.division * my_lattice.ppqn * 4 * (1 - sprocket_chord.delay)
+  sprocket_chord.phase = sprocket_chord.division * seq_lattice.ppqn * 4 * (1 - sprocket_chord.delay)
   sprocket_chord.downbeat = false
+end
+
+
+function reset_sprocket_crow_clock(from)
+  print("reset_sprocket_crow_clock() called by " .. from)
+  sprocket_crow_clock.division = crow_clock_lookup[params:get("crow_clock_index")][1]/global_clock_div/4
+  sprocket_crow_clock.phase = sprocket_crow_clock.division * seq_lattice.ppqn * 4 * (1 - sprocket_crow_clock.delay)
+  sprocket_crow_clock.downbeat = false
 end
 
 
 function reset_sprocket_seq_1(from)
   print("reset_sprocket_seq_1() called by " .. from)
   sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
-  -- sprocket_seq_1.phase = -1
-  sprocket_seq_1.phase = sprocket_seq_1.division * my_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay)
+  sprocket_seq_1.phase = sprocket_seq_1.division * seq_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay)
   sprocket_seq_1.downbeat = false
 end
 
 
+function reset_sprocket_cv_harm(from)
+  print("reset_sprocket_cv_harm() called by " .. from)
+  sprocket_cv_harm.division = division_names[params:get("crow_div_index")][1]/global_clock_div/4
+  sprocket_cv_harm.phase = sprocket_cv_harm.division * seq_lattice.ppqn * 4 * (1 - sprocket_cv_harm.delay)
+  sprocket_cv_harm.downbeat = false
+end
+
+
+-- todo look into this one. Not sure how used.
 function set_sprocket_seq_1_div() -- called by advance_chord_pattern to depending on reset_on method
   local new_div = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
   if sprocket_seq_1.division ~= new_div then
     print("CHORD RESET SPROCKET DIV")
     sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
-    sprocket_seq_1.phase = (sprocket_seq_1.division * my_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay))
+    sprocket_seq_1.phase = (sprocket_seq_1.division * seq_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay))
     print("set_sprocket_seq_1_div, phase .. sprocket_seq_1.phase")
     -- sprocket_seq_1.downbeat = false -- todo p0 look into this. Likely needs to use same reset_downbeat option
   end
@@ -1361,7 +1375,7 @@ function transport_multi_stop()
     transport_midi = midi.connect(midi_transport_ports[i])
     transport_midi:stop()
   end  
-  -- print(clock.get_beats() .. ", pos " .. (my_lattice.transport or 0).. ", phase " .. (sprocket_transport.phase or ""), "sprocket_transport action")  
+  -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_transport.phase or ""), "sprocket_transport action")  
 end
 
 
@@ -1993,7 +2007,7 @@ function clock.transport.start(sync_value)
         clock.sync(1)
         -- print("post-sync clock beat " .. clock.get_beats())
         print("----------------------------------")
-        -- print(clock.get_beats() .. ", pos " .. (my_lattice.transport or 0).. ", phase " .. (sprocket_transport.phase or ""), "post-sync")  
+        -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_transport.phase or ""), "post-sync")  
       elseif clock_source == "link" then
         print("syncing to link_quantum")
         clock.sync(params:get("link_quantum"))
@@ -2020,13 +2034,13 @@ function clock.transport.start(sync_value)
 
     -- print("starting lattice")
     -- transport_state = "playing" -- new
-    print("transport "..string.format("%05d", (my_lattice.transport or 0)), 
+    print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
     "phase "..(sprocket_chord.phase or ""),
     "beat "..round(clock.get_beats(),2),
-    "my_lattice:start")
+    "seq_lattice:start")
 
-    -- print("beat "..round(clock.get_beats(),2), "pos "..string.format("%05d", (my_lattice.transport or 0)), "phase "..(sprocket_transport.phase or ""), "my_lattice:start")  
-    my_lattice:start()
+    -- print("beat "..round(clock.get_beats(),2), "pos "..string.format("%05d", (seq_lattice.transport or 0)), "phase "..(sprocket_transport.phase or ""), "seq_lattice:start")  
+    seq_lattice:start()
   end)
 
   end
@@ -2096,8 +2110,8 @@ function advance_chord_pattern()
   -- Relocate these below once done with debug
   local new_div = division_names[params:get("chord_div_index")][1] / global_clock_div / 4
   local swing_val = 2 * sprocket_chord.swing / 100
-  local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
-  -- probably add my_lattice.ppqn and ppc
+  local valid_div = ((seq_lattice.transport) % (seq_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
+  -- probably add seq_lattice.ppqn and ppc
 
   if sprocket_chord.division ~= new_div then
     print("-----------------------------------")  -- debug print stuff
@@ -2110,7 +2124,7 @@ function advance_chord_pattern()
     if valid_div == true then
 
       -- Check if current transport position is an upbeat or downbeat.
-      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0
+      local downbeat = seq_lattice.transport/(seq_lattice.ppqn * 4 * new_div)%2 ~= 0
 
       if downbeat == false then -- "standard" beat (not swing) so we can play the step
         -- seq_pattern_position = next_pos  -- same as play = true now?
@@ -2121,7 +2135,7 @@ function advance_chord_pattern()
         )
 
         print(
-          "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+          "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
           "phase "..sprocket_chord.phase,
           "downbeat "..tostring(sprocket_chord.downbeat), 
           "swing_val "..swing_val,
@@ -2137,7 +2151,7 @@ function advance_chord_pattern()
       else -- This beat is swing-capable but we have to handle based on whether swing is *active*
         if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
           play = false -- block this step from playing
-          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div * swing_val)) + 1
+          local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div * swing_val)) + 1
 
           print("DIV CHANGE " .. debug_change_count,
                 round(sprocket_chord.division, 2) .. " < " .. round(new_div, 3),
@@ -2145,7 +2159,7 @@ function advance_chord_pattern()
           )
 
           print(
-            "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+            "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
             "phase "..sprocket_chord.phase,
             "downbeat "..tostring(sprocket_chord.downbeat), 
             "swing_val "..swing_val,
@@ -2159,7 +2173,7 @@ function advance_chord_pattern()
 
         else -- no swing is being applied. Play the note right away.
           -- seq_pattern_position = next_pos -- play = true
-          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
+          local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
 
           print("DIV CHANGE " .. debug_change_count,
                 round(sprocket_chord.division, 2) .. " < " .. round(new_div, 3),
@@ -2167,7 +2181,7 @@ function advance_chord_pattern()
           )
 
           print(
-            "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+            "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
             "phase "..sprocket_chord.phase,
             "downbeat "..tostring(sprocket_chord.downbeat), 
             "swing_val "..swing_val,
@@ -2183,16 +2197,16 @@ function advance_chord_pattern()
     else -- "invalid" beat division. Block advancement and adjust sprocket phase
       play = false
       -- Step 1: set the phase relative to new_div
-      local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
+      local new_phase = (seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div)) + 1
       sprocket_chord.phase = new_phase
 
       -- -- Step 2: calculate pulses until we can pickup on a non-swing beat
-      -- local pickup_phase_std = math.floor((new_div * my_lattice.ppqn * 4)) -- no swing_val
+      -- local pickup_phase_std = math.floor((new_div * seq_lattice.ppqn * 4)) -- no swing_val
       -- local pulses_to_pickup_std = pickup_phase_std - sprocket_chord.phase + 1 -- +1 is because we have to exceed this beat
-      -- local pickup_beat_std = my_lattice.transport + pulses_to_pickup_std
+      -- local pickup_beat_std = seq_lattice.transport + pulses_to_pickup_std
       
       -- consolidated below and removed floor since we don't have swing. +1 is because we have to exceed this position
-      local pickup_beat_std = my_lattice.transport + (new_div * my_lattice.ppqn * 4) - new_phase + 1
+      local pickup_beat_std = seq_lattice.transport + (new_div * seq_lattice.ppqn * 4) - new_phase + 1
 
       -----------------------------------------------
       -- technically we don't need section 3 since we std beat always comes first (assuming 
@@ -2202,16 +2216,16 @@ function advance_chord_pattern()
       -- also need to determine if there is enough time to switch to the <50% swing beat
 
       -- Step 3: calculate pulses until we can pickup on a swing beat
-      -- local pickup_phase_swing = math.floor(new_div * my_lattice.ppqn * 4 * swing_val)
+      -- local pickup_phase_swing = math.floor(new_div * seq_lattice.ppqn * 4 * swing_val)
       -- local pulses_to_pickup_swing = pickup_phase_swing - sprocket_chord.phase + 1 -- +1 is because we have to exceed this beat
-      -- local pickup_beat_swing = my_lattice.transport + pulses_to_pickup_swing
+      -- local pickup_beat_swing = seq_lattice.transport + pulses_to_pickup_swing
 
       -- Only used for debug at the moment. +1 is because we have to exceed this position. Floor is necessary (swing_val)
-      local pickup_beat_swing = my_lattice.transport + math.floor(new_div * my_lattice.ppqn * 4 * swing_val) - new_phase + 1
+      local pickup_beat_swing = seq_lattice.transport + math.floor(new_div * seq_lattice.ppqn * 4 * swing_val) - new_phase + 1
       -----------------------------------------------
 
       -- Step 4: Check if pickup_beat_std is an upbeat or downbeat and apply inverse here
-      local downbeat = pickup_beat_std/(96*4*new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+      local downbeat = pickup_beat_std/(seq_lattice.ppqn * 4 * new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
       sprocket_chord.downbeat = downbeat  -- all the above for this little thing
 
       print("DIV CHANGE " .. debug_change_count,
@@ -2220,7 +2234,7 @@ function advance_chord_pattern()
       )
       
       print(
-        "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+        "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
         "phase "..sprocket_chord.phase,
         "downbeat "..tostring(sprocket_chord.downbeat), 
         "swing_val "..swing_val,
@@ -2235,7 +2249,7 @@ function advance_chord_pattern()
     -- seq_pattern_position = next_pos  -- play == true
 
     print(
-      "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+      "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
       "phase "..sprocket_chord.phase,
       "downbeat "..(sprocket_chord.downbeat == true and "true" or "false"), 
       "swing_val "..swing_val,
@@ -2747,8 +2761,8 @@ function advance_seq_pattern()
   -- Relocate these below once done with debug
   local new_div = division_names[params:get("seq_div_index_1")][1] / global_clock_div / 4
   local swing_val = 2 * sprocket_seq_1.swing / 100
-  local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
-  -- probably add my_lattice.ppqn and ppc
+  local valid_div = ((seq_lattice.transport) % (seq_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
+  -- probably add seq_lattice.ppqn and ppc
 
   -- Seq needs to be reset
   if seq_pattern_position > seq_pattern_length[active_seq_pattern] or arranger_retrig == true then
@@ -2768,7 +2782,7 @@ function advance_seq_pattern()
       -- -- Relocate these vars from upstream once done with debug
       -- local new_div = division_names[params:get("seq_div_index_1")][1] / global_clock_div / 4
       -- local swing_val = 2 * sprocket_seq_1.swing / 100
-      -- local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- whether current lattice beat is valid for new_div
+      -- local valid_div = ((seq_lattice.transport) % (seq_lattice.ppqn * 4 * new_div) == 0) -- whether current lattice beat is valid for new_div
       -- local reset_downbeat = true -- Whether we should force-reset the downbeat when changing div. todo: play with this and hardcode
     
       --------------------------------------------------
@@ -2804,7 +2818,7 @@ function advance_seq_pattern()
         if valid_div == true then
 
           -- Check if current transport position is an upbeat or downbeat.
-          local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0
+          local downbeat = seq_lattice.transport/(seq_lattice.ppqn * 4 * new_div)%2 ~= 0
 
           if downbeat == false then -- "standard" beat (not swing) so we can play the step
             seq_pattern_position = next_pos
@@ -2815,7 +2829,7 @@ function advance_seq_pattern()
             -- )
 
             -- print(
-            --   "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+            --   "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
             --   "phase "..sprocket_seq_1.phase,
             --   "downbeat "..tostring(sprocket_seq_1.downbeat), 
             --   "swing_val "..swing_val,
@@ -2831,7 +2845,7 @@ function advance_seq_pattern()
           else -- This beat is swing-capable but we have to handle based on whether swing is *active*
             if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
               play = false -- block this step from playing
-              local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div * swing_val)) + 1
+              local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div * swing_val)) + 1
 
               -- print("DIV CHANGE " .. debug_change_count,
               --       round(sprocket_seq_1.division, 2) .. " < " .. round(new_div, 3),
@@ -2839,7 +2853,7 @@ function advance_seq_pattern()
               -- )
 
               -- print(
-              --   "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+              --   "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
               --   "phase "..sprocket_seq_1.phase,
               --   "downbeat "..tostring(sprocket_seq_1.downbeat), 
               --   "swing_val "..swing_val,
@@ -2853,7 +2867,7 @@ function advance_seq_pattern()
 
             else -- no swing is being applied. Play the note right away.
               seq_pattern_position = next_pos
-              local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
+              local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
 
               -- print("DIV CHANGE " .. debug_change_count,
               --       round(sprocket_seq_1.division, 2) .. " < " .. round(new_div, 3),
@@ -2861,7 +2875,7 @@ function advance_seq_pattern()
               -- )
 
               -- print(
-              --   "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+              --   "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
               --   "phase "..sprocket_seq_1.phase,
               --   "downbeat "..tostring(sprocket_seq_1.downbeat), 
               --   "swing_val "..swing_val,
@@ -2877,16 +2891,16 @@ function advance_seq_pattern()
         else -- "invalid" beat division. Block advancement and adjust sprocket phase
           play = false
           -- Step 1: set the phase relative to new_div
-          local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
+          local new_phase = (seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div)) + 1
           sprocket_seq_1.phase = new_phase
 
           -- -- Step 2: calculate pulses until we can pickup on a non-swing beat
-          -- local pickup_phase_std = math.floor((new_div * my_lattice.ppqn * 4)) -- no swing_val
+          -- local pickup_phase_std = math.floor((new_div * seq_lattice.ppqn * 4)) -- no swing_val
           -- local pulses_to_pickup_std = pickup_phase_std - sprocket_seq_1.phase + 1 -- +1 is because we have to exceed this beat
-          -- local pickup_beat_std = my_lattice.transport + pulses_to_pickup_std
+          -- local pickup_beat_std = seq_lattice.transport + pulses_to_pickup_std
           
           -- consolidated below and removed floor since we don't have swing. +1 is because we have to exceed this position
-          local pickup_beat_std = my_lattice.transport + (new_div * my_lattice.ppqn * 4) - new_phase + 1
+          local pickup_beat_std = seq_lattice.transport + (new_div * seq_lattice.ppqn * 4) - new_phase + 1
 
           -----------------------------------------------
           -- technically we don't need section 3 since we std beat always comes first (assuming 
@@ -2896,16 +2910,16 @@ function advance_seq_pattern()
           -- also need to determine if there is enough time to switch to the <50% swing beat
 
           -- Step 3: calculate pulses until we can pickup on a swing beat
-          -- local pickup_phase_swing = math.floor(new_div * my_lattice.ppqn * 4 * swing_val)
+          -- local pickup_phase_swing = math.floor(new_div * seq_lattice.ppqn * 4 * swing_val)
           -- local pulses_to_pickup_swing = pickup_phase_swing - sprocket_seq_1.phase + 1 -- +1 is because we have to exceed this beat
-          -- local pickup_beat_swing = my_lattice.transport + pulses_to_pickup_swing
+          -- local pickup_beat_swing = seq_lattice.transport + pulses_to_pickup_swing
 
           -- Only used for debug at the moment. +1 is because we have to exceed this position. Floor is necessary (swing_val)
-          local pickup_beat_swing = my_lattice.transport + math.floor(new_div * my_lattice.ppqn * 4 * swing_val) - new_phase + 1
+          local pickup_beat_swing = seq_lattice.transport + math.floor(new_div * seq_lattice.ppqn * 4 * swing_val) - new_phase + 1
           -----------------------------------------------
 
           -- Step 4: Check if pickup_beat_std is an upbeat or downbeat and apply inverse here
-          local downbeat = pickup_beat_std/(96*4*new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+          local downbeat = pickup_beat_std/(seq_lattice.ppqn * 4 * new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
           sprocket_seq_1.downbeat = downbeat  -- all the above for this little thing
 
           -- print("DIV CHANGE " .. debug_change_count,
@@ -2914,7 +2928,7 @@ function advance_seq_pattern()
           -- )
           
           -- print(
-          --   "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+          --   "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
           --   "phase "..sprocket_seq_1.phase,
           --   "downbeat "..tostring(sprocket_seq_1.downbeat), 
           --   "swing_val "..swing_val,
@@ -2929,7 +2943,7 @@ function advance_seq_pattern()
         seq_pattern_position = next_pos
 
         -- print(
-        --   "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+        --   "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
         --   "phase "..sprocket_seq_1.phase,
         --   "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
         --   "swing_val "..swing_val,
@@ -2940,11 +2954,11 @@ function advance_seq_pattern()
     --   seq_pattern_position = next_pos
 
     --   print(
-    --     "transport "..string.format("%05d", (my_lattice.transport or 0)), 
+    --     "transport "..string.format("%05d", (seq_lattice.transport or 0)), 
     --     "phase "..sprocket_seq_1.phase,
-    --     -- "db_flip = "..tostring(sprocket_seq_1.phase > sprocket_seq_1.division * my_lattice.ppqn * swing_val),
+    --     -- "db_flip = "..tostring(sprocket_seq_1.phase > sprocket_seq_1.division * seq_lattice.ppqn * swing_val),
     --     "downbeat "..(sprocket_seq_1.downbeat == true and "true" or "false"), 
-    --     -- tostring(my_lattice.transport/(my_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
+    --     -- tostring(seq_lattice.transport/(seq_lattice.ppqn*4*sprocket_seq_1.division * swing_val) % 2 == 1),
     --     "swing_val "..swing_val,
     --     "beat "..round(clock.get_beats(),2) 
     --   )
@@ -2981,15 +2995,15 @@ function cv_harm_self_sample()
   -- Relocate these below once done with debug
   local new_div = crow_trigger_names[params:get("crow_div_index")][1] / global_clock_div / 4
   local swing_val = 2 * sprocket_cv_harm.swing / 100
-  local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
-  -- probably add my_lattice.ppqn and ppc
+  local valid_div = ((seq_lattice.transport) % (seq_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
+  -- probably add seq_lattice.ppqn and ppc
 
   if sprocket_cv_harm.division ~= new_div then
     
     sprocket_cv_harm.division = new_div
 
     if valid_div == true then -- is current transport "valid" for the new division
-      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0 -- get downbeat state of current transport
+      local downbeat = seq_lattice.transport/(seq_lattice.ppqn * 4 * new_div)%2 ~= 0 -- get downbeat state of current transport
       if downbeat == false then -- "standard" beat (not swing) so we can play the step
         if sprocket_cv_harm.downbeat ~= downbeat then
           sprocket_cv_harm.downbeat = false -- probably not necessary but running this check for a bit to be certain
@@ -2998,11 +3012,11 @@ function cv_harm_self_sample()
       else -- This beat is swing-capable but we have to handle based on whether swing is *active*
         if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
           play = false -- block sampling of note
-          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div * swing_val)) + 1
+          local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div * swing_val)) + 1
           sprocket_cv_harm.phase = new_phase
           sprocket_cv_harm.downbeat = false -- this will be flipped to true(swing) by Lattice the next action
         else -- no swing is being applied. Sample and play the note right away.
-          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
+          local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
           sprocket_cv_harm.phase = new_phase
           sprocket_cv_harm.downbeat = true -- this will be flipped to false(std) by Lattice the next action
         end
@@ -3010,10 +3024,10 @@ function cv_harm_self_sample()
 
     else -- "invalid" beat division. Block sampling and adjust sprocket phase
       play = false
-      local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
+      local new_phase = (seq_lattice.transport % (seq_lattice.ppqn * 4 * new_div)) + 1
       sprocket_cv_harm.phase = new_phase
-      local pickup_beat_std = my_lattice.transport + (new_div * my_lattice.ppqn * 4) - new_phase + 1
-      local downbeat = pickup_beat_std/(96*4*new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+      local pickup_beat_std = seq_lattice.transport + (new_div * seq_lattice.ppqn * 4) - new_phase + 1
+      local downbeat = pickup_beat_std/(seq_lattice.ppqn * 4 * new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
       sprocket_cv_harm.downbeat = downbeat
 
     end
@@ -3025,61 +3039,50 @@ function cv_harm_self_sample()
 end
 
 
--- todo maybe have one function that all of the sprockets can use for the shared div change bits
-function crow_clock_out()
-  local play = true
-
-  -- Relocate these below once done with debug
-  local new_div = crow_clock_lookup[params:get("crow_clock_index")][1] / global_clock_div / 4
+function div_change_crow_clock_out(new_div)
   local swing_val = 2 * sprocket_crow_clock.swing / 100
-  local valid_div = ((my_lattice.transport) % (my_lattice.ppqn * 4 * new_div) == 0) -- is transport position valid for new_div
-  -- probably add my_lattice.ppqn and ppc
+  local ppd = seq_lattice.ppqn * 4 * new_div  -- pulses per div
+  local transport = seq_lattice.transport
+  
+  sprocket_crow_clock.division = new_div
 
-  if sprocket_crow_clock.division ~= new_div then
-    
-    sprocket_crow_clock.division = new_div
-
-    if valid_div == true then -- is current transport "valid" for the new division
-      local downbeat = my_lattice.transport/(96*4*new_div)%2 ~= 0 -- derive downbeat state of current transport
-      if downbeat == false then -- "standard" beat (not swing) so we can play the step
-        -- if sprocket_crow_clock.downbeat ~= downbeat then -- can simplify by removing this check and always setting
-          sprocket_crow_clock.downbeat = false
-        -- end
-      else -- This beat is swing-capable but we have to handle based on whether swing is *active*
-        if swing_val ~= 1 then --Swing! Don't play this step now- adjust phase for next (swing) beat
-          play = false -- block sampling of note
-          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div * swing_val)) + 1
-          sprocket_crow_clock.phase = new_phase
-          sprocket_crow_clock.downbeat = false -- this will be flipped to true(swing) by Lattice the next action
-        else -- no swing is being applied. Sample and play the note right away.
-          local new_phase = math.floor(my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1  -- floor necessary?
-          sprocket_crow_clock.phase = new_phase
-          sprocket_crow_clock.downbeat = true -- this will be flipped to false(std) by Lattice the next action
-        end
+  if transport % ppd == 0 then -- if current transport is "valid" for the new division
+    local downbeat = transport / ppd % 2 ~= 0 -- derive downbeat state of current transport
+    if downbeat == false then -- "standard" beat (not swing) so we can play the step
+      sprocket_crow_clock.downbeat = false
+      crow_clock_out()
+    else -- This beat is swing-capable but we have to handle based on whether swing is *active*
+      if swing_val ~= 1 then --Swing! Don't sample/play now- adjust phase for next (swing) beat
+        sprocket_crow_clock.phase = math.floor(transport % (ppd * swing_val)) + 1
+        sprocket_crow_clock.downbeat = false -- this will be flipped to true(swing) by Lattice the next action
+      else -- no swing is being applied. Sample and play the note right away.
+        sprocket_crow_clock.phase = math.floor(transport % ppd) + 1  -- floor necessary?
+        sprocket_crow_clock.downbeat = true -- this will be flipped to false(std) by Lattice the next action
+        crow_clock_out()
       end
-
-    else -- "invalid" beat division. Block sampling and adjust sprocket phase
-      play = false
-      local new_phase = (my_lattice.transport % (my_lattice.ppqn * 4 * new_div)) + 1
-      sprocket_crow_clock.phase = new_phase
-      local pickup_beat_std = my_lattice.transport + (new_div * my_lattice.ppqn * 4) - new_phase + 1
-      local downbeat = pickup_beat_std/(96*4*new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
-      sprocket_crow_clock.downbeat = downbeat
-
     end
-  end
 
-  if play == true then
-    crow.output[4].volts = 10
-    clock.run(function()
-      local swing_mod = sprocket_crow_clock.downbeat and (2 - swing_val) or swing_val
-      clock.sleep(120/(clock.get_tempo()*192/(crow_clock_div * swing_mod))) -- todo handle via lattice?
-      crow.output[4].volts = 0
-    end)
+  else -- "invalid" beat division. Block sampling and adjust sprocket phase
+    local new_phase = (transport % ppd) + 1
+    sprocket_crow_clock.phase = new_phase
+    local pickup_beat_std = transport + ppd - new_phase + 1
+    local downbeat = pickup_beat_std / ppd % 2 == 0 -- flipped on pickup beat
+    sprocket_crow_clock.downbeat = downbeat
   end
+  
 end
 
 
+function crow_clock_out()
+  crow.output[4].volts = 10
+  clock.run(function()
+    local swing_mod = sprocket_crow_clock.downbeat 
+      and (2 - (2 * sprocket_crow_clock.swing / 100)) 
+      or (2 * sprocket_crow_clock.swing / 100)
+    clock.sleep(120/(clock.get_tempo()/(sprocket_crow_clock.division * swing_mod))) -- could also pass division
+    crow.output[4].volts = 0
+  end)
+end
 
 
 -- cv harmonizer input
