@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231222 @modularbeat
+-- 231224 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -34,11 +34,12 @@ include(norns.state.shortname.."/lib/includes")
 norns.version.required = 231114 -- todo update with new musicutil
 
 local latest_strum_coroutine = coroutine.running()
+clock_sync_delay = 0  -- local
 
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "23122201"
+  version = "23122401"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -877,7 +878,7 @@ function init()
 
   seq_lattice = lattice:new{
     auto = true,
-    ppqn = global_clock_div -- todo might go back to 96
+    ppqn = 96 -- global_clock_div -- todo not sure if we'll go with 48 or 96 yet
   }
   
 
@@ -935,18 +936,8 @@ function init()
       -- for all clock sources, stop and pause
       print("a. stopping seq_lattice")
       seq_lattice:stop()
-      -- todo need to stop sprockets??
-      -- sprocket_chord:destroy() -- no dice
-      
 
-      -- roll back transport and sprocket phase one pulse (when stopping at the the beginning of the beat)
-      -- todo: test more with swing settings
-      -- this stuff is needed for pause/continue?
-      -- probably check transport_state here and adjust for stop/pause
-      
-      -- seq_lattice.transport = seq_lattice.transport - 1 -- math.max(seq_lattice.transport - 1, 0)
-
-      -- paused is handled here whereas "stopped" is handled with K2 transport control
+      -- paused is handled here whereas "stopped" is handled with K2 transport control (and transport start)
       if transport_state == "paused" then
 
         
@@ -955,77 +946,63 @@ function init()
         print("incoming chord downbeat = " .. tostring(sprocket_chord.downbeat))
         print("------------------------")
         
-        -- seq_lattice.transport = seq_lattice.transport - 1
-
-        -- this works except when swing is enabled...
-        -- issue: resume transport/phase look good right at transport start but lattice:start is happening AFTER clock.sync(1)
-        -- reset_lattice("stop_handler paused")
-
-        -- always flip downbeat
-        sprocket_chord.downbeat = not sprocket_chord.downbeat
-
-
-        -- todo clock.sync() adjustment ? beat gets off
         
-        if seq_lattice.transport / (seq_lattice.ppqn * 4 * sprocket_chord.division) % 2 == 0 then
-          print("stop_handler: will resume on standard beat")
-          
-          seq_lattice.transport = seq_lattice.transport - 1
+        sprocket_chord.downbeat = not sprocket_chord.downbeat
+        -- print("stop_handler flipped chord.downbeat to " .. tostring(sprocket_chord.downbeat))
 
-          -- set to last pulse in phase
-          local new_phase = seq_lattice.ppqn * 4 * sprocket_chord.division
-          -- local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * sprocket_chord.division)) + 1  -- no swing
+        -- todo need to see how this handles resuming on a swing beat that happens to fall on an even beat (like 1/3 odds)
+        -- quick test with 1/3 div: seems to resume on the wrong absolute beat but relative to clock seems okay
+        if seq_lattice.transport / (seq_lattice.ppqn * 4 * sprocket_chord.division) % 2 == 0 then
+        -- Heyyyy... should this just check downbeat? Seems to almost work (beats are good but MIDI clock is off?)
+        -- if not seq_lattice.downbeat then -- WAG but look into. Maybe move downbeat reset below
+          print("stop_handler: will resume on standard beat")
+          print("sprocket_chord.downbeat = " .. tostring(sprocket_chord.downbeat))
+
+          seq_lattice.transport = seq_lattice.transport - 1
+          local new_phase = seq_lattice.ppqn * 4 * sprocket_chord.division -- PPD
+          -- local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * sprocket_chord.division)) + 1
+          
           sprocket_chord.phase = new_phase
+          clock_sync_delay = 0
   
         else
           print("stop_handler: will resume on swing beat")
+          print("sprocket_chord.downbeat = " .. tostring(sprocket_chord.downbeat))
           
           seq_lattice.transport = seq_lattice.transport - 1
           local swing_val = 2 * sprocket_chord.swing / 100
           
-          -- no fucking idea why this works but it does (new_phase calc)
+          
+          -- WIP
+          local new_phase = math.floor((seq_lattice.ppqn * 4 * sprocket_chord.division * swing_val)) -- PPD * swing_val
+          -- I *think* we might need something like this for things like 1/3 where we have to keep track of absolute transport pos:
           -- local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * sprocket_chord.division * swing_val)) + 1
+          -- above fucks up on 3rd step pause, however
+       
+          sprocket_chord.phase = new_phase
           
-          -- simplified version. I have no idea why this works TBH
-          local new_phase = math.floor((seq_lattice.ppqn * 4 * sprocket_chord.division * swing_val))
+          -- incremental swing amount * division relative to beat, then subtract 1 pulse
+          clock_sync_delay = (swing_val - 1) * (sprocket_chord.division * 4) - (1 / seq_lattice.ppqn)
           
-          -- 1st step == 115
-          -- floor(114 % (48 * 4 * 1/2 * (2*60/100))) + 1
-          -- (115+1) % 48 = 20 (GOOD)
-          
-          -- repeat = 76
-          -- floor(882 % (48 * 4 * 1/2 * (2*60/100))) + 1
-          -- (76+1) % 48 = 29 (FAIL)
-          
-          
-          sprocket_chord.phase = 115 -- new_phase
-  
+          -- BIG question: what if user changes div/swing, etc... after pausing and before resuming?
         end
 
-      
         print("updated transport = " .. seq_lattice.transport)
         print("updated chord phase = " .. sprocket_chord.phase)
         print("updated chord downbeat = " .. tostring(sprocket_chord.downbeat))
-
+        
+      -- elseif transport_state == "stopped" then
+        -- should just reset pattern here?
+        -- reset_pattern()
+        -- reset_sprocket_chord("stop_handler 'stopped' condition")
+      -- else
+        -- print("stop_handler transport_state = " .. transport_state)
       end
       
       -- sprocket_chord.phase = math.max(sprocket_chord.phase - 1, 0)
       -- sprocket_crow_clock.phase = math.max(sprocket_crow_clock.phase - 1, 0)  -- todo untested
       -- sprocket_seq_1.phase = math.max(sprocket_seq_1.phase - 1, 0)
       -- sprocket_cv_harm.phase = math.max(sprocket_cv_harm.phase - 1, 0)  -- todo untested
-  
-
-      -- 
-
-      -- -- this sort of works in conjunction with setting "delay =" to stop near the end of the beat
-      -- -- but sometimes doesn't. IDK.
-      -- seq_lattice.transport = -1
-      -- sprocket_transport.phase = sprocket_transport.phase + 3
-      -- sprocket_chord.phase = sprocket_chord.phase + 3
-      -- sprocket_seq_1.phase = sprocket_seq_1.phase + 3
-
-      -- -- option to re-sync out-of-phase sprocket
-      -- reset_phase_sprocket_seq_1(0)
 
     end -- of Stop handling 
   end  
@@ -1040,7 +1017,7 @@ function init()
           get_next_chord()  -- todo No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
           advance_chord_pattern()
         elseif transport_state == "stopped" then
-          reset_lattice("sprocket_chord action") -- only if stopping, not pausing!
+          reset_sprockets("sprocket_chord action") -- only if stopping, not pausing!
           seq_lattice.transport = -1  -- wag. Seems to let us start on the right beat. Overrides whatever stop_handler() does
         -- else -- pause
         -- might also move logic from stop_handler here
@@ -1291,21 +1268,28 @@ end
 
 
 -- todo becoming more of a reset_sprockets type thing
-function reset_lattice(from)
-  print("b. reset_lattice called by " .. from)
+function reset_sprockets(from)
+  print("b. reset_sprockets called by " .. from)
+  clock_sync_delay = 0
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
-  reset_sprocket_chord("reset_lattice")
-  reset_sprocket_crow_clock("reset_lattice")
-  reset_sprocket_seq_1("reset_lattice")
-  reset_sprocket_cv_harm("reset_lattice")
+  reset_sprocket_chord("reset_sprockets")
+  reset_sprocket_crow_clock("reset_sprockets")
+  reset_sprocket_seq_1("reset_sprockets")
+  reset_sprocket_cv_harm("reset_sprockets")
 end
 
 
 function reset_sprocket_chord(from)
-  -- print("reset_sprocket_chord() called by " .. from)
+  print("reset_sprocket_chord() called by " .. from)
   sprocket_chord.division = division_names[params:get("chord_div_index")][1]/global_clock_div/4
   sprocket_chord.phase = sprocket_chord.division * seq_lattice.ppqn * 4 * (1 - sprocket_chord.delay)
-  sprocket_chord.downbeat = false
+  
+  -- print("DEBUG reset_sprocket_chord lattice.enabled = " .. tostring(seq_lattice.enabled))
+  -- if seq_lattice.enabled then
+    -- sprocket_chord.downbeat = true
+  -- else
+    sprocket_chord.downbeat = false
+  -- end
 end
 
 
@@ -2070,6 +2054,20 @@ function clock.transport.start(sync_value)
   print("clock.transport.start called with sync_value " .. (sync_value or "nil"))
   -- little check for MIDI because user can technically start and stop as per usual and we don't want to restart coroutine
   if not (params:string("clock_source") == "midi" and transport_active) then
+    
+    if transport_state == "stopped" then
+      -- todo not sure if this is the best place for this
+      -- lattice flips downbeat AFTER transport stop initiates sprocket resets
+      -- so we always set to downbeat = false if transport is stopped
+      -- not sure if this needs to be done for all sprockets but probably
+      -- sprocket_chord.downbeat = false
+      -- sprocket_crow_clock.downbeat = false
+      -- sprocket_seq_1.downbeat = false
+      -- sprocket_cv_harm.downbeat = false
+      reset_sprockets("transport start")
+    end
+    
+    
     if params:get("seq_start_on_1") == 1 then -- Seq end
       play_seq = true
     end
@@ -2092,7 +2090,13 @@ function clock.transport.start(sync_value)
         -- sorta doesn't matter since we are doing relative beat counts via clock_step
         -- but might mess up mods, etc...
         -- print("pre-sync clock beat " .. clock.get_beats())
-        clock.sync(1)
+        -- clock.sync(1)
+        
+        
+        -- TODO p0 needs to be done for other clock sources as well (below)
+        clock.sync(1, clock_sync_delay or 0)  -- delay if resuming on swing beat
+        
+        
         -- print("post-sync clock beat " .. clock.get_beats())
         print("----------------------------------")
         -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_transport.phase or ""), "post-sync")  
@@ -2127,7 +2131,7 @@ function clock.transport.start(sync_value)
     "beat "..round(clock.get_beats(),2),
     "seq_lattice:start")
 
-    seq_lattice:start() -- issue: need to have this fire immediately (or call at same time as clock.sync above?) when pause/continue of swing chord occurs
+    seq_lattice:start()
   end)
 
   end
@@ -2146,7 +2150,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   pattern_queue = false
   seq_pattern_position = 0
   chord_pattern_position = 0
-  reset_lattice("reset_pattern")
+  reset_sprockets("reset_pattern")
   reset_clock()
   get_next_chord()
   chord_raw = next_chord
@@ -2277,6 +2281,7 @@ function advance_chord_pattern()
           )       
 
           sprocket_chord.phase = new_phase
+          -- print("DEBUG div_change downbeat = true")
           sprocket_chord.downbeat = true -- this will be flipped to false(std) by Lattice the next action
         end
       end
@@ -2313,6 +2318,7 @@ function advance_chord_pattern()
 
       -- Step 4: Check if pickup_beat_std is an upbeat or downbeat and apply inverse here
       local downbeat = pickup_beat_std/(seq_lattice.ppqn * 4 * new_div)%2 == 0 -- weird but we're setting this so it'll get flipped on pickup beat
+      -- print("debug downbeat flipped")
       sprocket_chord.downbeat = downbeat  -- all the above for this little thing
 
       print("DIV CHANGE " .. debug_change_count,
@@ -2732,7 +2738,7 @@ function play_chord()
 
       -- Strums will interrupt one another by default. TODO p0 make this a param because overlap is p sweet
       if coroutine.running() == latest_strum_coroutine then
-        print(i .. " " .. tostring(latest_strum_coroutine))
+        -- print(i .. " " .. tostring(latest_strum_coroutine))
 
         local note_sequence = playback == "High-low" and (note_qty + 1 - i) or i  -- force counting upwards
         local elapsed = note_qty == 1 and 0 or (note_sequence - 1) / (note_qty - 1)
@@ -2747,7 +2753,7 @@ function play_chord()
           y_scaled = curve_get_y(note_sequence * .1, curve) / max_pre_scale
           local y_scaled_delta = y_scaled - prev_y_scaled
           
-          -- might be a race-condition around this sleep method and clock.sync/lattice. Could look at using metro?
+          -- race-condition exists around time-based sleep method and clock.sync/lattice. Could look at using metro?
           -- Reproduce:
           -- Swing: 60%
           -- Max notes: 5
@@ -2760,7 +2766,7 @@ function play_chord()
       end
       
     end
-  end)    
+  end)
   
   
  
@@ -3940,7 +3946,7 @@ function key(n,z)
         
         
       ----------------------------------------
-      -- Transport controls K2 - STOP/RESET --
+      -- K2 Transport controls K2 - STOP/RESET --
       ----------------------------------------
         
       elseif interaction ~= "arranger_shift" then -- == nil then -- actually seems fine to do transport controls this during arranger shift?
@@ -3978,6 +3984,7 @@ function key(n,z)
             else
               reset_pattern()       
             end
+            
           end
         
           elseif params:string("clock_source") == "midi" then
