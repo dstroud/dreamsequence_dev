@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231224 @modularbeat
+-- 231230 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -39,7 +39,7 @@ clock_sync_delay = 0  -- local
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "23122401"
+  version = "23123001"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -937,55 +937,40 @@ function init()
       print("a. stopping seq_lattice")
       seq_lattice:stop()
 
-      -- paused is handled here whereas "stopped" is handled with K2 transport control (and transport start)
+      -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
       if transport_state == "paused" then
-
-        
         print("incoming transport = " .. seq_lattice.transport)
         print("incoming chord phase = " .. sprocket_chord.phase)
         print("incoming chord downbeat = " .. tostring(sprocket_chord.downbeat))
         print("------------------------")
         
-        
+        local txp = seq_lattice.transport
+        local ppqn = seq_lattice.ppqn
+        local ppc = ppqn * 4
+        local ppd = ppc * sprocket_chord.division
+        local swing_val = 2 * sprocket_chord.swing / 100
+        local swing_pulse_offset = sprocket_chord.downbeat and (math.floor(swing_val * ppd) - ppd) or 0
+        local txp_prev = txp - ppd - swing_pulse_offset -- find last even beat
+        local txp_new = txp - (txp % ppqn)
+        local phase_new = txp_new - txp_prev
+
+        seq_lattice.transport = txp_new - 1 -- roll back 1 since this will be incremented by Lattice
+        sprocket_chord.phase = phase_new
         sprocket_chord.downbeat = not sprocket_chord.downbeat
-        -- print("stop_handler flipped chord.downbeat to " .. tostring(sprocket_chord.downbeat))
+        
 
-        -- todo need to see how this handles resuming on a swing beat that happens to fall on an even beat (like 1/3 odds)
-        -- quick test with 1/3 div: seems to resume on the wrong absolute beat but relative to clock seems okay
-        if seq_lattice.transport / (seq_lattice.ppqn * 4 * sprocket_chord.division) % 2 == 0 then
-        -- Heyyyy... should this just check downbeat? Seems to almost work (beats are good but MIDI clock is off?)
-        -- if not seq_lattice.downbeat then -- WAG but look into. Maybe move downbeat reset below
+        -- print("stop_handler: flipped chord.downbeat to " .. tostring(sprocket_chord.downbeat))
+
+        if sprocket_chord.downbeat then
           print("stop_handler: will resume on standard beat")
-          print("sprocket_chord.downbeat = " .. tostring(sprocket_chord.downbeat))
-
-          seq_lattice.transport = seq_lattice.transport - 1
-          local new_phase = seq_lattice.ppqn * 4 * sprocket_chord.division -- PPD
-          -- local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * sprocket_chord.division)) + 1
           
-          sprocket_chord.phase = new_phase
-          clock_sync_delay = 0
-  
         else
           print("stop_handler: will resume on swing beat")
-          print("sprocket_chord.downbeat = " .. tostring(sprocket_chord.downbeat))
           
-          seq_lattice.transport = seq_lattice.transport - 1
-          local swing_val = 2 * sprocket_chord.swing / 100
-          
-          
-          -- WIP
-          local new_phase = math.floor((seq_lattice.ppqn * 4 * sprocket_chord.division * swing_val)) -- PPD * swing_val
-          -- I *think* we might need something like this for things like 1/3 where we have to keep track of absolute transport pos:
-          -- local new_phase = math.floor(seq_lattice.transport % (seq_lattice.ppqn * 4 * sprocket_chord.division * swing_val)) + 1
-          -- above fucks up on 3rd step pause, however
-       
-          sprocket_chord.phase = new_phase
-          
-          -- incremental swing amount * division relative to beat, then subtract 1 pulse
-          clock_sync_delay = (swing_val - 1) * (sprocket_chord.division * 4) - (1 / seq_lattice.ppqn)
-          
-          -- BIG question: what if user changes div/swing, etc... after pausing and before resuming?
         end
+
+        -- BIG question: what if user changes div/swing, etc... after pausing and before resuming?
+        
 
         print("updated transport = " .. seq_lattice.transport)
         print("updated chord phase = " .. sprocket_chord.phase)
@@ -3966,6 +3951,7 @@ function key(n,z)
             else
               reset_pattern()
             end
+            print("K2 setting transport to 0")
             seq_lattice.transport = 0 -- barely tested. Needed when transport is stopped and we skip stop_handler()
           end
         elseif params:string("clock_source") == "link" then
