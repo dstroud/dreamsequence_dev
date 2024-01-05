@@ -936,6 +936,7 @@ function init()
 
       -- for all clock sources, stop and pause
       print("a. stopping seq_lattice")
+      -- sprocket_seq_1.enabled = false  -- WAG
       seq_lattice:stop()
 
       -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
@@ -945,6 +946,7 @@ function init()
       
     -- change: sending of MIDI start/continue occurs here rather than clock.transport.start callback  
     elseif start == true then -- (and stop ~= true)
+      
       transport_state = "playing"
       transport_active = true
 
@@ -987,13 +989,11 @@ function init()
         
         -- -- WAG not sure if this should be flipped
         -- -- I suspect this needs to be recalculated based on reset txp
-        -- sprocket_seq_1.downbeat = txp / ppd_seq % 2 == 0
+        sprocket_seq_1.downbeat = txp / ppd_seq % 2 ~= 0
 
       
         local swing_pulses_chord = sprocket_chord.downbeat and 0 or (math.floor((2 * sprocket_chord.swing / 100) * ppd_chord) - ppd_chord)
-        
-        
-        -- local swing_pulses_seq = sprocket_seq_1.downbeat and 0 or (math.floor((2 * sprocket_seq_1.swing / 100) * ppd_seq) - ppd_seq)
+        local swing_pulses_seq = sprocket_seq_1.downbeat and 0 or (math.floor((2 * sprocket_seq_1.swing / 100) * ppd_seq) - ppd_seq)
         
         -- set seq_lattice
         seq_lattice.transport = txp_new - 1 -- roll back 1 since this will be incremented by Lattice
@@ -1024,6 +1024,14 @@ function init()
         -- print("updated chord phase = " .. sprocket_chord.phase)
         -- print("updated chord downbeat = " .. tostring(sprocket_chord.downbeat))
         
+        
+        -- local txp_prev = txp - ppd_chord - swing_pulses_chord -- find last even beat
+
+        -- wow. this sorta works? big WAG
+        -- issue is when splitting a step it begins replaying the next step immediately
+        local txp_prev = txp - ppd_chord - (swing_pulses_chord - swing_pulses_seq) - swing_pulses_seq + 1 -- find last even beat
+        
+        sprocket_seq_1.phase = txp_new - txp_prev
 
         -- BIG todo need to rollback other sprockets
 
@@ -1092,7 +1100,20 @@ function init()
   function init_sprocket_seq_1(div)
     sprocket_seq_1 = seq_lattice:new_sprocket{
       action = function(t)
+      
+        print("transport_state = " .. transport_state, start, stop)
+        
+        -- new check needed for all sprockets
+
+        -- if chord is 60% swing and seq is 50% swing, this will block pending note and resume late
         -- if transport_state == "playing" or transport_state == "starting" then
+        
+        -- (see above) this will play the note but on resume it jumps ahead to the next step instead of repeating. Could maybe add a condition in advance_seq to handle. Or split advance and play.
+        
+        -- bit of a wag but "paused" seems to be needed
+        if transport_state ~= "stopped" and transport_state ~= "paused" then
+
+        
           local seq_start_on_1 = params:get("seq_start_on_1")
           if seq_start_on_1 == 1 then -- Seq end
             advance_seq_pattern()
@@ -1109,7 +1130,10 @@ function init()
             advance_seq_pattern()
             grid_dirty = true      
           end
-        -- end
+          
+        else
+          print("transport_state = " .. transport_state)
+        end
       end,
 
       division = div,
@@ -2162,6 +2186,7 @@ function clock.transport.start(sync_value)
       "beat "..round(clock.get_beats(),2),
       "seq_lattice:start")
   
+      -- sprocket_seq_1.enabled = true -- wag
       seq_lattice:start()
   end)
 
@@ -2222,7 +2247,7 @@ end
 
 
 function advance_chord_pattern()
-  local debug = true
+  local debug = false
 
   -- proportional chord step length. Fixed at 1 bar now
   chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
@@ -2906,7 +2931,12 @@ end
 
 
 function advance_seq_pattern()
-  local debug = false
+  local debug = true
+
+  -- print("sprocket_seq_1.enabled = " .. tostring(sprocket_seq_1.enabled))
+  print(transport_state, tostring(start), tostring(stop))
+  if transport_state == "paused" then print("PAUSED transport_state") end
+  
   
   local play = true
   -- think about: what would we expect for various start_on and reset_on options? 
@@ -3135,6 +3165,8 @@ function advance_seq_pattern()
     -- end
   end
 
+  -- slight chance for seq to advance even after transport is paused so we resume at the correct point
+  -- if play == true and transport_state ~= "paused" then
   if play == true then
     if seq_pattern[active_seq_pattern][seq_pattern_position] > 0 then
       local player = params:lookup_param("seq_voice_raw_1"):get_player()
