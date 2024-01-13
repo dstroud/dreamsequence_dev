@@ -994,7 +994,7 @@ function init()
         local txp = seq_lattice.transport
         local ppqn = seq_lattice.ppqn
         local ppc = ppqn * 4
-        local txp_new = txp - (txp % ppqn)
+        -- local txp_new = txp - (txp % ppqn)
         
         -- derived from sprockets
         local ppd_chord = ppc * sprocket_chord.division
@@ -1015,11 +1015,21 @@ function init()
 
         
         -- set seq_lattice
-        seq_lattice.transport = txp_new - 1 -- roll back 1 since this will be incremented by Lattice
+        -- seq_lattice.transport = txp_new - 1 -- roll back 1 since this will be incremented by Lattice
+
+        -- v2 rolls back transport 1 (will need to calculate when jumping in arranger)
+        seq_lattice.transport = txp - 1
+
 
         -- set sprocket_chord
-        local txp_prev = txp - ppd_chord - swing_pulses_chord -- find last even beat
-        sprocket_chord.phase = txp_new - txp_prev
+        -- local txp_prev = txp - ppd_chord - swing_pulses_chord -- find last even beat
+        
+        -- sprocket_chord.phase = txp_new - txp_prev
+
+        -- v2 sets phase to 0 or whatever the swing offset is
+        -- same as deducting 1 from incoming phase but can be derived from txp position as well
+        sprocket_chord.phase = sprocket_chord.downbeat and 0 or swing_pulses_chord
+        
         -- sprocket_chord.downbeat = txp / ppd_chord % 2 == 0 -- derive+flip so can be used for Arranger Jump-to
 
         -- set sprocket_seq_1
@@ -1040,7 +1050,7 @@ function init()
         -- end
 
         print("updated transport = " .. seq_lattice.transport + 1)
-        print("txp_prev = " .. txp_prev)
+        -- print("txp_prev = " .. txp_prev)
         print("updated chord phase = " .. sprocket_chord.phase)
         print("updated chord downbeat = " .. tostring(sprocket_chord.downbeat))
     
@@ -1051,9 +1061,12 @@ function init()
         -- issue is when splitting a step it begins replaying the next step immediately
         -- local txp_prev = txp - ppd_chord - (swing_pulses_chord - swing_pulses_seq) - swing_pulses_seq + 1 -- find last even beat
         
-        sprocket_seq_1.phase = txp_new - txp_prev
+        -- sprocket_seq_1.phase = txp_new - txp_prev
 
-
+        -- v2 sets phase to 0 or whatever the swing offset is
+        -- same as deducting 1 from incoming phase but can be derived from txp position as well
+        sprocket_seq_1.phase = (sprocket_seq_1.downbeat and 0 or swing_pulses_seq) + 1
+        
 
         -- BIG todo need to rollback other sprockets
 
