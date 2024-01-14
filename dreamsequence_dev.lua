@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 231124 @modularbeat
+-- 240113 @modularbeat
 -- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -13,8 +13,8 @@
 -- ENC 2: Select
 -- ENC 3: Edit
 --
--- Crow IN 1: CV in
--- Crow IN 2: Trigger in
+-- Crow IN 1: Trigger in
+-- Crow IN 2: CV in
 -- Crow OUT 1: V/oct out
 -- Crow OUT 2: Trigger/envelope out
 -- Crow OUT 3: Clock out
@@ -37,7 +37,7 @@ norns.version.required = 231114 -- update when new musicutil lib drops
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = '23112401'
+  version = '24011301'
   -----------------------------
   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -51,14 +51,13 @@ function init()
 
   -- called by crow.input[1].change when clock_source = crow
   -- passes through original event for crow clock
-  -- adds crow_trigger()
+  -- adds crow_trigger_in()
   function process_crow_cv_1_change(v)
     norns.crow.send[[tell('change',1,1)]]
-    crow_trigger()
-    -- print('adding crow_trigger()')
+    crow_trigger_in()
   end
 
-  -- modifies norns.crow.clock_enable to also call crow_trigger()
+  -- modifies norns.crow.clock_enable to also call crow_trigger_in()
   -- this way we can send a swung clock into Crow CV1 to get swing notes
   -- from the CV harmonizer while also driving the system clock
   function redefine_crow_input_1()
@@ -84,14 +83,14 @@ function init()
       if crow_version ~= nil then print('Crow version ' .. crow_version) end
       if crow_version_num < 4.01 then
         print('Crow compatibility mode enabled per https://github.com/monome/crow/pull/463')
-        crow_trigger = function()
+        crow_trigger_in = function()
           if crow_div == 0 then
             crow.send("input[2].query = function() stream_handler(2, input[2].volts) end")
             crow.input[2].query()
           end
         end
       else
-        crow_trigger = function()
+        crow_trigger_in = function()
           -- todo p2 could just overwrite function so nothing happens. Not sure how to do that and maintain crow clock_source though
           if crow_div == 0 then
             crow.input[2].query()
@@ -103,7 +102,7 @@ function init()
       -- todo idea: could do a gate with "both" for ADSR envelope so this can do passthrough note duration
       if params:get('clock_source') ~= 4 then
         crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
-        crow.input[1].change = crow_trigger
+        crow.input[1].change = crow_trigger_in
       end
       redefine_crow_input_1()
     end
