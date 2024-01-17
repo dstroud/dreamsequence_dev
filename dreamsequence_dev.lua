@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240109 @modularbeat
+-- 240116 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -17,8 +17,8 @@
 -- Crow IN 2: CV in
 -- Crow OUT 1: V/oct out
 -- Crow OUT 2: Trigger/envelope out
--- Crow OUT 3: Clock out
--- Crow OUT 4: Events out
+-- Crow OUT 3: Events out
+-- Crow OUT 4: Clock out
 
 g = grid.connect()
 if type(g.device) == "table" then
@@ -34,12 +34,12 @@ include(norns.state.shortname.."/lib/includes")
 norns.version.required = 231114 -- todo update with new musicutil
 
 local latest_strum_coroutine = coroutine.running()
-clock_sync_delay = 0  -- local
+-- clock_sync_delay = 0  -- local
 
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24010901"
+  version = "01"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -53,14 +53,14 @@ function init()
 
   -- called by crow.input[1].change when clock_source = crow
   -- passes through original event for crow clock
-  -- adds crow_trigger()
+  -- adds crow_trigger_in()
   function process_crow_cv_1_change(v)
     norns.crow.send[[tell("change",1,1)]]
-    crow_trigger()
-    -- print("adding crow_trigger()")
+    crow_trigger_in()
+    -- print("adding crow_trigger_in()")
   end
 
-  -- modifies norns.crow.clock_enable to also call crow_trigger()
+  -- modifies norns.crow.clock_enable to also call crow_trigger_in()
   -- this way we can send a swung clock into Crow CV1 to get swing notes
   -- from the CV harmonizer while also driving the system clock
   function redefine_crow_input_1()
@@ -86,14 +86,14 @@ function init()
       if crow_version ~= nil then print("Crow version " .. crow_version) end
       if crow_version_num < 4.01 then
         print("Crow compatibility mode enabled per https://github.com/monome/crow/pull/463")
-        crow_trigger = function()
+        crow_trigger_in = function()
           if crow_div == 0 then
             crow.send("input[2].query = function() stream_handler(2, input[2].volts) end")
             crow.input[2].query()
           end
         end
       else
-        crow_trigger = function()
+        crow_trigger_in = function()
           -- todo p2 could just overwrite function so nothing happens. Not sure how to do that and maintain crow clock_source though
           if crow_div == 0 then
             crow.input[2].query()
@@ -105,7 +105,7 @@ function init()
       -- todo idea: could do a gate with "both" for ADSR envelope so this can do passthrough note duration
       if params:get("clock_source") ~= 4 then
         crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
-        crow.input[1].change = crow_trigger
+        crow.input[1].change = crow_trigger_in
       end
       redefine_crow_input_1()
     end
@@ -882,20 +882,21 @@ function init()
   }
   
 
-
-  function get_bytes(number)
-      local msb = math.floor(number / 256) -- Shift right by 8 bits
-      local lsb = number % 256 -- Extract the lower 8 bits
+  -- SPP stuff
+  -- function get_bytes(number)
+  --     local msb = math.floor(number / 256) -- Shift right by 8 bits
+  --     local lsb = number % 256 -- Extract the lower 8 bits
   
-      return lsb, msb
-  end
+  --     return lsb, msb
+  -- end
   
-  function goto_beat(beat)
-    transport_midi:song_position(get_bytes(beat))
-  end
+  -- function goto_beat(beat)
+  --   transport_midi:song_position(get_bytes(beat))
+  -- end
 
   -- runs as part of sprocket_chord action and handles quantized start/continue/stop
   function transport_handler()
+    print("transport_handler() called")
     if stop == true then
       local clock_source = params:string("clock_source")
       if clock_source == "link" then
@@ -920,7 +921,7 @@ function init()
         -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
         -- todo p2 look at options for a start/continue mode for external sources that support this
         else
-          transport_multi_stop()            
+          transport_multi_stop()   
           if arranger_active then
             print(transport_state)
           else
@@ -947,162 +948,161 @@ function init()
       end
 
       -- for all clock sources, stop and pause
-      print("a. stopping seq_lattice")
-      -- sprocket_seq_1.enabled = false  -- WAG
+      -- todo: why not stop sprockets here as well?
+      
+      -- print("a. stopping seq_lattice")
+      print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
+      "phase "..(sprocket_chord.phase or ""),
+      "beat "..round(clock.get_beats(),2),
+      "seq_lattice:stop")
+    
+      -- sprocket_chord.enabled = false  -- do here or in lattice_rollback()?
+      -- sprocket_seq_1.enabled = false  -- todo
+    
       seq_lattice:stop()
 
       -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
       if transport_state == "paused" then
-        lattice_rollback()
+        lattice_rollback() -- can likely move this function here
       end
       
     -- change: sending of MIDI start/continue occurs here rather than clock.transport.start callback
     -- ISSUE: we'll resume on the beat but may have paused off-beat and MIDI clock PPQN is not high enough resolution to match lattice
     elseif start == true then -- (and stop ~= true)
-      
-      transport_state = "playing"
-      transport_active = true
+      print("DEBUG stop ~= true and start == true")
+      -- transport_state = "playing"
+      -- transport_active = true
+      -- print(transport_state)
 
-      -- SEND MIDI CLOCK START/CONTINUE MESSAGES
-      if clock_start_method == "start" then
-        transport_multi_start()  
-      else
-        transport_multi_continue()
-      end
-      clock_start_method = "continue"
-      start = false
+      -- -- SEND MIDI CLOCK START/CONTINUE MESSAGES
+      -- if clock_start_method == "start" then
+      --   transport_multi_start()  
+      -- else
+      --   transport_multi_continue("transport_handler")
+      -- end
+      -- clock_start_method = "continue"
+      -- start = false
+      
+      -- -- print("starting lattice")
+      -- -- transport_state = "playing" -- new
+      -- print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
+      -- "phase "..(sprocket_chord.phase or ""),
+      -- "beat "..round(clock.get_beats(),2),
+      -- "seq_lattice:start")
+
+      -- sprocket_chord.enabled = true
+      -- sprocket_seq_1.enabled = true  
+      -- seq_lattice:start()
 
     end
   end  
 
 
-  -- since pause/stop happens at the BEGINNING of a chord advancement, we need to make
-  -- adjustments to lattice by rolling back some values
-  -- also will be used when jumping arranger to a certain point in transport (to maintain correct phase/swing)
-  
-  -- having issues with lattice_seq resume. Resume now occurs within sprocket_chord so I think we need to use chord sprocket as basis for resuming dependant sprockets somehow
   function lattice_rollback()
-        print("incoming transport = " .. seq_lattice.transport)
-        print("incoming chord phase = " .. sprocket_chord.phase)
-        print("incoming chord downbeat = " .. tostring(sprocket_chord.downbeat))
-        print("incoming seq phase = " .. sprocket_seq_1.phase)
-        print("incoming seq downbeat = " .. tostring(sprocket_seq_1.downbeat))
-
-        print("------------------------")
-        
-        -- derived from seq_lattice
-        local txp = seq_lattice.transport
-        local ppqn = seq_lattice.ppqn
-        local ppc = ppqn * 4
-        -- local txp_new = txp - (txp % ppqn)
-        
-        -- derived from sprockets
-        local ppd_chord = ppc * sprocket_chord.division
-        local ppd_seq = ppc * sprocket_seq_1.division
-        
-        -- derive+flip downbeat states so they can be used for Arranger Jump-to
-        sprocket_chord.downbeat = txp / ppd_chord % 2 == 0
-        
-        -- -- WAG not sure if this should be flipped
-        -- -- I suspect this needs to be recalculated based on reset txp
-        sprocket_seq_1.downbeat = txp / ppd_seq % 2 == 0
-
-      
-      
-        local swing_pulses_chord = sprocket_chord.downbeat and 0 or (math.floor((2 * sprocket_chord.swing / 100) * ppd_chord) - ppd_chord)
-        
-        local swing_pulses_seq = sprocket_seq_1.downbeat and 0 or (math.floor((2 * sprocket_seq_1.swing / 100) * ppd_seq) - ppd_seq)
-
-        
-        -- set seq_lattice
-        -- seq_lattice.transport = txp_new - 1 -- roll back 1 since this will be incremented by Lattice
-
-        -- v2 rolls back transport 1 (will need to calculate when jumping in arranger)
-        seq_lattice.transport = txp - 1
-
-
-        -- set sprocket_chord
-        -- local txp_prev = txp - ppd_chord - swing_pulses_chord -- find last even beat
-        
-        -- sprocket_chord.phase = txp_new - txp_prev
-
-        -- v2 sets phase to 0 or whatever the swing offset is
-        -- same as deducting 1 from incoming phase but can be derived from txp position as well
-        sprocket_chord.phase = sprocket_chord.downbeat and 0 or swing_pulses_chord
-        
-        -- sprocket_chord.downbeat = txp / ppd_chord % 2 == 0 -- derive+flip so can be used for Arranger Jump-to
-
-        -- set sprocket_seq_1
-        -- having issues resuming on swing beat...
-        -- local txp_prev = txp - ppd_seq - swing_pulses_seq + 1 -- find last even beat (note + 1!)
-        -- sprocket_seq_1.phase = txp_new - txp_prev
-        -- sprocket_seq_1.downbeat = txp / ppd_seq % 2 ~= 0 -- note not flipped
-        
-        -- local txp_prev = txp - ppd_seq - swing_pulses_seq + 1 -- find last even beat (note + 1!)
-        -- sprocket_seq_1.phase = txp_new - txp_prev
-        -- sprocket_seq_1.downbeat = not sprocket_seq_1.downbeat -- WAG
-        
-        
-        -- if sprocket_chord.downbeat then
-        --   print("transport_handler: will resume on standard beat")
-        -- else
-        --   print("transport_handler: will resume on swing beat")
-        -- end
-
-        print("updated transport = " .. seq_lattice.transport + 1)
-        -- print("txp_prev = " .. txp_prev)
-        print("updated chord phase = " .. sprocket_chord.phase)
-        print("updated chord downbeat = " .. tostring(sprocket_chord.downbeat))
     
-        
-        -- local txp_prev = txp - ppd_chord - swing_pulses_chord -- find last even beat
+    -- -- debug
+    incoming_transport = seq_lattice.transport
+    incoming_chord_phase = sprocket_chord.phase
+    incoming_chord_downbeat = sprocket_chord.downbeat
+    incoming_seq_phase = sprocket_seq_1.phase
+    incoming_seq_downbeat = sprocket_seq_1.downbeat    
+    print("------------------------")
 
-        -- wow. this sorta works? big WAG
-        -- issue is when splitting a step it begins replaying the next step immediately
-        -- local txp_prev = txp - ppd_chord - (swing_pulses_chord - swing_pulses_seq) - swing_pulses_seq + 1 -- find last even beat
-        
-        -- sprocket_seq_1.phase = txp_new - txp_prev
+    -- either here or in transport_handler
+    sprocket_chord.enabled = false
+    sprocket_seq_1.enabled = false
+    
+    -- derived from seq_lattice
+    local txp = seq_lattice.transport
+    local ppqn = seq_lattice.ppqn
+    local ppc = ppqn * 4
 
-        -- v2 sets phase to 0 or whatever the swing offset is
-        -- same as deducting 1 from incoming phase but can be derived from txp position as well
-        sprocket_seq_1.phase = (sprocket_seq_1.downbeat and 0 or swing_pulses_seq) + 1
-        
+    -- derived from sprockets
+    local ppd_chord = ppc * sprocket_chord.division
+    local ppd_seq = ppc * sprocket_seq_1.division
+    
+    ---------------------------------------------
+    -- optional stuff that might be used to derive values when jumping arranger:
+    ---------------------------------------------    
+    -- sprocket_chord.downbeat = txp / ppd_chord % 2 ~= 0
+    -- sprocket_seq_1.downbeat = txp / ppd_seq % 2 ~= 0
+  
+    -- local swing_pulses_chord = sprocket_chord.downbeat and 0 or (math.floor((2 * sprocket_chord.swing / 100) * ppd_chord) - ppd_chord)
+    -- local swing_pulses_seq = sprocket_seq_1.downbeat and 0 or (math.floor((2 * sprocket_seq_1.swing / 100) * ppd_seq) - ppd_seq)
+    ---------------------------------------------        
 
-        -- BIG todo need to rollback other sprockets
 
-        -- sprocket_chord.phase = math.max(sprocket_chord.phase - 1, 0)
-        -- sprocket_crow_clock.phase = math.max(sprocket_crow_clock.phase - 1, 0)  -- todo untested
-        -- sprocket_seq_1.phase = math.max(sprocket_seq_1.phase - 1, 0)
-        -- sprocket_cv_harm.phase = math.max(sprocket_cv_harm.phase - 1, 0)  -- todo untested    
+    -- set phase to last pulse
+    sprocket_transport.phase = ppd_chord -- required since this sprocket is live
+    -- sprocket_chord.phase = ppd_chord  -- no change
+    -- sprocket_seq_1.phase = ppd_seq  -- no change
 
+   
+    -- rolls back transport 1 since it will be incremented by lattice
+    -- optional todo: calculate when jumping in arranger
+    seq_lattice.transport = txp - 1 -- will be incremented (by lattice?) so this resets to incoming position
+    
+    --------------------------------   
+    -- debug stuff
+    -- if sprocket_chord.downbeat then
+    --   print("transport_handler: will resume on standard beat")
+    -- else
+    --   print("transport_handler: will resume on swing beat")
+    -- end
 
-        print("updated seq phase = " .. sprocket_seq_1.phase)
-        print("updated seq downbeat = " .. tostring(sprocket_seq_1.downbeat))     
-        
-      -- WAG attempt trying to adjust transport start time 
-      clock_sync_delay = 0 --(sprocket_chord.phase + 32) / ppqn
-      print("clock_sync_delay = " .. clock_sync_delay)
+    print("transport = " .. incoming_transport .. ">>" .. (seq_lattice.transport + 1))
+    print("chord phase = " .. incoming_chord_phase .. ">>" .. sprocket_chord.phase)
+    print("chord downbeat = " .. tostring(incoming_chord_downbeat) .. ">>" .. tostring(sprocket_chord.downbeat))
+    print("seq phase = " .. incoming_seq_phase .. ">>" .. sprocket_seq_1.phase)
+    print("seq downbeat = " .. tostring(incoming_seq_downbeat) .. ">>" .. tostring(sprocket_seq_1.downbeat))
   end
   
+  
+  function init_sprocket_transport(div)
+    sprocket_transport = seq_lattice:new_sprocket{
+      action = function(t)
+        -- print("sprocket_chord_action")
+        -- transport_handler()  -- moving to new sprocket that only starts/ends on the beat
+        -- if transport_state == "playing" or transport_state == "starting" then
+          -- get_next_chord()  -- todo No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
+          -- advance_chord_pattern()
+          
+        -- if transport_state == "pausing" then -- todo or stopping? -- TESTING REPLACING THIS WITH THE FOLLOWING (in case this helps resume timing)
+        
+        if (start == true) or (stop == true) then
+          transport_handler()
+        elseif transport_state == "stopped" then  -- does this ever happen?
+          print("DEBUG STOP WITHIN SPROCKET_TRANSPORT ACTION")
+          -- reset_sprockets("sprocket_chord action") -- only if stopping, not pausing!
+          -- seq_lattice.transport = -1
+        end
+        -- grid_dirty = true
+      end,
+      division = div,
+      order = 1,
+      enabled = true
+    }
+  end
+  -- some weirdness around order in which param actions fire. So we do via a function the first time.
+  init_sprocket_transport(division_names[params:get("chord_div_index")][1]/global_clock_div/4)
   
   function init_sprocket_chord(div)
     sprocket_chord = seq_lattice:new_sprocket{
       action = function(t)
         -- print("sprocket_chord_action")
-        transport_handler()
-        if transport_state == "playing" or transport_state == "starting" then
+        -- if transport_state == "playing" or transport_state == "starting" then
           get_next_chord()  -- todo No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
           advance_chord_pattern()
-        elseif transport_state == "stopped" then  -- does this ever happen?
-          print("DEBUG STOP WITHIN SPROCKET_CHORD ACTION")
-          reset_sprockets("sprocket_chord action") -- only if stopping, not pausing!
-          seq_lattice.transport = -1
-        end
+        -- elseif transport_state == "stopped" then  -- does this ever happen?
+          -- print("DEBUG STOP WITHIN SPROCKET_CHORD ACTION")
+          -- reset_sprockets("sprocket_chord action") -- only if stopping, not pausing!
+          -- seq_lattice.transport = -1
+        -- end
         grid_dirty = true
       end,
       division = div,
       swing = params:get("chord_swing"), --50, -- TODO!
-      order = 1,
+      order = 2,
       enabled = true
     }
   end
@@ -1128,7 +1128,7 @@ function init()
 
       division = div,
       swing = params:get("crow_clock_swing"),
-      order = 2,
+      order = 3,
       enabled = true
     } 
   end
@@ -1177,6 +1177,7 @@ function init()
 
       division = div,
       swing = params:get("seq_swing_1"),
+      order = 4, -- WAG
       enabled = true
     } 
   end
@@ -1199,6 +1200,7 @@ function init()
 
       division = div,
       swing = params:get("cv_harm_swing"),
+      order = 4, -- wag
       enabled = true
     } 
   end
@@ -1362,14 +1364,22 @@ end
 -- todo becoming more of a reset_sprockets type thing
 function reset_sprockets(from)
   print("b. reset_sprockets called by " .. from)
-  clock_sync_delay = 0
+  -- clock_sync_delay = 0
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
+  reset_sprocket_transport("reset_sprockets")
   reset_sprocket_chord("reset_sprockets")
   reset_sprocket_crow_clock("reset_sprockets")
   reset_sprocket_seq_1("reset_sprockets")
   reset_sprocket_cv_harm("reset_sprockets")
 end
 
+
+function reset_sprocket_transport(from)
+  print("reset_sprocket_transport() called by " .. from)
+  sprocket_transport.division = division_names[params:get("chord_div_index")][1]/global_clock_div/4
+  sprocket_transport.phase = sprocket_transport.division * seq_lattice.ppqn * 4
+  sprocket_transport.downbeat = false
+end
 
 function reset_sprocket_chord(from)
   print("reset_sprocket_chord() called by " .. from)
@@ -1544,7 +1554,8 @@ end
 
 
 -- check which ports the global midi clock is being sent to and sends a continue message there
-function transport_multi_continue()
+function transport_multi_continue(source)
+  print("DEBUG transport_multi_continue called by " .. source)
   transport_midi_update() -- update valid transport ports. Is there a callback when these params are touched?
   for i in pairs(midi_transport_ports) do  
     transport_midi = midi.connect(midi_transport_ports[i])
@@ -2186,7 +2197,7 @@ function clock.transport.start(sync_value)
         
         
         -- TODO p0 needs to be done for other clock sources as well (below)
-        clock.sync(1, clock_sync_delay or 0)  -- delay if resuming on swing beat
+        clock.sync(1) --, clock_sync_delay or 0)  -- delay if resuming on swing beat
         
         
         -- print("post-sync clock beat " .. clock.get_beats())
@@ -2200,33 +2211,36 @@ function clock.transport.start(sync_value)
       end
     -- end)
 
-      ---- moving this to inside sprocket_chord action
-      -- transport_state = "playing"
-      -- --   print(transport_state)
+
+      -- -- Question: this was previously part of the sequence_clock loop
+      -- -- should this be moved to the new equivalent (transport_handler)?
+      transport_state = "playing"
+      print(transport_state)
   
-      --   -- SEND MIDI CLOCK START/CONTINUE MESSAGES
-      -- if start == true and stop ~= true then
-      --   transport_active = true
-      -- -- Send out MIDI start/continue messages
-      --   if clock_start_method == "start" then
-      --     transport_multi_start()  
-      --   else
-      --     transport_multi_continue()
-      --   end
-      --   clock_start_method = "continue"
-      --   start = false
-      -- end
-      ------------------
-  
+        -- SEND MIDI CLOCK START/CONTINUE MESSAGES
+      if start == true and stop ~= true then
+        transport_active = true
+      -- Send out MIDI start/continue messages
+        if clock_start_method == "start" then
+          transport_multi_start()  
+        else
+          transport_multi_continue("clock.transport.start")
+        end
+        clock_start_method = "continue"
+        start = false
+      end
+    
       -- print("starting lattice")
       -- transport_state = "playing" -- new
       print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
       "phase "..(sprocket_chord.phase or ""),
       "beat "..round(clock.get_beats(),2),
       "seq_lattice:start")
-  
-      -- sprocket_seq_1.enabled = true -- wag
+
+      sprocket_chord.enabled = true
+      sprocket_seq_1.enabled = true  
       seq_lattice:start()
+      
   end)
 
   end
@@ -2286,7 +2300,7 @@ end
 
 
 function advance_chord_pattern()
-  local debug = false
+  local debug = true
 
   -- proportional chord step length. Fixed at 1 bar now
   chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
@@ -2970,7 +2984,7 @@ end
 
 
 function advance_seq_pattern()
-  local debug = true
+  local debug = false
 
   -- print("sprocket_seq_1.enabled = " .. tostring(sprocket_seq_1.enabled))
   -- print(transport_state, tostring(start), tostring(stop))
