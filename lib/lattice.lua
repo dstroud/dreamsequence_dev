@@ -98,7 +98,7 @@ function Lattice:pulse()
       for _, id in ipairs(self.sprocket_ordering[i]) do
         local sprocket = self.sprockets[id]
 
-         -- flipping these two for debug. reverse!!
+         -- flipping these two for debug print stuff. reverse for better efficiency (I think)!
           -- quantized division changes
           -- if sprocket.division_new ~= nil then
           --   -- method prioritizes consistent changes ON DIV, irrespective of swing amount
@@ -108,17 +108,17 @@ function Lattice:pulse()
             -- if sprocket.phase + 1 == sprocket.division * ppc then  -- flip!
               local ppd = ppc * (sprocket.division_new or sprocket.division)  -- NEW pulses per div
               local txp_mod = self.transport % ppd -- pulses/phase past previous valid beat div
-              local prev_beat = math.floor(self.transport / ppd) * ppd -- previous valid beat (no swing)
-              local next_beat = prev_beat + ppd -- upcoming valid beat (no swing)
-              local next_beat_downbeat = next_beat / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
+              local prev_div_txp = math.floor(self.transport / ppd) * ppd -- previous on-div transport  (no swing)
+              local next_div_txp = prev_div_txp + ppd -- upcoming valid beat (no swing)
+              local next_div_downbeat = next_div_txp / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
               if sprocket.division_new ~= nil then  -- flip!
   
                 -- run these here!
                 -- local ppd = ppc * sprocket.division_new  -- NEW pulses per div
                 -- local txp_mod = self.transport % ppd -- pulses/phase past previous valid beat div
-                -- local prev_beat = math.floor(self.transport / ppd) * ppd -- previous valid beat (no swing)
-                -- local next_beat = prev_beat + ppd -- upcoming valid beat (no swing)
-                -- local next_beat_downbeat = next_beat / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
+                -- local prev_div_txp = math.floor(self.transport / ppd) * ppd -- previous valid beat (no swing)
+                -- local next_div_txp = prev_div_txp + ppd -- upcoming valid beat (no swing)
+                -- local next_div_downbeat = next_div_txp / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
   
                 -- if debug then
                 --   print("-----------------------------------")
@@ -143,9 +143,9 @@ function Lattice:pulse()
                 sprocket.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
   
                 if txp_mod == 0 then -- "valid" beat
-                  sprocket_chord.downbeat = next_beat_downbeat
+                  sprocket.downbeat = next_div_downbeat
                 else -- "skip beat"
-                  sprocket_chord.downbeat = not next_beat_downbeat -- wag but seems to be needed when skipping a beat (even if it's an effective skip via phase)
+                  sprocket.downbeat = not next_div_downbeat -- wag but seems to be needed when skipping a beat (even if it's an effective skip via phase)
                   -- debug_velocity = .1 -- will eventually something like this to block transport_handler
                 end
   
@@ -162,8 +162,8 @@ function Lattice:pulse()
                   -- "downbeat "..(sprocket_chord.downbeat == true and "true" or "false"), 
                   -- "swing_val "..swing_val,
                   "txp_mod "..txp_mod,
-                  "prev_beat "..prev_beat,
-                  "next_beat "..next_beat,
+                  "prev_div_txp "..prev_div_txp,
+                  "next_div_txp "..next_div_txp,
                   "next_db "..tostring(sprocket.downbeat),
                   "txp_".."\u{F8} "..sprocket_transport.phase,
                   "ch_".."\u{F8} "..sprocket_chord.phase,
