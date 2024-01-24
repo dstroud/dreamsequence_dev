@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240119 @modularbeat
+-- 240124 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -39,7 +39,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24011901"
+  version = "24012401"
   -----------------------------
 --   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
   nb:init()
@@ -902,9 +902,10 @@ function init()
   -- called by transport_handler to process step div changes for both sprocket_transport and sprocket_chord
   -- for now will probably block pausing/stopping while changing div. Eventually need to handle properly
   function div_change_chord()
+    local debug = false
     do_play_chord = true  -- global used by `transport_handler` and `advance_chord`
     debug_velocity = .5
-
+    
     -- Relocate these below once done with debug
     local transport = seq_lattice.transport
     local new_div = division_names[params:get("chord_div_index")][1] / global_clock_div / 4
@@ -927,34 +928,35 @@ function init()
     -- local div_name = params:string("chord_div_index")
   
   
-    if sprocket_chord.division ~= new_div then
+    -- moving to lattice
+    -- if sprocket_chord.division ~= new_div then
       
-      if debug then
-        print("-----------------------------------")
-        debug_change_count = debug_change_count + 1
-      end
+    --   if debug then
+    --     print("-----------------------------------")
+    --     debug_change_count = debug_change_count + 1
+    --   end
       
-      params:set("chord_duration_index", params:get("chord_div_index")) -- todo: make a feature
+    --   params:set("chord_duration_index", params:get("chord_div_index")) -- todo: make a feature
 
     
-      sprocket_transport.division = new_div
-      sprocket_chord.division = new_div
+    --   sprocket_transport.division = new_div
+    --   sprocket_chord.division = new_div
       
       
-      sprocket_transport.phase = txp_mod + 1 -- new_phase + 1 -- effective next lattice action. +1 since lattice has already incremented
+    --   sprocket_transport.phase = txp_mod + 1 -- new_phase + 1 -- effective next lattice action. +1 since lattice has already incremented
       
-      -- -- sprocket_chord.phase = util.wrap(new_phase, 1, ppd) -- effective immediately on next sprocket (sprocket_chord)
-      sprocket_chord.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
+    --   -- -- sprocket_chord.phase = util.wrap(new_phase, 1, ppd) -- effective immediately on next sprocket (sprocket_chord)
+    --   sprocket_chord.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
 
 
-      if txp_mod == 0 then -- "valid" beat
-        sprocket_chord.downbeat = next_beat_downbeat
-      else -- "skip beat"
-        sprocket_chord.downbeat = not next_beat_downbeat -- wag but seems to be needed when skipping a beat (even if it's an effective skip via phase)
-        debug_velocity = .1 -- will eventually something like this to block transport_handler
-      end  
+    --   if txp_mod == 0 then -- "valid" beat
+    --     sprocket_chord.downbeat = next_beat_downbeat
+    --   else -- "skip beat"
+    --     sprocket_chord.downbeat = not next_beat_downbeat -- wag but seems to be needed when skipping a beat (even if it's an effective skip via phase)
+    --     debug_velocity = .1 -- will eventually something like this to block transport_handler
+    --   end  
       
-    end
+    -- end
     
       if debug then 
         print(
@@ -1188,8 +1190,8 @@ function init()
     
     -- debug for div change which happens in upcoming sprocket_chord
     -- can block with do_play_chord
-    local player = params:lookup_param("chord_voice_raw"):get_player()
-    to_player(player, 50, debug_velocity, chord_duration)
+    -- local player = params:lookup_param("chord_voice_raw"):get_player()
+    -- to_player(player, 50, debug_velocity, chord_duration)
     
     -- bits for handling transport stop (pausing sprockets and rolling back transport)
     -- todo I think we need to block this based on do_play_chord global
