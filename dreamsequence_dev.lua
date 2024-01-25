@@ -878,7 +878,7 @@ function init()
   params:set_action("chord_div_index",
     function(val) 
       chord_div = division_names[val][1]; -- extra thing needed for chord. may get rid of this
-      sprocket_transport:set_division(chord_div/global_clock_div/4);
+      -- sprocket_transport:set_division(chord_div/global_clock_div/4);
       sprocket_chord:set_division(chord_div/global_clock_div/4)
     end)
 
@@ -1203,9 +1203,8 @@ function init()
     -- div_change_chord() -- removing in v3 lattice mod
     
     -- debug for div change which happens in upcoming sprocket_chord
-    -- can block with do_play_chord
-    -- local player = params:lookup_param("chord_voice_raw"):get_player()
-    -- to_player(player, 50, debug_velocity, chord_duration)
+    local player = params:lookup_param("chord_voice_raw"):get_player()
+    to_player(player, 50, debug_velocity, chord_duration)
     
     -- bits for handling transport stop (pausing sprockets and rolling back transport)
     -- todo I think we need to block this based on do_play_chord global
@@ -1278,8 +1277,8 @@ function init()
         lattice_rollback() -- can likely move this function here
       end
       
-    -- change: sending of MIDI start/continue occurs in clock.transport.start callback rather than here
-    elseif start == true then -- (and stop ~= true)
+      -- change: sending of MIDI start/continue occurs in clock.transport.start callback rather than here
+      -- elseif start == true then -- (and stop ~= true)
       -- print("DEBUG stop ~= true and start == true")
       -- transport_state = "playing"
       -- transport_active = true
@@ -1305,15 +1304,18 @@ function init()
       -- sprocket_seq_1.enabled = true  
       -- seq_lattice:start()
 
-    end
+      -- end
 
-    -- pre-event for chord div changes on the div (no swing!)
-    if params:string("arranger") == "On" then
+      -- pre-event for chord div changes on the div (no swing!)
+    elseif params:string("arranger") == "On" then
       if chord_pattern_position >= chord_pattern_length[active_chord_pattern] then -- advance arranger
         if not arranger_one_shot_last_pattern then
           local arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
+          print("arranger_position " .. arranger_position)
           do_events_pre(arranger_position, 1) -- can combine with above line to simplify
         end
+      elseif arranger_position == 0 and chord_pattern_position == 0 then  -- bodge for post-reset state
+        do_events_pre(1, 1)
       else
         do_events_pre(arranger_position, chord_pattern_position + 1)
       end
@@ -1411,8 +1413,8 @@ function init()
 
 
     -- set phase to last pulse
-    sprocket_transport.phase = ppd_chord -- required since this sprocket is live
-    -- sprocket_chord.phase = ppd_chord  -- no change
+    -- sprocket_transport.phase = ppd_chord -- required since this sprocket is live
+    -- sprocket_chord.phase = ppd_chord  -- no change -- might need to do this since sprocket merge
     -- sprocket_seq_1.phase = ppd_seq  -- no change
 
    
@@ -1436,38 +1438,41 @@ function init()
   end
   
   
-  function init_sprocket_transport(div)
-    sprocket_transport = seq_lattice:new_sprocket{
-      action = function(t)
+  -- function init_sprocket_transport(div)
+  --   sprocket_transport = seq_lattice:new_sprocket{
+  --     action = function(t)
         
         
-        -- print("sprocket_chord_action")
-        -- transport_handler()  -- moving to new sprocket that only starts/ends on the beat
-        -- if transport_state == "playing" or transport_state == "starting" then
-          -- get_next_chord()  -- todo No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
-          -- advance_chord_pattern()
+  --       -- print("sprocket_chord_action")
+  --       -- transport_handler()  -- moving to new sprocket that only starts/ends on the beat
+  --       -- if transport_state == "playing" or transport_state == "starting" then
+  --         -- get_next_chord()  -- todo No longer sure this is needed. Deprecate or move to new sprocket. How to fire early?
+  --         -- advance_chord_pattern()
           
-        -- if transport_state == "pausing" then -- todo or stopping? -- TESTING REPLACING THIS WITH THE FOLLOWING (in case this helps resume timing)
+  --       -- if transport_state == "pausing" then -- todo or stopping? -- TESTING REPLACING THIS WITH THE FOLLOWING (in case this helps resume timing)
         
-        -- if (stop == true) then -- or (start == true) if we want to move stuff from clock.transport.start
-          transport_handler()
-        -- elseif transport_state == "stopped" then  -- does this ever happen?
-          -- print("DEBUG STOP WITHIN SPROCKET_TRANSPORT ACTION")
-          -- reset_sprockets("sprocket_chord action") -- only if stopping, not pausing!
-          -- seq_lattice.transport = -1
-        -- end
-        -- grid_dirty = true
-      end,
-      division = div,
-      order = 1,
-      enabled = true
-    }
-  end
-  -- some weirdness around order in which param actions fire. So we do via a function the first time.
-  init_sprocket_transport(division_names[params:get("chord_div_index")][1]/global_clock_div/4)
+  --       -- if (stop == true) then -- or (start == true) if we want to move stuff from clock.transport.start
+  --         transport_handler()
+  --       -- elseif transport_state == "stopped" then  -- does this ever happen?
+  --         -- print("DEBUG STOP WITHIN SPROCKET_TRANSPORT ACTION")
+  --         -- reset_sprockets("sprocket_chord action") -- only if stopping, not pausing!
+  --         -- seq_lattice.transport = -1
+  --       -- end
+  --       -- grid_dirty = true
+  --     end,
+  --     division = div,
+  --     order = 1,
+  --     enabled = true
+  --   }
+  -- end
+  -- -- some weirdness around order in which param actions fire. So we do via a function the first time.
+  -- init_sprocket_transport(division_names[params:get("chord_div_index")][1]/global_clock_div/4)
   
   function init_sprocket_chord(div)
     sprocket_chord = seq_lattice:new_sprocket{
+      pre_action = function(t)  -- runs without swing to handle div changes and transport-related bits (no swing)
+        transport_handler()
+      end,
       action = function(t)
         -- print("sprocket_chord_action")
         -- if transport_state == "playing" or transport_state == "starting" then
@@ -1746,7 +1751,7 @@ function reset_sprockets(from)
   print("b. reset_sprockets called by " .. from)
   -- clock_sync_delay = 0
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
-  reset_sprocket_transport("reset_sprockets")
+  -- reset_sprocket_transport("reset_sprockets")  
   reset_sprocket_chord("reset_sprockets")
   reset_sprocket_crow_clock("reset_sprockets")
   reset_sprocket_seq_1("reset_sprockets")

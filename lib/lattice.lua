@@ -89,7 +89,7 @@ function Lattice.auto_pulse(s)
   end
 end
 
---- advance all sprockets in this lattice a single by pulse, call this manually if lattice.auto = false
+--- advance all sprockets in this lattice by a single pulse, call this manually if lattice.auto = false
 function Lattice:pulse()
   if self.enabled then
     local ppc = self.ppqn * 4 -- pulses per cycle; "4" because in music a "quarter note" == "1/4"
@@ -98,85 +98,96 @@ function Lattice:pulse()
       for _, id in ipairs(self.sprocket_ordering[i]) do
         local sprocket = self.sprockets[id]
 
-         -- flipping these two for debug print stuff. reverse for better efficiency (I think)!
-          -- quantized division changes
-          -- if sprocket.division_new ~= nil then
-          --   -- method prioritizes consistent changes ON DIV, irrespective of swing amount
-          --   if sprocket.phase > sprocket.division * ppc then  -- simplify with == and run BEFORE phase increment
+        -- debugging. kill off
+        local sprocket_name
+        if sprocket.id == sprocket_chord.id then 
+          sprocket_name = "chord"     
+        elseif sprocket.id == sprocket_seq_1.id then 
+          sprocket_name = "seq_1"                     
+        elseif sprocket.id == sprocket_crow_clock.id then 
+          sprocket_name = "crow_clock"
+        elseif sprocket.id == sprocket_cv_harm.id then 
+          sprocket_name = "cv_harm"                                
+        end
 
-          if sprocket.phase == sprocket.division * ppc then  -- one over so we don't re-check during swing period flip!
-            -- if sprocket.phase + 1 == sprocket.division * ppc then  -- flip!
-              local ppd = ppc * (sprocket.division_new or sprocket.division)  -- NEW pulses per div
-              local txp_mod = self.transport % ppd -- pulses/phase past previous valid beat div
-              local prev_div_txp = math.floor(self.transport / ppd) * ppd -- previous on-div transport  (no swing)
-              local next_div_txp = prev_div_txp + ppd -- upcoming valid beat (no swing)
-              local next_div_downbeat = next_div_txp / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
-              if sprocket.division_new ~= nil then  -- flip!
-  
-                -- run these here!
-                -- local ppd = ppc * sprocket.division_new  -- NEW pulses per div
-                -- local txp_mod = self.transport % ppd -- pulses/phase past previous valid beat div
-                -- local prev_div_txp = math.floor(self.transport / ppd) * ppd -- previous valid beat (no swing)
-                -- local next_div_txp = prev_div_txp + ppd -- upcoming valid beat (no swing)
-                -- local next_div_downbeat = next_div_txp / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
-  
-                -- if debug then
-                --   print("-----------------------------------")
-                --   debug_change_count = debug_change_count + 1
-                -- end
-                
-                -- params:set("chord_duration_index", params:get("chord_div_index")) -- todo: make a feature
-  
+          -- if sprocket_name == "chord" then
+          --   print("phase " ..sprocket.phase, "txp " .. self.transport)
+          -- end
+
+          if sprocket.phase == sprocket.division * ppc then
+            sprocket.pre_action()-- self.transport) -- script-specific custom action set only on sprocket_chord
+
+            -- todo p2 move down to "RELOCATE LOCALS HERE" once done debugging
+            local ppd = ppc * (sprocket.division_new or sprocket.division)  -- NEW pulses per div
+            local txp_mod = self.transport % ppd -- pulses/phase past previous valid beat div
+            local prev_div_txp = math.floor(self.transport / ppd) * ppd -- previous on-div transport  (no swing)
+            local next_div_txp = prev_div_txp + ppd -- upcoming valid beat (no swing)
+            local next_div_downbeat = next_div_txp / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
+            
+            -- print("next_div_downbeat " .. tostring(next_div_downbeat))
+
+            -- -- debugging
+            -- local sprocket_name
+            -- if sprocket.id == sprocket_chord.id then 
+            --   sprocket_name = "chord"     
+            -- elseif sprocket.id == sprocket_seq_1.id then 
+            --   sprocket_name = "seq_1"                     
+            -- elseif sprocket.id == sprocket_crow_clock.id then 
+            --   sprocket_name = "crow_clock"
+            -- elseif sprocket.id == sprocket_cv_harm.id then 
+            --   sprocket_name = "cv_harm"                                
+            -- end
+
+            if sprocket.division_new ~= nil then  -- flip!
+
+              -- "RELOCATE LOCALS HERE" 
+              -- local ppd = ppc * (sprocket.division_new or sprocket.division)  -- NEW pulses per div
+              -- local txp_mod = self.transport % ppd -- pulses/phase past previous valid beat div
+              -- local prev_div_txp = math.floor(self.transport / ppd) * ppd -- previous on-div transport  (no swing)
+              -- local next_div_txp = prev_div_txp + ppd -- upcoming valid beat (no swing)
+              -- local next_div_downbeat = next_div_txp / ppd % 2 == 0 -- whether the upcoming beat is downbeat (std) or not (swing)
+
+
+              -- params:set("chord_duration_index", params:get("chord_div_index")) -- todo: make a feature
+
+            
+              sprocket.division = sprocket.division_new
+              sprocket.division_new = nil
+
+              -- debugging
+              print(
+                sprocket_name .. " new div: " .. sprocket.division,
+                sprocket_name .. " new phase: " .. sprocket.phase
+              )              
               
-                sprocket.division = sprocket.division_new
-                sprocket.division_new = nil
-                print("new div: " .. sprocket.division,
-                "new phase: " .. sprocket.phase
-                )
-                -- sprocket_chord.division = new_div
-                
-                
-                -- sprocket_transport.phase = txp_mod + 1 -- new_phase + 1 -- effective next lattice action. +1 since lattice has already incremented
-        
-                -- -- -- sprocket_chord.phase = util.wrap(new_phase, 1, ppd) -- effective immediately on next sprocket (sprocket_chord)
-                -- sprocket_chord.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
-                sprocket.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
-  
-                if txp_mod == 0 then -- "valid" beat
-                  sprocket.downbeat = next_div_downbeat
-                else -- "skip beat"
-                  sprocket.downbeat = not next_div_downbeat -- wag but seems to be needed when skipping a beat (even if it's an effective skip via phase)
-                  -- debug_velocity = .1 -- will eventually something like this to block transport_handler
-                end
-  
-  
+
+              sprocket.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
+              if txp_mod == 0 then
+                sprocket.downbeat = next_div_downbeat
+              else
+                sprocket.downbeat = not next_div_downbeat
               end
-              
-              -- debug for chord only at the moment
-              if sprocket.id == sprocket_chord.id then 
-                print(
-                  -- condition,
-                  "div "..sprocket.division,
-                  "txp "..string.format("%05d", (self.transport or 0)), 
-                  -- "old_".."\u{F8} "..old_phase,
-                  -- "downbeat "..(sprocket_chord.downbeat == true and "true" or "false"), 
-                  -- "swing_val "..swing_val,
-                  "txp_mod "..txp_mod,
-                  "prev_div_txp "..prev_div_txp,
-                  "next_div_txp "..next_div_txp,
-                  "next_db "..tostring(sprocket.downbeat),
-                  "txp_".."\u{F8} "..sprocket_transport.phase,
-                  "ch_".."\u{F8} "..sprocket_chord.phase,
-                  "beat "..round(clock.get_beats(),2)
-                )
-              end
-  
+
+            end 
+
+            if sprocket_name == "chord" then
+              print(
+                sprocket_name,
+                "div "..round(sprocket.division, 2),
+                "txp "..string.format("%05d", (self.transport or 0)),
+                "txp_mod "..txp_mod,
+                "next_div_txp "..next_div_txp,
+                "next_db "..tostring(sprocket.downbeat),
+                "\u{F8} "..sprocket.phase,
+                "beat "..round(clock.get_beats(),2),
+                "en "..tostring(sprocket.enabled)
+              )
             end
+
+          end
 
         if sprocket.enabled then
           sprocket.phase = sprocket.phase + 1
-
-
           local swing_val = 2 * sprocket.swing / 100
           if not sprocket.downbeat then
             swing_val = 1
@@ -218,6 +229,7 @@ function Lattice:new_sprocket(args)
   args = args == nil and {} or args
   args.id = self.sprocket_id_counter
   args.order = args.order == nil and 3 or util.clamp(args.order, 1, 5)
+  args.pre_action = args.pre_action == nil and function(t) return end or args.pre_action
   args.action = args.action == nil and function(t) return end or args.action
   args.division = args.division == nil and 1/4 or args.division
   args.enabled = args.enabled == nil and true or args.enabled
@@ -255,6 +267,7 @@ function Sprocket:new(args)
   p.id = args.id
   p.order = args.order
   p.division = args.division
+  p.pre_action = args.pre_action
   p.action = args.action
   p.enabled = args.enabled
   p.flag = false
