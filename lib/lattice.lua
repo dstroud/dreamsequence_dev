@@ -102,7 +102,7 @@ function Lattice:pulse()
           -- quantized division changes
           -- if sprocket.division_new ~= nil then
           --   -- method prioritizes consistent changes ON DIV, irrespective of swing amount
-          --   if sprocket.phase > sprocket.division * ppc then  -- simplify or run BEFORE phase increment
+          --   if sprocket.phase > sprocket.division * ppc then  -- simplify with == and run BEFORE phase increment
 
           if sprocket.phase == sprocket.division * ppc then  -- one over so we don't re-check during swing period flip!
             -- if sprocket.phase + 1 == sprocket.division * ppc then  -- flip!

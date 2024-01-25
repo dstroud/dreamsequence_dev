@@ -1195,7 +1195,7 @@ function init()
   -- end
   
   
-  -- runs as part of sprocket_chord action and handles quantized start/continue/stop
+  -- runs as part of sprocket_transport action and handles quantized start/continue/stop
   function transport_handler()
     -- print("transport_handler() called")
     
@@ -1209,7 +1209,7 @@ function init()
     
     -- bits for handling transport stop (pausing sprockets and rolling back transport)
     -- todo I think we need to block this based on do_play_chord global
-    if do_play_chord and stop then
+    if stop then
       local clock_source = params:string("clock_source")
       if clock_source == "link" then
         if link_stop_source == "norns" then
@@ -1306,6 +1306,72 @@ function init()
       -- seq_lattice:start()
 
     end
+
+    -- pre-event for chord div changes on the div (no swing!)
+    if params:string("arranger") == "On" then
+      if chord_pattern_position >= chord_pattern_length[active_chord_pattern] then -- advance arranger
+        if not arranger_one_shot_last_pattern then
+          local arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
+          do_events_pre(arranger_position, 1) -- can combine with above line to simplify
+        end
+      else
+        do_events_pre(arranger_position, chord_pattern_position + 1)
+      end
+    end
+
+
+    -- todo: can probably have most of the arranger movement stuff locked in here then processed in advance_chord
+    -- local arranger_position_pre = arranger_position
+    -- local arranger_retrig_pre = arranger_retrig -- not sure this will work
+    -- local arrangement_reset_pre = arrangement_reset
+    -- if params:string("arranger") == "On" then
+
+    --   -- If it's post-reset or at the end of chord sequence
+    --   -- TODO: Really need a global var for when in a reset state (arranger_position == 0 and chord_pattern_position == 0)
+    --   if (arranger_position_pre == 0 and chord_pattern_position == 0) or chord_pattern_position >= chord_pattern_length[active_chord_pattern] then
+        
+    --     -- This variable is only set when the "arranger" param is "On" and we're moving into a new Arranger segment (or after reset)
+    --     -- redundant (will be set again in sprocket_chord. but maybe needed here?)
+    --     arranger_active = true
+        
+    --     -- Check if it's the last pattern in the arrangement.
+    --     if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
+    --       -- -- don't do any of this yet. Don't fire event
+    --       arrangement_reset_pre = true
+    --       -- reset_arrangement()
+    --       -- stop = true
+    --     else
+    --       -- changed from wrap to a check if incremented arranger_position exceeds seq_pattern_length
+    --       arranger_position_pre = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position_pre + 1 > arranger_length) and 1 or arranger_position_pre + 1
+    --       -- set_chord_pattern(arranger_padded[arranger_position])-- not yet!
+    --       -- arranger_queue = nil
+    --     end
+        
+    --     -- Indicates arranger has moved to new pattern.
+    --     arranger_retrig_pre = true
+    --   end
+    --   -- Flag if arranger is on the last pattern of a 1-shot sequence
+    --   -- arranger_ending() -- sets arranger_one_shot_last_pattern which we don't need here
+    -- end
+
+    -- -- If arrangement was not just reset, update chord position. 
+    -- if arrangement_reset_pre == false then
+    --   if chord_pattern_position >= chord_pattern_length[active_chord_pattern] or arranger_retrig_pre then
+    --     if pattern_queue then
+    --       set_chord_pattern(pattern_queue)  -- sets chord pattern length which we need below
+    --       -- pattern_queue = false
+    --     end
+    --     chord_pattern_position = 1
+    --     arranger_retrig_pre = false
+    --   else  
+    --     chord_pattern_position = util.wrap(chord_pattern_position + 1, 1, chord_pattern_length[active_chord_pattern])
+    --   end
+
+    --   if arranger_active then
+    --     do_events()
+    --     gen_dash("advance_chord_pattern")
+    --   end
+
   end  
 
 
@@ -1322,6 +1388,7 @@ function init()
     -- either here or in transport_handler
     sprocket_chord.enabled = false
     sprocket_seq_1.enabled = false
+    -- todo other sprockets!
     
     -- derived from seq_lattice
     local txp = seq_lattice.transport
@@ -2910,14 +2977,117 @@ function update_arranger_active()
 end  
 
 
-function do_events()
-  if arranger_position == 0 then
-    print("arranger_position = 0")
+-- variant of do_events specifically for handling chord division changes BEFORE chord is advanced
+-- TODO p1 really need to optimize this by moving matching events into a new table rather than checking each event
+-- Can also block these in standard do_events (but probably not hurting anything firing twice)
+function do_events_pre(arranger_pos,chord_pos)
+  local arranger_position = arranger_pos
+  local chord_pattern_position = chord_pos
+  if events[arranger_position] ~= nil then
+    if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
+      for i = 1, 16 do
+        local event_path = events[arranger_position][chord_pattern_position][i]
+        if event_path ~= nil and event_path.id == "chord_div_index" then -- bodge
+          if math.random(1, 100) <= event_path.probability then
+            local event_type = event_path.event_type
+            local event_name = event_path.id
+            local value = event_path.value or ""
+            local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
+            local limit_min = event_path.limit_min
+            local limit_max = event_path.limit_max
+            local operation = event_path.operation
+            local action = event_path.action or nil
+            local args = event_path.args or nil
+            
+            -- TODO p2 simplify for relevant event types only
+            if event_type == "param" then
+              if operation == "Set" then
+                params:set(event_name, value)
+              elseif operation == "Increment" then
+                if limit == "Clamp" then
+                  params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
+                elseif limit == "Wrap" then
+                  params:set(event_name, util.wrap(params:get(event_name) + value, limit_min, limit_max))
+                else
+                  params:set(event_name, params:get(event_name) + value)
+                end  
+              elseif operation == "Wander" then
+                if limit == "Clamp" then
+                  params:set(event_name, util.clamp(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
+                elseif limit == "Wrap" then
+                  params:set(event_name, util.wrap(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
+                else
+                  params:set(event_name, params:get(event_name) + cointoss_inverse(value))
+                end  
+              elseif operation == "Random" then
+                if limit == "On" then
+                  local rand = math.random(limit_min, limit_max)
+                  -- print("Event randomization (limited) value " .. event_name .. " to " .. rand)
+                  params:set(event_name, rand)
+                else
+                  -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
+                  local rand = math.random(event_range[1], event_range[2])
+                  -- print("Event randomization value " .. event_name .. " to " .. rand)                
+                  params:set(event_name, rand)
+                end
+              -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
+              elseif operation == "Trigger" then
+                params:set(event_name, 1)
+                params:set(event_name, 0)
+              end
+            else -- FUNCTIONS
+              -- currently the only function ops are Triggers. Will likely need to expand Operation checks if there are other types.
+              -- elseif operation == "Random" then
+              --   if limit == "On" then
+              --     local value = math.random(limit_min, limit_max)
+              --     _G[event_name](value)
+                  
+              --     -- currently not using actions other than param actions which will fire automatically.
+              --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
+              --     if action ~= nil then
+              --       _G[action](args)
+              --     end                
+              --   else
+              --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
+              --     local value = math.random(event_range[1], event_range[2])
+              --     _G[event_name](value)
+                  
+              --     -- currently not using actions other than param actions which will fire automatically.
+              --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
+              --     if action ~= nil then
+              --       _G[action](args)
+              --     end                    
+              --   end
+              -- else
+              
+              -- Some function events can have faux ids that are just used to store the event
+              -- Actual functions will be called as "actions" which can include extra args
+              -- e.g. this allows us to use have crow_event_trigger function and the output is determined via args
+              -- print("DEBUG FN TYPE" .. type(_G[event_name]))
+              if type(_G[event_name]) == "function" then
+                _G[event_name](value)
+              end
+              if action ~= nil then
+                _G[action](args)
+              end
+              
+            end
+          end
+        end
+      end
+    end
   end
+end
+
+
+function do_events()
+  -- if arranger_position == 0 then
+  --   print("arranger_position = 0")
+  -- end
   
-  if chord_pattern_position == 0 then
-    print("chord_pattern_position = 0")
-  end  
+  -- if chord_pattern_position == 0 then
+  --   print("chord_pattern_position = 0")
+  -- end  
   
   if events[arranger_position] ~= nil then
     if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
