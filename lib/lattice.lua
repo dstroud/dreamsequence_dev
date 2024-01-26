@@ -1,3 +1,5 @@
+-- DS modified version of Lattice with logic for on-the-fly division changes as well as some extra sprocket actions
+
 ---- module for creating a lattice of sprockets based on a single fast "superclock"
 --
 -- @module Lattice
@@ -153,6 +155,7 @@ function Lattice:pulse()
             
               sprocket.division = sprocket.division_new
               sprocket.division_new = nil
+              sprocket.div_action()
 
               -- debugging
               print(
@@ -231,6 +234,7 @@ function Lattice:new_sprocket(args)
   args.order = args.order == nil and 3 or util.clamp(args.order, 1, 5)
   args.pre_action = args.pre_action == nil and function(t) return end or args.pre_action
   args.action = args.action == nil and function(t) return end or args.action
+  args.div_action = args.div_action == nil and function(t) return end or args.div_action
   args.division = args.division == nil and 1/4 or args.division
   args.enabled = args.enabled == nil and true or args.enabled
   args.phase = args.division * self.ppqn * 4 -- "4" because in music a "quarter note" == "1/4"
@@ -269,6 +273,7 @@ function Sprocket:new(args)
   p.division = args.division
   p.pre_action = args.pre_action
   p.action = args.action
+  p.div_action = args.div_action
   p.enabled = args.enabled
   p.flag = false
   p.swing = args.swing
