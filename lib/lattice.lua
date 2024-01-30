@@ -102,7 +102,9 @@ function Lattice:pulse()
 
         -- debugging. kill off
         local sprocket_name
-        if sprocket.id == sprocket_chord.id then 
+        if sprocket.id == sprocket_transport.id then 
+          sprocket_name = "transport"     
+        elseif sprocket.id == sprocket_chord.id then 
           sprocket_name = "chord"     
         elseif sprocket.id == sprocket_seq_1.id then 
           sprocket_name = "seq_1"                     
@@ -130,7 +132,9 @@ function Lattice:pulse()
 
             -- -- debugging
             -- local sprocket_name
-            -- if sprocket.id == sprocket_chord.id then 
+            -- if sprocket.id == sprocket_transport.id then 
+            --   sprocket_name = "transport"     
+            -- elseif sprocket.id == sprocket_chord.id then 
             --   sprocket_name = "chord"     
             -- elseif sprocket.id == sprocket_seq_1.id then 
             --   sprocket_name = "seq_1"                     

@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240129 @modularbeat
+-- 240130 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -38,7 +38,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24012901"
+  version = "24013001"
   -----------------------------
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
@@ -269,11 +269,15 @@ function init()
   ------------------
   -- GLOBAL PARAMS --
   ------------------
-  params:add_group("global", "GLOBAL", 12)
+  params:add_group("global", "GLOBAL", 14)
   
   params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
   
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
+
+  params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
+  params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
+
   
   params:add_option("crow_out_1", "Crow out 1", {"Off", "CV", "Env", "Events"}, 2)
   params:set_action("crow_out_1",function() gen_voice_lookups(); update_voice_params() end)  
@@ -866,7 +870,25 @@ function init()
   -- Some actions need to be added post-bang. 
   params:set_action("mode", function() build_scale(); update_chord_action() end)
 
-  -- Redefine div change actions, this time with lattice stuff
+-- Redefine div change actions, this time with lattice stuff
+
+-- WIP: needs some work! currently only allowing time signature div changes at lattice reset which is dumb
+params:set_action("ts_numerator",
+    function(val) 
+      if transport_state == "stopped" then
+        sprocket_transport:set_division(val / params:string("ts_denominator"))
+      end
+    end
+  )
+
+  params:set_action("ts_denominator",
+  function(val) 
+    if transport_state == "stopped" then
+      sprocket_transport:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
+    end
+  end
+)
+
   params:set_action("chord_div_index",
     function(val) 
       chord_div = division_names[val][1]; -- extra thing needed for chord. may get rid of this
@@ -916,22 +938,23 @@ function init()
   --   transport_midi:song_position(get_bytes(beat))
   -- end
 
-  function gen_time_signatures()
-    local l = {1,2,4,8,16}
-    for d = 1,5 do
-      for n = 1, 16 do
-        print(n,l[d])
-      end
-    end
-  end 
+  -- function gen_time_signatures()
+  --   local l = {1,2,4,8,16}
+  --   for d = 1,5 do
+  --     for n = 1, 16 do
+  --       print(n,l[d])
+  --     end
+  --   end
+  -- end
   
-  function init_sprocket_chord(div)
-    sprocket_chord = seq_lattice:new_sprocket{
-      pre_action = function(t)  -- handle div-quantized pause and div changes
+  function init_sprocket_transport(div)
+    sprocket_transport = seq_lattice:new_sprocket{
+      action = function(t)
+
         -- debug note player
-        -- local player = params:lookup_param("chord_voice_raw"):get_player()
-        -- to_player(player, 50, .5, chord_duration)
-        
+        local player = params:lookup_param("chord_voice_raw"):get_player()
+        to_player(player, 50, .5, chord_duration)
+
         -- bits for handling transport stop (pausing sprockets and rolling back transport)
         if stop then
           local clock_source = params:string("clock_source")
@@ -976,7 +999,7 @@ function init()
             stop = false
             start = false
           end
-    
+
           -- for all clock sources, stop and pause
           -- todo: why not stop sprockets here as well (external stop?)
           
@@ -985,9 +1008,9 @@ function init()
           "phase "..(sprocket_chord.phase or ""),
           "beat "..round(clock.get_beats(),2),
           "seq_lattice:stop")
-        
+
           seq_lattice:stop()
-    
+
           -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
           -- adding "stopped" condition here prevents the issue with each sprocket playing when K2 is double-tapped. 
           -- But it also looks to double-decrement transport (can be -1) which might be an issue
@@ -998,11 +1021,14 @@ function init()
             sprocket_crow_clock.enabled = false
             sprocket_seq_1.enabled = false
             sprocket_cv_harm.enabled = false
-    
+
             -- roll back transport position
             print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
             seq_lattice.transport = seq_lattice.transport - 1
 
+            sprocket_transport.phase = sprocket_transport.phase - 1
+            -- todo need to roll back this sprocket's phase I think
+            
           elseif transport_state == "stopped" then
               -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
               sprocket_chord.enabled = false
@@ -1016,11 +1042,120 @@ function init()
               -- seq_lattice.transport = -1
               -- print("Stopped: resetting transport to -1 (will be 0)")
           end
+        end
+
+      end,
+      -- div_action = function(t)  -- call action when div change is processed
+      --   -- todo need some logic to enable/disable. consider dynamic menu for fixed/proportional duration types (e.g. 1-100% of step length)
+      --   params:set("chord_duration_index", params:get("chord_div_index"))
+      -- end,
+      division = div, -- params:get("ts_numerator") / params:string("ts_denominator"),
+      -- swing = params:get("chord_swing"),
+      order = 1,
+      enabled = true
+    }
+  end
+  -- some weirdness around order in which param actions fire. So we do via a function the first time.
+  init_sprocket_transport(params:get("ts_numerator") / params:string("ts_denominator"))
+
+
+  function init_sprocket_chord(div)
+    sprocket_chord = seq_lattice:new_sprocket{
+      pre_action = function(t)  -- handle div-quantized pause and div changes
+        -- debug note player
+        -- local player = params:lookup_param("chord_voice_raw"):get_player()
+        -- to_player(player, 50, .5, chord_duration)
+        
+        -- bits for handling transport stop (pausing sprockets and rolling back transport)
+        -- if stop then
+        --   local clock_source = params:string("clock_source")
+        --   if clock_source == "link" then
+        --     if link_stop_source == "norns" then
+        --         clock.link.stop()
+        --         transport_multi_stop()
+        --         transport_active = false
+        --         transport_state = "paused"
+        --         print(transport_state)
+        --         stop = false
+        --         start = false
+        --         link_stop_source = nil
+            
+        --     -- TODO p0 this is going to be an issue re v1.3 lattice changes. Need to move link stopping elsewhere probably.
+        --     -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+        --     -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+        --     -- todo p2 look at options for a start/continue mode for external sources that support this
+        --     else
+        --       transport_multi_stop()   
+        --       if arranger_active then
+        --         print(transport_state)
+        --       else
+        --         reset_pattern()
+        --       end
+        --       transport_active = false
+        --       reset_arrangement()
+        --       transport_state = "stopped"
+        --       stop = false
+        --     end
+          
+        --   -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+        --   -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+        --   -- todo p1 also use this when running off norns link beat_count
+        --   else
+        --     transport_multi_stop()
+        --     transport_active = false
+        --     if transport_state ~= "stopped" then -- Probably a better way of blocking this
+        --       transport_state = "paused"
+        --       print(transport_state)
+        --     end
+        --     stop = false
+        --     start = false
+        --   end
+    
+        --   -- for all clock sources, stop and pause
+        --   -- todo: why not stop sprockets here as well (external stop?)
+          
+        --   -- print("a. stopping seq_lattice")
+        --   print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
+        --   "phase "..(sprocket_chord.phase or ""),
+        --   "beat "..round(clock.get_beats(),2),
+        --   "seq_lattice:stop")
+        
+        --   seq_lattice:stop()
+    
+        --   -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
+        --   -- adding "stopped" condition here prevents the issue with each sprocket playing when K2 is double-tapped. 
+        --   -- But it also looks to double-decrement transport (can be -1) which might be an issue
+        --   -- Issue might be jumping immediately from "pausing" to "stopped"
+        --   if transport_state == "paused" then -- or transport_state == "stopped" then -- formerly lattice_rollback
+        --     -- disable sprockets
+        --     sprocket_chord.enabled = false
+        --     sprocket_crow_clock.enabled = false
+        --     sprocket_seq_1.enabled = false
+        --     sprocket_cv_harm.enabled = false
+    
+        --     -- roll back transport position
+        --     print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
+        --     seq_lattice.transport = seq_lattice.transport - 1
+
+        --   elseif transport_state == "stopped" then
+        --       -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
+        --       sprocket_chord.enabled = false
+        --       sprocket_crow_clock.enabled = false
+        --       sprocket_seq_1.enabled = false
+        --       sprocket_cv_harm.enabled = false
+
+        --       -- currently settings to 0 in K2 transport controls section because this misses stops that occur after we're paused (only works on pausing>>stop)
+        --       -- Will be incremented back to 0 by lattice
+        --       -- Todo: revisit with other clock sources
+        --       -- seq_lattice.transport = -1
+        --       -- print("Stopped: resetting transport to -1 (will be 0)")
+        --   end
           
         -- pre-event for chord div changes ON the div rather than when note plays
         -- this ensures consistent div changes irrespective of chord swing
         -- (e.g. swung 1/3 notes that alternate between swing and no-swing every measure)
-        elseif params:string("arranger") == "On" then
+        -- elseif params:string("arranger") == "On" then
+        if params:string("arranger") == "On" then
           if chord_pattern_position >= chord_pattern_length[active_chord_pattern] then -- advance arranger
             if not arranger_one_shot_last_pattern then
               do_events_pre(arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1, 1)
@@ -1165,7 +1300,7 @@ end -- end of init
   
 function update_menus()
   -- GLOBAL MENU 
-  menus[1] = {"mode", "transpose", "clock_tempo", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
+  menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
   
   -- CHORD MENU
   menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"}
@@ -1291,13 +1426,19 @@ end
 function reset_sprockets(from)
   print("b. reset_sprockets called by " .. from)
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
-  -- reset_sprocket_transport("reset_sprockets")  
+  reset_sprocket_transport("reset_sprockets")  
   reset_sprocket_chord("reset_sprockets")
   reset_sprocket_crow_clock("reset_sprockets")
   reset_sprocket_seq_1("reset_sprockets")
   reset_sprocket_cv_harm("reset_sprockets")
 end
 
+function reset_sprocket_transport(from)
+  -- print("reset_sprocket_transport() called by " .. from)
+  sprocket_transport.division = params:get("ts_numerator") / params:string("ts_denominator")
+  sprocket_transport.phase = sprocket_transport.division * seq_lattice.ppqn * 4 * (1 - sprocket_transport.delay)
+  sprocket_transport.downbeat = false
+end
 
 function reset_sprocket_chord(from)
   -- print("reset_sprocket_chord() called by " .. from)
