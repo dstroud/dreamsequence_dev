@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240126 @modularbeat
+-- 240129 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -38,9 +38,9 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24012601"
+  version = "24012901"
   -----------------------------
---   nb.voice_count = 1  -- allows some nb mods to load multiple voices (like nb_midi if we need multiple channels)
+--   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
     -- suppress some default nb_crow and nb_jf mod players-- they come back on next nb init
   nb.players["crow 1/2"] = nil
@@ -52,7 +52,6 @@ function init()
 
   -- called by crow.input[1].change when clock_source = crow
   -- passes through original event for crow clock
-  -- adds crow_trigger_in()
   function process_crow_cv_1_change(v)
     norns.crow.send[[tell("change",1,1)]]
     crow_trigger_in()
@@ -373,7 +372,7 @@ function init()
   ------------------
   params:add_group("chord", "CHORD", 17)
 
-  params:add_number("chord_div_index", "Step length", 1, 57, 15, function(param) return divisions_string(param:get()) end)
+  params:add_number("chord_div_index", "Step length", 6, 57, 15, function(param) return divisions_string(param:get()) end)
   -- action required here for pset loading. Will then be redefined post-bang with action for lattice
   params:set_action("chord_div_index",function(val) 
     chord_div = division_names[val][1]
@@ -917,6 +916,14 @@ function init()
   --   transport_midi:song_position(get_bytes(beat))
   -- end
 
+  function gen_time_signatures()
+    local l = {1,2,4,8,16}
+    for d = 1,5 do
+      for n = 1, 16 do
+        print(n,l[d])
+      end
+    end
+  end 
   
   function init_sprocket_chord(div)
     sprocket_chord = seq_lattice:new_sprocket{
@@ -982,7 +989,10 @@ function init()
           seq_lattice:stop()
     
           -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
-          if transport_state == "paused" then -- formerly lattice_rollback
+          -- adding "stopped" condition here prevents the issue with each sprocket playing when K2 is double-tapped. 
+          -- But it also looks to double-decrement transport (can be -1) which might be an issue
+          -- Issue might be jumping immediately from "pausing" to "stopped"
+          if transport_state == "paused" then -- or transport_state == "stopped" then -- formerly lattice_rollback
             -- disable sprockets
             sprocket_chord.enabled = false
             sprocket_crow_clock.enabled = false
@@ -990,7 +1000,21 @@ function init()
             sprocket_cv_harm.enabled = false
     
             -- roll back transport position
+            print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
             seq_lattice.transport = seq_lattice.transport - 1
+
+          elseif transport_state == "stopped" then
+              -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
+              sprocket_chord.enabled = false
+              sprocket_crow_clock.enabled = false
+              sprocket_seq_1.enabled = false
+              sprocket_cv_harm.enabled = false
+
+              -- currently settings to 0 in K2 transport controls section because this misses stops that occur after we're paused (only works on pausing>>stop)
+              -- Will be incremented back to 0 by lattice
+              -- Todo: revisit with other clock sources
+              -- seq_lattice.transport = -1
+              -- print("Stopped: resetting transport to -1 (will be 0)")
           end
           
         -- pre-event for chord div changes ON the div rather than when note plays
@@ -1010,8 +1034,12 @@ function init()
         
       end,
       action = function(t)
-        get_next_chord()  -- todo p0 Deprecate or move to new sprocket. How to fire early?
-        advance_chord_pattern()
+        -- -- something like this is needed or stop during "pausing" (2x K2) will reset and play sequence again
+        -- -- might be better to include a check in lattice since this probably affects all sprockets (including crow/harm)
+        -- if transport_state == "playing" or transport_state == "pausing" then         
+          get_next_chord()  -- todo p0 Deprecate or move to new sprocket. How to fire early?
+          advance_chord_pattern()
+        -- end
         grid_dirty = true
       end,
       div_action = function(t)  -- call action when div change is processed
@@ -1051,7 +1079,9 @@ function init()
   function init_sprocket_seq_1(div)
     sprocket_seq_1 = seq_lattice:new_sprocket{
       action = function(t)
-        -- if transport_state ~= "stopped" then -- and transport_state ~= "paused" then
+        -- something like this is needed or stop during "pausing" (2x K2) will reset and play sequence again
+        -- might be better to include a check in lattice since this probably affects all sprockets (including crow/harm)
+        -- if transport_state == "playing" or transport_state == "pausing" then 
           local seq_start_on_1 = params:get("seq_start_on_1")
           if seq_start_on_1 == 1 then -- Seq end
             advance_seq_pattern()
@@ -1258,7 +1288,6 @@ function find_number(string)
 end
 
 
--- todo becoming more of a reset_sprockets type thing
 function reset_sprockets(from)
   print("b. reset_sprockets called by " .. from)
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
@@ -1270,24 +1299,11 @@ function reset_sprockets(from)
 end
 
 
--- function reset_sprocket_transport(from)
---   print("reset_sprocket_transport() called by " .. from)
---   sprocket_transport.division = division_names[params:get("chord_div_index")][1]/global_clock_div/4
---   sprocket_transport.phase = sprocket_transport.division * seq_lattice.ppqn * 4
---   sprocket_transport.downbeat = false
--- end
-
 function reset_sprocket_chord(from)
-  print("reset_sprocket_chord() called by " .. from)
+  -- print("reset_sprocket_chord() called by " .. from)
   sprocket_chord.division = division_names[params:get("chord_div_index")][1]/global_clock_div/4
   sprocket_chord.phase = sprocket_chord.division * seq_lattice.ppqn * 4 * (1 - sprocket_chord.delay)
-  
-  -- print("DEBUG reset_sprocket_chord lattice.enabled = " .. tostring(seq_lattice.enabled))
-  -- if seq_lattice.enabled then
-    -- sprocket_chord.downbeat = true
-  -- else
-    sprocket_chord.downbeat = false
-  -- end
+  sprocket_chord.downbeat = false
 end
 
 
