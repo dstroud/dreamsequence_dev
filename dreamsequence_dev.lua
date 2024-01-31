@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240130 @modularbeat
+-- 240131 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -38,7 +38,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24013001"
+  version = "24013101"
   -----------------------------
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
@@ -927,16 +927,16 @@ params:set_action("ts_numerator",
   
 
   -- SPP stuff
-  -- function get_bytes(number)
-  --     local msb = math.floor(number / 256) -- Shift right by 8 bits
-  --     local lsb = number % 256 -- Extract the lower 8 bits
+  function get_bytes(number)
+      local msb = math.floor(number / 256) -- Shift right by 8 bits
+      local lsb = number % 256 -- Extract the lower 8 bits
   
-  --     return lsb, msb
-  -- end
+      return lsb, msb
+  end
   
-  -- function goto_beat(beat)
-  --   transport_midi:song_position(get_bytes(beat))
-  -- end
+  function spp(beat)
+    transport_midi:song_position(get_bytes(beat))
+  end
 
   -- function gen_time_signatures()
   --   local l = {1,2,4,8,16}
@@ -1607,12 +1607,13 @@ function transport_multi_stop()
 end
 
 
--- check which ports the global midi clock is being sent to and sends a continue message there
+-- check which ports the global midi clock is being sent to and sends a spp and continue message there
 function transport_multi_continue(source)
   print("DEBUG transport_multi_continue called by " .. source)
   transport_midi_update() -- update valid transport ports. Is there a callback when these params are touched?
   for i in pairs(midi_transport_ports) do  
     transport_midi = midi.connect(midi_transport_ports[i])
+    spp(seq_lattice.transport / 24)
     transport_midi:continue()
   end  
 end
@@ -1934,7 +1935,7 @@ function clock.transport.start(sync_value)
 
 
       -- -- Question: this was previously part of the sequence_clock loop
-      -- -- should this be moved to the new equivalent (transport_handler)?
+      -- -- should this be moved to sprocket_transport?
       transport_state = "playing"
       print(transport_state)
   
@@ -3456,6 +3457,8 @@ function key(n,z)
             print("K2 setting transport to 0")
             seq_lattice.transport = 0 -- barely tested. Needed when transport is stopped and we skip transport_handler()
           end
+        
+        -- disabling link/midi for now
         elseif params:string("clock_source") == "link" then
           -- print("link clock")
           -- print("K2 Link source stopping transport")
@@ -3476,21 +3479,21 @@ function key(n,z)
             
           end
         
-          elseif params:string("clock_source") == "midi" then
-          if transport_state == "starting" or transport_state == "playing" then
-            stop = true
-            transport_state = "pausing"
-            print(transport_state)        
-            clock_start_method = "continue"
-            -- start = true
-          else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == "pausing" or transport_state == "paused" then
-            reset_external_clock()
-            if params:get("arranger") == 2 then
-              reset_arrangement()
-            else
-              reset_pattern()       
-            end
-          end
+        --   elseif params:string("clock_source") == "midi" then
+        --   if transport_state == "starting" or transport_state == "playing" then
+        --     stop = true
+        --     transport_state = "pausing"
+        --     print(transport_state)        
+        --     clock_start_method = "continue"
+        --     -- start = true
+        --   else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == "pausing" or transport_state == "paused" then
+        --     reset_external_clock()
+        --     if params:get("arranger") == 2 then
+        --       reset_arrangement()
+        --     else
+        --       reset_pattern()       
+        --     end
+        --   end
           
           elseif params:string("clock_source") == "crow" then
           if transport_state == "starting" or transport_state == "playing" then
@@ -3780,25 +3783,27 @@ function key(n,z)
         --     print(transport_state)            
         --   end          
           
-        elseif params:string("clock_source") == "midi" then
-          if transport_active == false then
-            clock.transport.start(chord_div / global_clock_div)
-          else -- we can cancel a pending pause by pressing K3 before it fires
-            stop = false
-            transport_state = "playing"
-            print(transport_state)            
-          end
+        --     -- this needs to be rewritten to incorporate sprocket.transport, if we want to MIDI punch-in thing to work
+        -- elseif params:string("clock_source") == "midi" then
+        --   if transport_active == false then
+        --     clock.transport.start(sprocket_transport.division) --chord_div / global_clock_div) -- sync_val  -- WIP here!
+        --   else -- we can cancel a pending pause by pressing K3 before it fires
+        --     stop = false
+        --     transport_state = "playing"
+        --     print(transport_state)            
+        --   end
           
+        -- requires https://github.com/monome/norns/pull/1740 which is not yet in stable
         elseif params:string("clock_source") == "link" then
           if transport_active == false then
-            -- disabling until issue with internal link start clobbering clocks is addressed
-            -- clock.link.start()        
+            clock.link.start()    
           else -- we can cancel a pending pause by pressing K3 before it fires
             stop = false
             transport_state = "playing"
             print(transport_state)            
           end
           
+        -- todo p0 untested in 1.3
         elseif params:string("clock_source") == "crow" then
           if transport_active == false then
             clock.transport.start(1)  -- sync on next beat
