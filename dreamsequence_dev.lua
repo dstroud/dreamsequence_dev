@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240204 @modularbeat
+-- 240205 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -38,7 +38,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24020401"
+  version = "24020501"
   -----------------------------
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
@@ -1026,8 +1026,11 @@ params:set_action("ts_numerator",
             -- option B: pause
             -- elseif link_stop_mode == "pause" then
               if link_stop_source == "norns" then
-                clock.link.stop()
+                -- running this here is problematic if we're on 16/16. Ticks over to next measure.
+                -- moving to instant-stop on K2 so we can stop link early, then DS quantizes.
+                -- clock.link.stop()
               end
+              -- todo: get this working with the new MIDI stop logic (2 sprockets)
               transport_multi_stop()
               transport_active = false
               transport_state = "paused"
@@ -3546,16 +3549,36 @@ function key(n,z)
             seq_lattice.transport = 0 -- barely tested. Needed when transport is stopped and we skip transport_handler()
           end
         
-        -- disabling link/midi for now
         elseif params:string("clock_source") == "link" then
-          -- print("link clock")
-          -- print("K2 Link source stopping transport")
+
           if transport_state == "starting" or transport_state == "playing" then
+
+            -- temporarily disable this since Link continue is not possible with negative beats
+            -- see https://github.com/monome/norns/issues/1756
+            -- clock.link.stop() -- no stop quantization for sending Link stop out
+            -- -- print("K2 on transport " .. seq_lattice.transport)
+            -- link_stop_source = "norns"
+            -- stop = true -- will trigger DS to do 1/16 quantized stop
+            -- clock_start_method = "continue"
+            -- transport_state = "pausing"
+            -- print(transport_state)
+
+            -----------------------------
+            -- full stop for the time being
+            clock.link.stop() -- no stop quantization for sending Link stop out
             link_stop_source = "norns"
-            stop = true
-            clock_start_method = "continue"
+            stop = true -- will trigger DS to do 1/16 quantized stop
+            clock_start_method = "start"
             transport_state = "pausing"
             print(transport_state)
+
+            if params:get("arranger") == 2 then
+              reset_arrangement()
+            else
+              reset_pattern()       
+            end
+            -----------------------------
+
           -- don't let link reset while transport is active or it gets outta sync
           --  modified so we can always do a stop when not playing (external sync and weird state exceptions) 
           elseif transport_state == "paused" or transport_state == "stopped" then
