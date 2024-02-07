@@ -102,8 +102,12 @@ function Lattice:pulse()
 
         -- debugging. kill off
         local sprocket_name
-        if sprocket.id == sprocket_transport.id then 
-          sprocket_name = "transport"     
+        if sprocket.id == sprocket_notes.id then 
+          sprocket_name = "notes"    
+        elseif sprocket.id == sprocket_start.id then 
+          sprocket_name = "start"     
+        elseif sprocket.id == sprocket_stop.id then 
+          sprocket_name = "stop"             
         elseif sprocket.id == sprocket_chord.id then 
           sprocket_name = "chord"     
         elseif sprocket.id == sprocket_seq_1.id then 
@@ -219,6 +223,14 @@ function Lattice:pulse()
       self:order_sprockets()
     end
     self.transport = self.transport + 1
+
+  else -- self.disabled!
+
+    -- hack to sustain notes when lattice is paused/stopped
+    -- this is the same as sprocket_notes.action
+    -- could make this a bit more "elegant" by adding a flag like sprocket.continuous_action
+    process_notes()
+
   end
 end
 

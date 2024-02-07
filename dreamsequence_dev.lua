@@ -592,8 +592,7 @@ function init()
   clock_start_method = "start"
   link_start_mode = "reset" -- might just use clock_start_method??
   link_stop_source = nil
-  global_clock_div = 48
-  timing_clock_id = clock.run(timing_clock) --Start a new timing clock to handle note-off
+  global_clock_div = 48 -- todo replace with ppqn and update div lookup to be fractional
 
   build_scale()
 
@@ -926,7 +925,7 @@ params:set_action("ts_numerator",
 
   seq_lattice = lattice:new{
     auto = true,
-    ppqn = 96 -- global_clock_div -- todo not sure if we'll go with 48 or 96 yet
+    ppqn = 48 -- global_clock_div -- todo not sure if we'll go with 48 or 96 yet. mostly affects swing
   }
   
 
@@ -950,21 +949,20 @@ params:set_action("ts_numerator",
   --     end
   --   end
   -- end
-  
 
-  -- -- TESTING P0 REMOVE!!!!!
-  -- -- only called by script, not external link
-  -- clock.link.start = function()
-  --   -- local start_type = val
-  --   print("-----------------------")
-  --   print("clock.link.start called" -- with arg " .. (val or "nil"))
-  --   print("-----------------------")
-  --   -- -- this can be simplified by just moving this flag to transport controls K1+K3
-  --   -- if val == "resume" then
-  --   --   link_start_mode = "resume"
-  --   -- end
-  --   return _norns.clock_link_set_transport_start()
-  -- end
+
+  -- keep track of playing notes and decrement each pulse of lattice (whether enabled or disabled!)
+  function process_notes()
+    -- todo: spin up tables for active voices so new notes only check against history for the matching voice
+    -- Assumes PPQN == global_clock_div. Lookup tables will need adjustments if switching to 96 PPQN
+    for i = #note_history, 1, -1 do -- Steps backwards to account for table.remove messing with [i]
+      note_history[i].step = note_history[i].step - 1
+      if note_history[i].step == 0 then
+        note_history[i].player:note_off(note_history[i].note)
+        table.remove(note_history, i)
+      end
+    end
+  end
 
 
   function disable_sprockets()
@@ -985,6 +983,19 @@ params:set_action("ts_numerator",
     sprocket_cv_harm.enabled = true
   end
 
+
+  sprocket_notes = seq_lattice:new_sprocket{
+    division = 1 / (seq_lattice.ppqn * 4), -- 1 / (global_clock_div * 4),  -- 1/192 to support 1/64t note durations
+    order = 1,  -- todo ensure 1st within order
+    enabled = true,
+    action = function(t)
+
+      process_notes()
+
+    end
+  } 
+
+
   -- todo think about order wrt start+stop race condition
   -- this will likely need to split into two sprockets: 
   -- one at 1/seq_lattice.ppqn for immediate stop (maybe?), one for starting on 1/16 (SPP)
@@ -999,7 +1010,7 @@ params:set_action("ts_numerator",
         -- bits for handling transport stop (pausing sprockets and rolling back transport)
         if stop then
 
-          -- calculate clock.sync() offset arg for resuming in-phase relative to beat clock.
+          -- calculate clock.sync offset arg for resuming in-phase relative to beat clock.
           local ppqn = seq_lattice.ppqn
           -- local ppc = ppqn * 4
           pre_sync_val = (seq_lattice.transport % (ppqn * 4)) / ppqn  -- phase/beats elapsed (4/4 time)
@@ -1938,29 +1949,8 @@ function refresh()
     redraw()  -- fuck it let's sandbag with 60fps!
   -- end 
 end
-    
-    
--- This clock is used to keep track of which notes are playing so we know when to turn them off and for optional deduping logic.
--- Unlike the sequence_clock, this continues to run after transport stops in order to turn off playing notes
--- Likely needs to be moved to Lattice but need to think about how to handle continuous running
--- Also need to consider how this interacts with starting lattice (pre-sync)
-function timing_clock()
-  while true do
-    clock.sync(1/global_clock_div)
 
-    -- history table including player value. Downside is that each note has to check against note history for all notes irrespective of voice
-    for i = #note_history, 1, -1 do -- Steps backwards to account for table.remove messing with [i]
-      note_history[i].step = note_history[i].step - 1
-      if note_history[i].step == 0 then
-        note_history[i].player:note_off(note_history[i].note)
-        table.remove(note_history, i)
-      end
-    end
-  
-  end
-end
-    
-    
+
 function clock.transport.start(sync_value)
   print("clock.transport.start called with sync_value " .. (sync_value or "nil"))
   -- little check for MIDI because user can technically start and stop as per usual and we don't want to restart coroutine
