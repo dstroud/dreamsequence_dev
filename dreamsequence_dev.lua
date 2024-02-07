@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240205 @modularbeat
+-- 240207 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -30,7 +30,6 @@ else
 end
 extra_rows = rows - 8
 include(norns.state.shortname.."/lib/includes")
-
 norns.version.required = 231114
 
 local latest_strum_coroutine = coroutine.running()
@@ -38,7 +37,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24020501"
+  version = "24020701"
   -----------------------------
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
@@ -505,7 +504,7 @@ function init()
   params:set_action("seq_pattern_length_1", function() pattern_length(1) end)
   
   params:add_number("seq_octave_1", "Octave", -4, 4, 0)
-  
+
   params:add_number("seq_swing_1", "Swing", 50, 99, 50, function(param) return percent(param:get()) end)
 
   params:add_number("seq_dynamics_1", "Dynamics", 0, 100, 70, function(param) return percent(param:get()) end)
@@ -584,6 +583,8 @@ function init()
   -----------------------------
   -- INIT STUFF
   -----------------------------
+  -- globals
+  pre_sync_val = nil
   debug_change_count = 0 -- todo remove
   
   start = false
@@ -985,16 +986,24 @@ params:set_action("ts_numerator",
   end
 
   -- todo think about order wrt start+stop race condition
-  -- this will likely need to split into two sprockets: one at 1/seq_lattice.ppqn for immediate stop, one for starting on 1/16 (SPP)
+  -- this will likely need to split into two sprockets: 
+  -- one at 1/seq_lattice.ppqn for immediate stop (maybe?), one for starting on 1/16 (SPP)
+  -- immediate stop might get weird with note durations happening outside of Lattice so sticking with 1/16 for now
   -- function init_sprocket_stop(div)
     sprocket_stop = seq_lattice:new_sprocket{
-      division =  1/16, --SPP quantum! -- 1/seq_lattice.ppqn,
+      division =  1/16, -- SPP quantum, also used for start pre-sync
       order = 1,  -- todo p0 think about this
       enabled = true,      
       action = function(t) 
   
         -- bits for handling transport stop (pausing sprockets and rolling back transport)
         if stop then
+
+          -- calculate clock.sync() offset arg for resuming in-phase relative to beat clock.
+          local ppqn = seq_lattice.ppqn
+          -- local ppc = ppqn * 4
+          pre_sync_val = (seq_lattice.transport % (ppqn * 4)) / ppqn  -- phase/beats elapsed (4/4 time)
+          
           local clock_source = params:string("clock_source")
           if clock_source == "link" then
           
@@ -1025,11 +1034,11 @@ params:set_action("ts_numerator",
 
             -- option B: pause
             -- elseif link_stop_mode == "pause" then
-              if link_stop_source == "norns" then
-                -- running this here is problematic if we're on 16/16. Ticks over to next measure.
-                -- moving to instant-stop on K2 so we can stop link early, then DS quantizes.
-                -- clock.link.stop()
-              end
+              -- if link_stop_source == "norns" then
+              --   -- running this here is problematic if we're on 16/16. Ticks over to next measure.
+              --   -- moving to instant-stop on K2 so we can stop link early, then DS quantizes.
+              --   -- clock.link.stop()
+              -- end
               -- todo: get this working with the new MIDI stop logic (2 sprockets)
               transport_multi_stop()
               transport_active = false
@@ -1072,9 +1081,9 @@ params:set_action("ts_numerator",
             --   stop = false
             -- end
           
-          -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-          -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-          -- todo p1 also use this when running off norns link beat_count
+            -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+            -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+            -- todo p1 also use this when running off norns link beat_count
           else
             transport_multi_stop()
             transport_active = false
@@ -1126,12 +1135,15 @@ params:set_action("ts_numerator",
               -- print("Stopped: resetting transport to -1 (will be 0)")
           end
 
-        -- option for starting MIDI clock when in "song" (SPP) mode
+          -- option for starting MIDI clock when in "song" (SPP) mode
         elseif start then
-          if clock_start_method == "continue" then
-            if params:string("midi_clock_out") == "song" then
-              transport_multi_continue("sprocket_start")
-              start = false
+          -- eventually we want this to work with Link clock source, but current state prevents this (negative beat issue)
+          if params:string("clock_source") == "internal" then
+            if clock_start_method == "continue" then
+              if params:string("midi_clock_out") == "song" then
+                transport_multi_continue("sprocket_start")
+                start = false
+              end
             end
           end
           -- SEND MIDI SPP AND CONTINUE MESSAGES
@@ -1930,6 +1942,8 @@ end
     
 -- This clock is used to keep track of which notes are playing so we know when to turn them off and for optional deduping logic.
 -- Unlike the sequence_clock, this continues to run after transport stops in order to turn off playing notes
+-- Likely needs to be moved to Lattice but need to think about how to handle continuous running
+-- Also need to consider how this interacts with starting lattice (pre-sync)
 function timing_clock()
   while true do
     clock.sync(1/global_clock_div)
@@ -1988,10 +2002,16 @@ function clock.transport.start(sync_value)
         
         -- TODO p0 needs to be done for other clock sources as well (below)
         -- clock.sync(1) -- v1.2
-        -- need to calculate phase relative to time signature, I think. Maybe use offset.
-        clock.sync(1/4) -- 1/4 of beat = 1/16th note (SPP)-- align with MIDI beat clock? Does sprocket need to stop at same division? WAG
-        print("DEBUG POST-SYNC BEAT " .. round(clock.get_beats(), 3))
+
+        -- option a: 1/4 of beat = 1/16th note (SPP) -- option for quicker start (out of phase though)
+        -- clock.sync(1/4)
         
+        -- option b: delay sync so we're on the same phase (4/4 time sig)
+        -- print("DEBUG PRE-SYNC BEAT " .. round(clock.get_beats(), 3))
+        -- print("DEBUG PRE_SYNC_VAL " .. (pre_sync_val or ""))
+        clock.sync(1, pre_sync_val or 0)
+        -- print("DEBUG POST-SYNC BEAT " .. round(clock.get_beats(), 3))
+        pre_sync_val = nil
         
         -- print("post-sync clock beat " .. clock.get_beats())
         print("----------------------------------")
@@ -2024,7 +2044,7 @@ function clock.transport.start(sync_value)
       elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
         clock.sync(sync_val)  -- uses sync_val arg (chord_div / global_clock_div) to sync on the correct beat of an already running MIDI clock
       end
-    -- end)
+      -- end)
 
 
       -- -- Question: this was previously part of the sequence_clock loop
@@ -3538,7 +3558,7 @@ function key(n,z)
             transport_state = "pausing"
             print(transport_state)        
             clock_start_method = "continue"
-          else  --  remove so we can always do a stop (external sync and weird state exceptions) if transport_state == "pausing" or transport_state == "paused" then
+          else
             reset_external_clock()
             if params:get("arranger") == 2 then
               reset_arrangement()
@@ -3547,6 +3567,7 @@ function key(n,z)
             end
             print("K2 setting transport to 0")
             seq_lattice.transport = 0 -- barely tested. Needed when transport is stopped and we skip transport_handler()
+            pre_sync_val = nil -- no start sync offset needed when stopping
           end
         
         elseif params:string("clock_source") == "link" then
