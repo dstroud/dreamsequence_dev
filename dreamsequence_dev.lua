@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240207 @modularbeat
+-- 240208 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -32,12 +32,13 @@ extra_rows = rows - 8
 include(norns.state.shortname.."/lib/includes")
 norns.version.required = 231114
 
+-- locals
 local latest_strum_coroutine = coroutine.running()
 
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  version = "24020701"
+  local version = "24020801"
   -----------------------------
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
@@ -49,12 +50,34 @@ function init()
   nb.players["jf mpe"] = nil
 
 
-  -- called by crow.input[1].change when clock_source = crow
+  ------------------------------------
+  -- redefine system functions/actions
+  ------------------------------------
+  
+  -- update MIDI clock ports on add/remove/clock param change.restored on script init
+  for i = 1,16 do
+    local old_action = params.params[params.lookup["clock_midi_out_" .. i]].action
+    params:set_action("clock_midi_out_"..i,
+      function(x)
+        old_action(x)
+        transport_midi_update()
+      end
+    )
+  end
+
+  function midi.add(dev)   -- restored on script init
+    transport_midi_update()
+  end
+
+  function midi.remove(dev)   -- restored on script init
+    transport_midi_update()
+  end
+
+  -- called by crow.input[1].change when clock_source == crow
   -- passes through original event for crow clock
   function process_crow_cv_1_change(v)
     norns.crow.send[[tell("change",1,1)]]
     crow_trigger_in()
-    -- print("adding crow_trigger_in()")
   end
 
   -- modifies norns.crow.clock_enable to also call crow_trigger_in()
@@ -234,9 +257,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 4)
-
-  params:add_option("midi_clock_out", "MIDI clock out", {"pattern", "song"}, 2)  -- multi ports (see nb)
+  params:add_group("preferences", "PREFERENCES", 4 + 16)
 
   params:add_option("default_pset", "Load pset", {"Off", "Last"}, 1)
   params:set_save("default_pset", false)
@@ -253,7 +274,36 @@ function init()
   params:set("crow_pullup", param_option_to_index("crow_pullup", prefs.crow_pullup) or 2)
   params:set_action("crow_pullup", function(val) crow_pullup(val); save_prefs() end)
   
+  params:add_separator ("MIDI CLOCK OUT") -- todo hide if no MIDI devices
+
+  -- can't delete params
+  -- can rename
+  -- unique key == port+name?
+  -- test scenario:
+  -- - create param
+  -- - disable clock on port
+  -- - param still exists but is hidden
+  -- - param state applied to midi_transport_ports which is where we read from 
+
+
+    for i = 1, 16 do 
+    -- for i = 1, #midi_transport_ports do
+    local id = "midi_continue_" .. i
+      params:add_option(id, id, {"pattern", "song"}, 2)
+      -- params:hide("midi_continue_" .. i)
+
+      -- todo: handle saving
+      params:set_save(id, false)
+      params:set(id, param_option_to_index(id, prefs.id) or 2)
+      params:set_action(id, function()
+        save_prefs()
+        -- might write param state to midi_transport_ports[n].continue ? Or just lookup as needed
+      end)
+    end
+    transport_midi_update() -- renames midi_continue_ params
+
   
+
   ------------------
   -- ARRANGER PARAMS --
   ------------------
@@ -584,10 +634,11 @@ function init()
   -- INIT STUFF
   -----------------------------
   -- globals
-  pre_sync_val = nil
+  -- pre_sync_val = nil
   debug_change_count = 0 -- todo remove
   
   start = false
+  send_continue = false
   transport_state = "stopped"
   clock_start_method = "start"
   link_start_mode = "reset" -- might just use clock_start_method??
@@ -631,8 +682,7 @@ function init()
     arranger[segment] = 0
   end
   arranger[1] = 1 -- setting this so new users aren't confused about the pattern padding
-  -- Version of arranger which generates chord patterns for held segments
-  arranger_padded = {}
+  arranger_padded = {} -- generates chord patterns for held segments
   arranger_position = 0
   arranger_length = 1
   arranger_grid_offset = 0 -- offset allows us to scroll the arranger grid view beyond 16 segments
@@ -706,18 +756,8 @@ function init()
   reset_clock() -- will turn over to step 0 on first loop
   get_next_chord()
   chord_raw = next_chord
-  -- pset_queue = nil
-  -- pset_data_cache = {}
-  -- pset_load_source = "load_system"
-  -- -- hidden param for selecting pset events
-  -- params:add_number("load_pset", "Load pset", 1,99, 1)
-  -- params:hide(params.lookup["load_pset"])
-  -- params:add_number("splice_pset", "Splice pset", 1,99, 1)
-  -- params:hide(params.lookup["splice_pset"])
-  -- params:add_number("save_pset", "Save pset", 1,99, 1)
-  -- params:hide(params.lookup["save_pset"])  
-    
-  -- table names we want pset  callbacks to act on
+
+  -- table names we want pset callbacks to act on
   pset_lookup = {"arranger", "events", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc"}
   
   
@@ -742,7 +782,6 @@ function init()
       tab.save(_G[tablename],filepath..tablename..".data")
       print("table >> write: " .. filepath..tablename..".data")
     end
-    -- cache(number) -- read from filesystem and store in pset_cache
   end
 
 
@@ -811,7 +850,7 @@ function init()
       -- end
       play_seq = false
     
-      build_scale() -- Have to run manually because mode bang comes after all of this for some reason. todo p2 look into this for the billionth time. There is some reason for it.
+      build_scale() -- Have to run manually because mode bang comes after all of this for some reason
       get_next_chord()
       chord_raw = next_chord
       chord_no = 0 -- wipe chord readout
@@ -830,10 +869,13 @@ function init()
       params:set("chord_readout", param_option_to_index("chord_readout", prefs.chord_readout) or 1)
       params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
       params:set("crow_pullup", param_option_to_index("crow_pullup", prefs.crow_pullup) or 2)
+      for i = 1,16 do
+        local id = "midi_continue_" .. i
+        params:set(id, param_option_to_index(id, prefs[id]) or 2)
+      end
     end
   
   grid_dirty = true
-  -- screen_dirty = true -- redraw()
   end
 
 
@@ -857,6 +899,10 @@ function init()
     prefs.chord_readout = params:string("chord_readout")
     prefs.default_pset = params:string("default_pset")
     prefs.crow_pullup = params:string("crow_pullup")
+    for i = 1, 16 do
+      local id = "midi_continue_" .. i
+      prefs[id] = params:string(id)
+    end 
     tab.save(prefs, filepath .. "prefs.data")
     if countdown_timer ~= nil then --  trick to keep this from junking up repl on init bang (x2 if pset loads)
       print("table >> write: " .. filepath.."prefs.data")
@@ -879,7 +925,7 @@ function init()
 params:set_action("ts_numerator",
     function(val) 
       if transport_state == "stopped" then
-        sprocket_start:set_division(val / params:string("ts_denominator"))
+        sprocket_measure:set_division(val / params:string("ts_denominator"))
       end
     end
   )
@@ -887,7 +933,7 @@ params:set_action("ts_numerator",
   params:set_action("ts_denominator",
   function(val) 
     if transport_state == "stopped" then
-      sprocket_start:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
+      sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
     end
   end
 )
@@ -929,27 +975,13 @@ params:set_action("ts_numerator",
   }
   
 
-  -- SPP stuff
+  -- returns 7-bit LSB and MSB for a given number
   function get_bytes(number)
-      local msb = math.floor(number / 256) -- Shift right by 8 bits
-      local lsb = number % 256 -- Extract the lower 8 bits
+  local lsb = number % 128 -- Extract the lower 7 bits
+  local msb = math.floor(number / 128) -- Shift right by 7 bits
   
-      return lsb, msb
+  return lsb, msb
   end
-  
-  function spp(beat)
-    transport_midi:song_position(get_bytes(beat))
-  end
-
-  -- function gen_time_signatures()
-  --   local l = {1,2,4,8,16}
-  --   for d = 1,5 do
-  --     for n = 1, 16 do
-  --       print(n,l[d])
-  --     end
-  --   end
-  -- end
-
 
   -- keep track of playing notes and decrement each pulse of lattice (whether enabled or disabled!)
   function process_notes()
@@ -966,8 +998,8 @@ params:set_action("ts_numerator",
 
 
   function disable_sprockets()
-    sprocket_start.enabled = false -- should we let this sprocket's phase be advanced when pausing?
-    sprocket_stop.enabled = false   -- should we let this sprocket's phase be advanced when pausing?
+    sprocket_measure.enabled = false -- should we let this sprocket's phase be advanced when pausing?
+    sprocket_16th.enabled = false   -- should we let this sprocket's phase be advanced when pausing?
     sprocket_chord.enabled = false
     sprocket_crow_clock.enabled = false
     sprocket_seq_1.enabled = false
@@ -975,8 +1007,8 @@ params:set_action("ts_numerator",
   end
 
   function enable_sprockets()
-    sprocket_start.enabled = true
-    sprocket_stop.enabled = true
+    sprocket_measure.enabled = true
+    sprocket_16th.enabled = true
     sprocket_chord.enabled = true
     sprocket_crow_clock.enabled = true
     sprocket_seq_1.enabled = true
@@ -985,206 +1017,202 @@ params:set_action("ts_numerator",
 
 
   sprocket_notes = seq_lattice:new_sprocket{
-    division = 1 / (seq_lattice.ppqn * 4), -- 1 / (global_clock_div * 4),  -- 1/192 to support 1/64t note durations
+    division = 1 / (seq_lattice.ppqn * 4),
     order = 1,  -- todo ensure 1st within order
     enabled = true,
     action = function(t)
-
       process_notes()
-
     end
   } 
 
 
   -- todo think about order wrt start+stop race condition
-  -- this will likely need to split into two sprockets: 
-  -- one at 1/seq_lattice.ppqn for immediate stop (maybe?), one for starting on 1/16 (SPP)
-  -- immediate stop might get weird with note durations happening outside of Lattice so sticking with 1/16 for now
-  -- function init_sprocket_stop(div)
-    sprocket_stop = seq_lattice:new_sprocket{
-      division =  1/16, -- SPP quantum, also used for start pre-sync
-      order = 1,  -- todo p0 think about this
-      enabled = true,      
-      action = function(t) 
-  
-        -- bits for handling transport stop (pausing sprockets and rolling back transport)
-        if stop then
+  -- todo explore splitting into two sprockets: 
+  -- one at 1/seq_lattice.ppqn for immediate stop to avoid end-of-measure rollover, one for starting on 1/16 (SPP)
+  sprocket_16th = seq_lattice:new_sprocket{
+    division =  1/16, -- SPP quantum, also used for start pre-sync
+    order = 1,  -- todo p0 think about this
+    enabled = true,
+    action = function(t)
 
-          -- calculate clock.sync offset arg for resuming in-phase relative to beat clock.
-          local ppqn = seq_lattice.ppqn
-          -- local ppc = ppqn * 4
-          pre_sync_val = (seq_lattice.transport % (ppqn * 4)) / ppqn  -- phase/beats elapsed (4/4 time)
-          
-          local clock_source = params:string("clock_source")
-          if clock_source == "link" then
-          
-            -- general plan: always pause. 
-            -- Start K3 or external clock start will do the "reset" stuff
-            -- K1+K3 will be like Ableton's Shift+Space (resume and pickup on quantum)
+      -- bits for handling transport stop (pausing sprockets and rolling back transport)
+      if stop then
 
-            -- local link_stop_mode = "reset"
-            -- local link_stop_mode = "pause"
+        -- Keep this as backup! calculate clock.sync offset arg for resuming in-phase relative to beat clock.
+        -- option "b" for clock.transport.start internal clock source
+        -- local ppqn = seq_lattice.ppqn
+        -- pre_sync_val = (seq_lattice.transport % (ppqn * 4)) / ppqn  -- phase/beats elapsed (4/4 time)
+        
+        local clock_source = params:string("clock_source")
+        if clock_source == "link" then
+        
+          -- general plan: always pause. 
+          -- Start K3 or external clock start will do the "reset" stuff
+          -- K1+K3 will be like Ableton's Shift+Space (resume and pickup on quantum)
 
-            -- -- option A: immediate stop and reset of DS sequences irrespective of link_stop_source
-            -- if link_stop_mode == "reset" then
-            --   if link_stop_source == "norns" then
-            --     clock.link.stop()
-            --   end
-            --   transport_multi_stop()   
-            --   if arranger_active then
-            --     print(transport_state)
-            --   else
-            --     reset_pattern()
-            --   end
-            --   transport_active = false
-            --   reset_arrangement()
-            --   transport_state = "stopped"
-            --   stop = false
-            --   link_stop_source = nil
-            --   seq_lattice.transport = -1 -- probably a better place for this
+          -- local link_stop_mode = "reset"
+          -- local link_stop_mode = "pause"
 
-            -- option B: pause
-            -- elseif link_stop_mode == "pause" then
-              -- if link_stop_source == "norns" then
-              --   -- running this here is problematic if we're on 16/16. Ticks over to next measure.
-              --   -- moving to instant-stop on K2 so we can stop link early, then DS quantizes.
-              --   -- clock.link.stop()
-              -- end
-              -- todo: get this working with the new MIDI stop logic (2 sprockets)
-              transport_multi_stop()
-              transport_active = false
-              transport_state = "paused"
-              print(transport_state)
-              stop = false
-              start = false
-              link_stop_source = nil
-            -- end
+          -- -- option A: immediate stop and reset of DS sequences irrespective of link_stop_source
+          -- if link_stop_mode == "reset" then
+          --   if link_stop_source == "norns" then
+          --     clock.link.stop()
+          --   end
+          --   transport_multi_stop()   
+          --   if arranger_active then
+          --     print(transport_state)
+          --   else
+          --     reset_pattern()
+          --   end
+          --   transport_active = false
+          --   reset_arrangement()
+          --   transport_state = "stopped"
+          --   stop = false
+          --   link_stop_source = nil
+          --   seq_lattice.transport = -1 -- probably a better place for this
 
-            -- todo: some variation of the below for other options when stopping, e.g.
-            -- option B: pause (so we can resume on Norns using K3 then trigger link start on next quantum)
-            -- option C: continue playing and pause on the next division of sync quantum
-
-            -- to pause no matter what
+          -- option B: pause
+          -- elseif link_stop_mode == "pause" then
             -- if link_stop_source == "norns" then
-              -- clock.link.stop()
-              -- transport_multi_stop()
-              -- transport_active = false
-              -- transport_state = "paused"
-              -- print(transport_state)
-              -- stop = false
-              -- start = false
-              -- link_stop_source = nil
-            
-            -- -- TODO p0 this is going to be an issue re v1.3 lattice changes. Need to move link stopping elsewhere probably.
-            -- -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
-            -- -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
-            -- -- todo p2 look at options for a start/continue mode for external sources that support this
-            -- else -- external Link stop msg
-            --   transport_multi_stop()   
-            --   if arranger_active then
-            --     print(transport_state)
-            --   else
-            --     reset_pattern()
-            --   end
-            --   transport_active = false
-            --   reset_arrangement()
-            --   transport_state = "stopped"
-            --   stop = false
+            --   -- running this here is problematic if we're on 16/16. Ticks over to next measure.
+            --   -- moving to instant-stop on K2 so we can stop link early, then DS quantizes.
+            --   -- clock.link.stop()
             -- end
-          
-            -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-            -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-            -- todo p1 also use this when running off norns link beat_count
-          else
+            -- todo: get this working with the new MIDI stop logic (2 sprockets)
             transport_multi_stop()
             transport_active = false
-            if transport_state ~= "stopped" then -- Probably a better way of blocking this
-              transport_state = "paused"
-              print(transport_state)
-            end
+            transport_state = "paused"
+            print(transport_state)
             stop = false
             start = false
-          end
+            link_stop_source = nil
+          -- end
 
-          -- for all clock sources, stop and pause
-          -- todo: why not stop sprockets here as well (external stop?)
+          -- todo: some variation of the below for other options when stopping, e.g.
+          -- option B: pause (so we can resume on Norns using K3 then trigger link start on next quantum)
+          -- option C: continue playing and pause on the next division of sync quantum
+
+          -- to pause no matter what
+          -- if link_stop_source == "norns" then
+            -- clock.link.stop()
+            -- transport_multi_stop()
+            -- transport_active = false
+            -- transport_state = "paused"
+            -- print(transport_state)
+            -- stop = false
+            -- start = false
+            -- link_stop_source = nil
           
-          -- print("a. stopping seq_lattice")
-          print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
-          "phase "..(sprocket_chord.phase or ""),
-          "beat "..round(clock.get_beats(),2),
-          "seq_lattice:stop")
-
-          seq_lattice:stop()
-
-          -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
-          -- adding "stopped" condition here prevents the issue with each sprocket playing when K2 is double-tapped. 
-          -- But it also looks to double-decrement transport (can be -1) which might be an issue
-          -- Issue might be jumping immediately from "pausing" to "stopped"
-          if transport_state == "paused" then -- or transport_state == "stopped" then -- formerly lattice_rollback
-            disable_sprockets()
-
-            -- roll back transport position
-            print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
-            seq_lattice.transport = seq_lattice.transport - 1
-
-            -------------------------------------------------
-            -- Roll back this sprocket's phase which was just incremented (wrap so 0 becomes max phase)
-            sprocket_stop.phase = util.wrap(sprocket_stop.phase - 1, 1, sprocket_stop.division * 4 * seq_lattice.ppqn)
-            -- sprocket_stop.phase = sprocket_stop.divison * sprocket_stop.
-            -------------------------------------------------
-
-
-          elseif transport_state == "stopped" then
-              -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
-              disable_sprockets()
-
-              -- currently settings to 0 in K2 transport controls section because this misses stops that occur after we're paused (only works on pausing>>stop)
-              -- Will be incremented back to 0 by lattice
-              -- Todo: revisit with other clock sources
-              -- seq_lattice.transport = -1
-              -- print("Stopped: resetting transport to -1 (will be 0)")
+          -- -- TODO p0 this is going to be an issue re v1.3 lattice changes. Need to move link stopping elsewhere probably.
+          -- -- Link clock_source with external stop. No quantization. Just resets pattern/arrangement immediately
+          -- -- May also want to do this for MIDI but need to set create a link_stop_source equivalent
+          -- -- todo p2 look at options for a start/continue mode for external sources that support this
+          -- else -- external Link stop msg
+          --   transport_multi_stop()   
+          --   if arranger_active then
+          --     print(transport_state)
+          --   else
+          --     reset_pattern()
+          --   end
+          --   transport_active = false
+          --   reset_arrangement()
+          --   transport_state = "stopped"
+          --   stop = false
+          -- end
+        
+          -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
+          -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
+          -- todo p1 also use this when running off norns link beat_count
+        else
+          transport_multi_stop()
+          transport_active = false
+          if transport_state ~= "stopped" then -- Probably a better way of blocking this
+            transport_state = "paused"
+            print(transport_state)
           end
-
-          -- option for starting MIDI clock when in "song" (SPP) mode
-        elseif start then
-          -- eventually we want this to work with Link clock source, but current state prevents this (negative beat issue)
-          if params:string("clock_source") == "internal" then
-            if clock_start_method == "continue" then
-              if params:string("midi_clock_out") == "song" then
-                transport_multi_continue("sprocket_start")
-                start = false
-              end
-            end
-          end
-          -- SEND MIDI SPP AND CONTINUE MESSAGES
-          --------------------------
-          -- DEBUG WITH multi_start first, then continue/spp!
-          -- clock_start_method = "start"  -- "time signature based "pattern" continue on next measure"
-          -- clock_start_method = "continue"  -- "time signature based "pattern" continue on next measure"
-          ----------------------------
-
-        -- -- if start == true and stop ~= true then
-        --   transport_active = true
-        -- -- Send out MIDI start/continue messages
-        --   if clock_start_method == "start" then
-        --     transport_multi_start("sprocket_start")  
-        --   else
-        --     transport_multi_continue("sprocket_start")
-        --   end
-        --   clock_start_method = "continue"
-        --   start = false
-        -- end
-
+          stop = false
+          start = false
         end
 
-      end,
-    } 
-  -- end
+        -- for all clock sources, stop and pause
+        -- todo: why not stop sprockets here as well (external stop?)
+        
+        -- print("a. stopping seq_lattice")
+        print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
+        "phase "..(sprocket_chord.phase or ""),
+        "beat "..round(clock.get_beats(),2),
+        "seq_lattice:stop")
+
+        seq_lattice:stop()
+
+        -- paused is handled here whereas "stopped" is handled with K2 transport control and transport start
+        -- adding "stopped" condition here prevents the issue with each sprocket playing when K2 is double-tapped. 
+        -- But it also looks to double-decrement transport (can be -1) which might be an issue
+        -- Issue might be jumping immediately from "pausing" to "stopped"
+        if transport_state == "paused" then -- or transport_state == "stopped" then -- formerly lattice_rollback
+          disable_sprockets()
+
+          -- roll back transport position
+          print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
+          seq_lattice.transport = seq_lattice.transport - 1
+
+          -------------------------------------------------
+          -- Roll back this sprocket's phase which was just incremented (wrap so 0 becomes max phase)
+          sprocket_16th.phase = util.wrap(sprocket_16th.phase - 1, 1, sprocket_16th.division * 4 * seq_lattice.ppqn)
+          -------------------------------------------------
+
+
+        elseif transport_state == "stopped" then
+            -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
+            disable_sprockets()
+
+            -- currently settings to 0 in K2 transport controls section because this misses stops that occur after we're paused (only works on pausing>>stop)
+            -- Will be incremented back to 0 by lattice
+            -- Todo: revisit with other clock sources
+            -- seq_lattice.transport = -1
+            -- print("Stopped: resetting transport to -1 (will be 0)")
+        end
+
+        -- option for starting MIDI clock when in "song" (SPP) mode
+      elseif start then
+        -- eventually we want this to work with Link clock source, but current state prevents this (negative beat issue)
+        if params:string("clock_source") == "internal" then
+          if clock_start_method == "continue" then  -- if it's "start", we send a start via transport_multi_start
+            if send_continue then
+              print("DEBUG SEND_CONTINUE TRUE")
+              transport_multi_continue("sprocket_measure") -- sends SPP out
+              send_continue = false  -- set this so we don't keep sending SPP every 1/16th until next measure
+            end
+          end
+        end
+        -- SEND MIDI SPP AND CONTINUE MESSAGES
+        --------------------------
+        -- DEBUG WITH multi_start first, then continue/spp!
+        -- replace with midi_continue_
+        -- clock_start_method = "start"  -- "time signature based "pattern" continue on next measure"
+        -- clock_start_method = "continue"  -- "time signature based "pattern" continue on next measure"
+        ----------------------------
+
+      -- -- if start == true and stop ~= true then
+      --   transport_active = true
+      -- -- Send out MIDI start/continue messages
+      --   if clock_start_method == "start" then
+      --     transport_multi_start("sprocket_measure")  
+      --   else
+      --     transport_multi_continue("sprocket_measure")
+      --   end
+      --   clock_start_method = "continue"
+      --   start = false
+      -- end
+
+      end
+
+    end,
+  } 
   
 
-  function init_sprocket_start(div)
-    sprocket_start = seq_lattice:new_sprocket{
+  function init_sprocket_measure(div) -- rename sprocket_measure
+    sprocket_measure = seq_lattice:new_sprocket{
       action = function(t)
 
         -- -- debug note player
@@ -1193,13 +1221,13 @@ params:set_action("ts_numerator",
 
           -- SEND MIDI CLOCK START/CONTINUE MESSAGES at the start of new measure for "pattern" syncing
 
-        if start then -- will have been flipped to false if start was handled in prior sprocket
+        if start then
           transport_active = true
           -- if clock_start_method == "start" then
-            transport_multi_start("sprocket_start")
-            clock_start_method = "continue"
-          -- elseif params:string("midi_clock_out") == "pattern" then
-            -- transport_multi_continue("sprocket_start")
+            transport_multi_start("sprocket_measure")
+            -- clock_start_method = "continue" -- 24-02-08 moved to K2 pause
+          -- elseif params:string("midi_continue") == "pattern" then
+            -- transport_multi_continue("sprocket_measure")
           -- end
           start = false
         end
@@ -1214,9 +1242,9 @@ params:set_action("ts_numerator",
         --   transport_active = true
         -- -- Send out MIDI start/continue messages
         --   if clock_start_method == "start" then
-        --     transport_multi_start("sprocket_start")  
+        --     transport_multi_start("sprocket_measure")  
         --   else
-        --     transport_multi_continue("sprocket_start")
+        --     transport_multi_continue("sprocket_measure")
         --   end
         --   clock_start_method = "continue"
         --   start = false
@@ -1236,7 +1264,7 @@ params:set_action("ts_numerator",
     }
   end
   -- some weirdness around order in which param actions fire. So we do via a function the first time.
-  init_sprocket_start(params:get("ts_numerator") / params:string("ts_denominator"))
+  init_sprocket_measure(params:get("ts_numerator") / params:string("ts_denominator"))
 
 
   function init_sprocket_chord(div)
@@ -1514,25 +1542,25 @@ end
 function reset_sprockets(from)
   print("b. reset_sprockets called by " .. from)
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
-  reset_sprocket_stop("reset_sprockets")  
-  reset_sprocket_start("reset_sprockets")  
+  reset_sprocket_16th("reset_sprockets")  
+  reset_sprocket_measure("reset_sprockets")  
   reset_sprocket_chord("reset_sprockets")
   reset_sprocket_crow_clock("reset_sprockets")
   reset_sprocket_seq_1("reset_sprockets")
   reset_sprocket_cv_harm("reset_sprockets")
 end
 
-function reset_sprocket_stop(from)
-  -- print("reset_sprocket_stop() called by " .. from)
-  sprocket_stop.phase = sprocket_stop.division * seq_lattice.ppqn * 4 * (1 - sprocket_stop.delay)
-  sprocket_stop.downbeat = false
+function reset_sprocket_16th(from)
+  -- print("reset_sprocket_16th() called by " .. from)
+  sprocket_16th.phase = sprocket_16th.division * seq_lattice.ppqn * 4 * (1 - sprocket_16th.delay)
+  sprocket_16th.downbeat = false
 end
 
-function reset_sprocket_start(from)
-  -- print("reset_sprocket_start() called by " .. from)
-  sprocket_start.division = params:get("ts_numerator") / params:string("ts_denominator")
-  sprocket_start.phase = sprocket_start.division * seq_lattice.ppqn * 4 * (1 - sprocket_start.delay)
-  sprocket_start.downbeat = false
+function reset_sprocket_measure(from)
+  -- print("reset_sprocket_measure() called by " .. from)
+  sprocket_measure.division = params:get("ts_numerator") / params:string("ts_denominator")
+  sprocket_measure.phase = sprocket_measure.division * seq_lattice.ppqn * 4 * (1 - sprocket_measure.delay)
+  sprocket_measure.downbeat = false
 end
 
 function reset_sprocket_chord(from)
@@ -1665,52 +1693,83 @@ function div_to_index(string)
 end
 
 
--- This previously was used to define a single destination for sending out MIDI clock (and transport). Now we're using this to look up the system clock destinations and logging those so we send transport messages to all destinations. Fix: this gets called a lot just to be safe, but is probably only needed when the clock params are touched (callback?) or when starting transport.
+-- generate lookup table with MIDI ports being sent system clock
+-- update midi_continue_n params to show in preferences
+-- todo p3 gets called every time transport msg is sent...
+-- can probably just redefine midi.add/remove/update and midi clock out param action
+-- params.params[params.lookup.clock_midi_out_1].action
 function transport_midi_update()
-  -- Find out which ports Norns is sending MIDI clock on so we know where to send transport messages
+  print("getting current MIDI clock ports")
   midi_transport_ports = {}
-  midi_transport_ports_index = 1
+  local index = 1
   for i = 1,16 do
     if params:get("clock_midi_out_" .. i) == 1 then
-      midi_transport_ports[midi_transport_ports_index] = i
-      midi_transport_ports_index = midi_transport_ports_index + 1
+      midi_transport_ports[index] = {}
+      midi_transport_ports[index].port = i
+      midi_transport_ports[index].name = midi.vports[i].name
+      index = index + 1
+      params.params[params.lookup["midi_continue_" .. i]].name = midi.vports[i].name
+      params:show("midi_continue_" .. i)
+    else
+      params.params[params.lookup["midi_continue_" .. i]].name = "midi_continue_" .. i
+      params:hide("midi_continue_" .. i)
     end
   end
 end
 
 
--- check which ports the global midi clock is being sent to and sends a start message there
-function transport_multi_start()
-  transport_midi_update() -- update valid transport ports. Is there a callback when these params are touched?
-  for i = 1,#midi_transport_ports do
-    transport_midi = midi.connect(midi_transport_ports[i])
-    transport_midi:start()
-    -- print("midi start - sync_val " .. clock.get_beats() -  sync_val)
-    -- print("midi start - clock_synced " .. clock.get_beats() - clock_synced)
-  end  
+function transport_multi_start(source)
+  -- for i = 1,#midi_transport_ports do
+  --   transport_midi = midi.connect(midi_transport_ports[i].port)
+  --   transport_midi:start()
+  --   -- print("midi start - sync_val " .. clock.get_beats() -  sync_val)
+  --   -- print("midi start - clock_synced " .. clock.get_beats() - clock_synced)
+  -- end  
+
+  print("DEBUG transport_multi_start called by " .. source)
+  for i = 1, #midi_transport_ports do
+    print("PORT " .. i)
+    -- if transport_state == "stopped" then  -- state already updated by the time MIDI is sent out
+    if clock_start_method == "start" then -- this overrides SPP
+      print("clock_start_method == start")
+      local transport_midi = midi.connect(midi_transport_ports[i].port)
+      transport_midi:start()
+    else
+      print("clock_start_method == continue/nil")
+      if params:string("midi_continue_" .. midi_transport_ports[i].port) == "pattern" then
+        local transport_midi = midi.connect(midi_transport_ports[i].port)
+        transport_midi:start()
+      end
+    end
+  end
+
 end
 
 
 -- check which ports the global midi clock is being sent to and sends a stop message there
 function transport_multi_stop()
-  transport_midi_update() -- update valid transport ports. Is there a callback when these params are touched?
   for i in pairs(midi_transport_ports) do  
-    transport_midi = midi.connect(midi_transport_ports[i])
+    local transport_midi = midi.connect(midi_transport_ports[i].port)
     transport_midi:stop()
   end  
-  -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_start.phase or ""), "sprocket_start action")  
+  -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_measure.phase or ""), "sprocket_measure action")  
 end
 
 
 -- check which ports the global midi clock is being sent to and sends a spp and continue message there
 function transport_multi_continue(source)
   print("DEBUG transport_multi_continue called by " .. source)
-  transport_midi_update() -- update valid transport ports. Is there a callback when these params are touched?
-  for i in pairs(midi_transport_ports) do  
-    transport_midi = midi.connect(midi_transport_ports[i])
-    spp(seq_lattice.transport / 24)
-    transport_midi:continue()
-  end  
+  for i = 1, #midi_transport_ports do
+    -- local port midi_transport_ports[i].port
+    if params:string("midi_continue_" .. midi_transport_ports[i].port) == "song" then
+      local transport_midi = midi.connect(midi_transport_ports[i].port)
+      print("-------SENDING SPP bytes-----")
+      print(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
+      print("-----------------------------")
+      transport_midi:song_position(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
+      transport_midi:continue()
+    end
+  end
 end
 
 
@@ -1982,30 +2041,21 @@ function clock.transport.start(sync_value)
       -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
       -- This is required when syncing externally (or sending clock so, for example, MIDI stop comes in on the beat
       if clock_source == "internal" then
-        -- ok so we're starting on beat 1 and *should* start on beat 0
-        -- can't sync to beat 0, however, and resetting beat count via params:set("clock_reset", 1) calls clock.transport.start() which causes an infinite loop
-        -- sorta doesn't matter since we are doing relative beat counts via clock_step
-        -- but might mess up mods, etc...
-        -- print("pre-sync clock beat " .. clock.get_beats())
-        -- clock.sync(1)
+        -- option a: sync on next 1/16th note for SPP (1/4 of beat = 1/16th note)
+        -- this will be out of phase with system beat value, but MIDI clock pulses will be synced
+        clock.sync(1/4)
         
-        
-        -- TODO p0 needs to be done for other clock sources as well (below)
-        -- clock.sync(1) -- v1.2
+        -- keep this in case we need to switch for some reason (e.g. mods that rely on beat count)
+        -- -- option b: delay sync so we're on the same phase (4/4 time sig)
+        -- -- print("DEBUG PRE-SYNC BEAT " .. round(clock.get_beats(), 3))
+        -- -- print("DEBUG PRE_SYNC_VAL " .. (pre_sync_val or ""))
+        -- clock.sync(1, pre_sync_val or 0)
+        -- -- print("DEBUG POST-SYNC BEAT " .. round(clock.get_beats(), 3))
+        -- pre_sync_val = nil        
+        -- -- print("post-sync clock beat " .. clock.get_beats())
 
-        -- option a: 1/4 of beat = 1/16th note (SPP) -- option for quicker start (out of phase though)
-        -- clock.sync(1/4)
-        
-        -- option b: delay sync so we're on the same phase (4/4 time sig)
-        -- print("DEBUG PRE-SYNC BEAT " .. round(clock.get_beats(), 3))
-        -- print("DEBUG PRE_SYNC_VAL " .. (pre_sync_val or ""))
-        clock.sync(1, pre_sync_val or 0)
-        -- print("DEBUG POST-SYNC BEAT " .. round(clock.get_beats(), 3))
-        pre_sync_val = nil
-        
-        -- print("post-sync clock beat " .. clock.get_beats())
-        print("----------------------------------")
-        -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_start.phase or ""), "post-sync")  
+        -- print("----------------------------------")
+        -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_measure.phase or ""), "post-sync")  
       elseif clock_source == "link" then
         
         print("SYNC_VALUE = " .. (sync_value or "nil"))
@@ -2038,26 +2088,10 @@ function clock.transport.start(sync_value)
 
 
       -- -- Question: this was previously part of the sequence_clock loop
-      -- -- should this be moved to sprocket_start?
+      -- -- should this be moved to 16th and measure sprockets?
       transport_state = "playing"
       print(transport_state)
   
-      --   -- moving to sprocket_start
-      --   -- SEND MIDI CLOCK START/CONTINUE MESSAGES
-      -- if start == true and stop ~= true then
-      --   transport_active = true
-      -- -- Send out MIDI start/continue messages
-      --   if clock_start_method == "start" then
-      --     transport_multi_start()  
-      --   else
-      --     transport_multi_continue("clock.transport.start")
-      --   end
-      --   clock_start_method = "continue"
-      --   start = false
-      -- end
-    
-      -- print("starting lattice")
-      -- transport_state = "playing" -- new
       print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
       "phase "..(sprocket_chord.phase or ""),
       "beat "..round(clock.get_beats(),2),
@@ -2066,7 +2100,7 @@ function clock.transport.start(sync_value)
       enable_sprockets()
       seq_lattice:start()
       
-  end)
+    end)
 
   end
 end
@@ -3548,6 +3582,7 @@ function key(n,z)
             transport_state = "pausing"
             print(transport_state)        
             clock_start_method = "continue"
+            send_continue = true
           else
             reset_external_clock()
             if params:get("arranger") == 2 then
@@ -3556,8 +3591,8 @@ function key(n,z)
               reset_pattern()
             end
             print("K2 setting transport to 0")
-            seq_lattice.transport = 0 -- barely tested. Needed when transport is stopped and we skip transport_handler()
-            pre_sync_val = nil -- no start sync offset needed when stopping
+            seq_lattice.transport = 0 -- check if needed
+            -- pre_sync_val = nil -- no start sync offset needed when stopping
           end
         
         elseif params:string("clock_source") == "link" then
@@ -3622,7 +3657,7 @@ function key(n,z)
             stop = true
             transport_state = "pausing"
             print(transport_state)        
-            clock_start_method = "continue"
+            clock_start_method = "continue" -- todo probably obsolete
             -- start = true
           else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == "pausing" or transport_state == "paused" then
             reset_external_clock()
@@ -3908,7 +3943,7 @@ function key(n,z)
         --     -- this needs to be rewritten to incorporate sprocket.transport, if we want to MIDI punch-in thing to work
         -- elseif params:string("clock_source") == "midi" then
         --   if transport_active == false then
-        --     clock.transport.start(sprocket_start.division) --chord_div / global_clock_div) -- sync_val  -- WIP here!
+        --     clock.transport.start(sprocket_measure.division) --chord_div / global_clock_div) -- sync_val  -- WIP here!
         --   else -- we can cancel a pending pause by pressing K3 before it fires
         --     stop = false
         --     transport_state = "playing"

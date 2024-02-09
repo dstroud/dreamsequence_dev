@@ -104,10 +104,10 @@ function Lattice:pulse()
         local sprocket_name
         if sprocket.id == sprocket_notes.id then 
           sprocket_name = "notes"    
-        elseif sprocket.id == sprocket_start.id then 
-          sprocket_name = "start"     
-        elseif sprocket.id == sprocket_stop.id then 
-          sprocket_name = "stop"             
+        elseif sprocket.id == sprocket_measure.id then 
+          sprocket_name = "measure"     
+        elseif sprocket.id == sprocket_16th.id then 
+          sprocket_name = "16th"             
         elseif sprocket.id == sprocket_chord.id then 
           sprocket_name = "chord"     
         elseif sprocket.id == sprocket_seq_1.id then 
