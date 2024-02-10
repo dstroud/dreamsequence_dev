@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240208 @modularbeat
+-- 240210 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -38,7 +38,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24020801"
+  local version = "24021001"
   -----------------------------
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
@@ -54,7 +54,7 @@ function init()
   -- redefine system functions/actions
   ------------------------------------
   
-  -- update MIDI clock ports on add/remove/clock param change.restored on script init
+  -- update MIDI clock ports on add/remove/clock param change. Restored on script init
   for i = 1,16 do
     local old_action = params.params[params.lookup["clock_midi_out_" .. i]].action
     params:set_action("clock_midi_out_"..i,
@@ -65,11 +65,11 @@ function init()
     )
   end
 
-  function midi.add(dev)   -- restored on script init
+  function midi.add(dev)   -- Restored on script init
     transport_midi_update()
   end
 
-  function midi.remove(dev)   -- restored on script init
+  function midi.remove(dev)   -- Restored on script init
     transport_midi_update()
   end
 
@@ -310,7 +310,7 @@ function init()
   params:add_group("arranger_group", "ARRANGER", 2)
 
   params:add_option("arranger", "Arranger", {"Off", "On"}, 1)
-  params:set_action("arranger", function() update_arranger_active() end)
+  -- params:set_action("arranger", function() update_arranger_active() end) setting post-bang
   
   params:add_option("playback", "Playback", {"1-shot","Loop"}, 2)
   params:set_action("playback", function() arranger_ending() end)
@@ -916,7 +916,9 @@ function init()
   end
   
   params:bang()
-  -- Some actions need to be added post-bang. 
+  -- Some actions need to be added post-bang.
+  params:set_action("arranger", function() update_arranger_active() end)
+
   params:set_action("mode", function() build_scale(); update_chord_action() end)
 
 -- Redefine div change actions, this time with lattice stuff
@@ -1078,10 +1080,11 @@ params:set_action("ts_numerator",
             --   -- moving to instant-stop on K2 so we can stop link early, then DS quantizes.
             --   -- clock.link.stop()
             -- end
-            -- todo: get this working with the new MIDI stop logic (2 sprockets)
+
+            -- hard stop since we can't do continue (https://github.com/monome/norns/issues/1756)
             transport_multi_stop()
             transport_active = false
-            transport_state = "paused"
+            transport_state = "stopped"
             print(transport_state)
             stop = false
             start = false
@@ -1124,7 +1127,7 @@ params:set_action("ts_numerator",
           -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
           -- todo p1 also use this when running off norns link beat_count
         else
-          transport_multi_stop()
+          -- transport_multi_stop() -- 24-02-10 moving to K2 for immediate stop (make this an option?)
           transport_active = false
           if transport_state ~= "stopped" then -- Probably a better way of blocking this
             transport_state = "paused"
@@ -1595,20 +1598,6 @@ function reset_sprocket_cv_harm(from)
 end
 
 
--- -- used by advance_chord when seq reset_on is "step" or "chord" and we want to reset sprocket
--- -- Q: does this fuck up things when the chord is on a swing beat? Doesn't look like it. So why do we need this?
--- function set_sprocket_seq_1_div() -- called by advance_chord_pattern to depending on reset_on method
---   local new_div = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
---   if sprocket_seq_1.division ~= new_div then
---     print("CHORD RESET SPROCKET DIV")
---     sprocket_seq_1.division = division_names[params:get("seq_div_index_1")][1]/global_clock_div/4
---     sprocket_seq_1.phase = (sprocket_seq_1.division * seq_lattice.ppqn * 4 * (1 - sprocket_seq_1.delay))
---     print("set_sprocket_seq_1_div, phase .. sprocket_seq_1.phase")
---     -- sprocket_seq_1.downbeat = false -- todo p0 look into this. Likely needs to use same reset_downbeat option
---   end
--- end
-
-
 -- todo p3 move with other musicutil functions
 function build_scale()
   notes_nums = musicutil.generate_scale_of_length(0, params:get("mode"), 7)
@@ -1673,17 +1662,6 @@ function pattern_length(source)
 end
 
 
--- function refresh_midi_devices()
---   for i = 1, #midi.vports do -- query all ports
---     midi_device[i] = midi.connect(i) -- connect each device
---     table.insert( -- register its name:
---       midi_device_names, -- table to insert to
---       "port "..i..": "..util.trim_string_to_width(midi_device[i].name, 80) -- value to insert
---     )
---   end
--- end
-
-
 function div_to_index(string)
   for i = 1,#division_names do
     if tab.key(division_names[i],string) == 2 then
@@ -1695,11 +1673,7 @@ end
 
 -- generate lookup table with MIDI ports being sent system clock
 -- update midi_continue_n params to show in preferences
--- todo p3 gets called every time transport msg is sent...
--- can probably just redefine midi.add/remove/update and midi clock out param action
--- params.params[params.lookup.clock_midi_out_1].action
 function transport_midi_update()
-  print("getting current MIDI clock ports")
   midi_transport_ports = {}
   local index = 1
   for i = 1,16 do
@@ -1983,7 +1957,8 @@ end
 
 function calc_seconds_remaining()
   if arranger_active then
-    percent_step_elapsed = arranger_position == 0 and 0 or (math.max(clock_step,0) % chord_div / (chord_div-1)) -- todo kill chord_div?
+    -- percent_step_elapsed = arranger_position == 0 and 0 or (math.max(clock_step,0) % chord_div / (chord_div-1)) -- todo kill chord_div?
+    percent_step_elapsed = (arranger_position == 0 and 0 or sprocket_chord.phase) / (sprocket_chord.division * 4 * seq_lattice.ppqn) -- ppc
     seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
   else
     seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (steps_remaining_in_active_pattern or 0))
@@ -2062,7 +2037,7 @@ function clock.transport.start(sync_value)
         if link_start_mode == "reset" then  -- external start signal
           --------------------------
           -- todo: make this a function and figure out how to also call it when called by external link start
-          transport_multi_stop()   
+          transport_multi_stop()
           if arranger_active then
             print(transport_state)
           else
@@ -3578,6 +3553,8 @@ function key(n,z)
           -- print("internal clock")
           if transport_state == "starting" or transport_state == "playing" then
             -- print("DEBUG K2 TRANSPORT STOPPING")
+            transport_multi_stop() -- 24-02-10 moving from sprocket_16th to K2 for immediate stop (make this an option?)
+
             stop = true
             transport_state = "pausing"
             print(transport_state)        
@@ -3615,7 +3592,8 @@ function key(n,z)
             link_stop_source = "norns"
             stop = true -- will trigger DS to do 1/16 quantized stop
             clock_start_method = "start"
-            transport_state = "pausing"
+
+            transport_state = "pausing" -- will immediately be flipped to Stop in sprocket
             print(transport_state)
 
             if params:get("arranger") == 2 then
@@ -3657,7 +3635,7 @@ function key(n,z)
             stop = true
             transport_state = "pausing"
             print(transport_state)        
-            clock_start_method = "continue" -- todo probably obsolete
+            clock_start_method = "continue"
             -- start = true
           else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == "pausing" or transport_state == "paused" then
             reset_external_clock()
@@ -4477,7 +4455,7 @@ function gen_dash(source)
     dash_steps = dash_steps + 1 -- and 1 to grow on!
     end
   end
-  calc_seconds_remaining()
+  calc_seconds_remaining() -- firing before lattice is running which causes error
 end
 
 
