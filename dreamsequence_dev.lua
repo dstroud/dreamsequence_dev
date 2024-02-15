@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240210 @modularbeat
+-- 240215 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -38,8 +38,9 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24021001"
+  local version = "24021501"
   -----------------------------
+
 --   nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple voices 
   nb:init()
     -- suppress some default nb_crow and nb_jf mod players-- they come back on next nb init
@@ -1032,14 +1033,14 @@ params:set_action("ts_numerator",
   -- todo explore splitting into two sprockets: 
   -- one at 1/seq_lattice.ppqn for immediate stop to avoid end-of-measure rollover, one for starting on 1/16 (SPP)
   sprocket_16th = seq_lattice:new_sprocket{
-    division =  1/16, -- SPP quantum, also used for start pre-sync
+    division = 1/16, -- SPP quantum, also used for start pre-sync
     order = 1,  -- todo p0 think about this
     enabled = true,
     action = function(t)
 
       -- bits for handling transport stop (pausing sprockets and rolling back transport)
       if stop then
-
+        -- print("DEBUG sprocket_16th processing STOP")
         -- Keep this as backup! calculate clock.sync offset arg for resuming in-phase relative to beat clock.
         -- option "b" for clock.transport.start internal clock source
         -- local ppqn = seq_lattice.ppqn
@@ -1126,12 +1127,13 @@ params:set_action("ts_numerator",
           -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
           -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
           -- todo p1 also use this when running off norns link beat_count
-        else
+        else -- non-link clock sources
           -- transport_multi_stop() -- 24-02-10 moving to K2 for immediate stop (make this an option?)
           transport_active = false
           if transport_state ~= "stopped" then -- Probably a better way of blocking this
             transport_state = "paused"
             print(transport_state)
+
           end
           stop = false
           start = false
@@ -1152,7 +1154,7 @@ params:set_action("ts_numerator",
         -- adding "stopped" condition here prevents the issue with each sprocket playing when K2 is double-tapped. 
         -- But it also looks to double-decrement transport (can be -1) which might be an issue
         -- Issue might be jumping immediately from "pausing" to "stopped"
-        if transport_state == "paused" then -- or transport_state == "stopped" then -- formerly lattice_rollback
+        if transport_state == "paused" then
           disable_sprockets()
 
           -- roll back transport position
@@ -1166,14 +1168,21 @@ params:set_action("ts_numerator",
 
 
         elseif transport_state == "stopped" then
-            -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
-            disable_sprockets()
+          -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
+          disable_sprockets()
+          reset_sprockets("transport start")  -- 24.02.10
+          seq_lattice.transport = 0           --24.02.10
+          -- print("DEBUG post-stop transport = " .. seq_lattice.transport)
+          -- print("sprocket_seq_1.enabled = " .. tostring(sprocket_seq_1.enabled))
 
-            -- currently settings to 0 in K2 transport controls section because this misses stops that occur after we're paused (only works on pausing>>stop)
-            -- Will be incremented back to 0 by lattice
-            -- Todo: revisit with other clock sources
-            -- seq_lattice.transport = -1
-            -- print("Stopped: resetting transport to -1 (will be 0)")
+          -- currently settings to 0 in K2 transport controls section because this misses stops that occur after we're paused (only works on pausing>>stop)
+          -- Will be incremented back to 0 by lattice
+          -- Todo: revisit with other clock sources
+          -- seq_lattice.transport = -1
+          -- print("Stopped: resetting transport to -1 (will be 0)")
+
+
+
         end
 
         -- option for starting MIDI clock when in "song" (SPP) mode
@@ -1483,7 +1492,11 @@ function gen_voice_lookups()
         local port = find_vport(vport_name)
         local voice = string.match(option, "(%d+)$")
         local name = string.lower(vport_name)
-        local option = "midi " .. port .. "." .. voice .. " " .. name
+        if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
+          name = string.upper(util.acronym(name))
+        end
+        
+        local option = name .. " " .. port .. "." .. voice
         table.insert(voice_param_options, trim_menu(option))
         table.insert(voice_param_index, i)
         
@@ -2113,7 +2126,6 @@ end
 
 
 function reset_clock()
-  clock_step = -1
   -- Immediately update this so if Arranger is zeroed we can use the current-set pattern (even if paused)
   gen_arranger_padded()
 end
@@ -2153,9 +2165,31 @@ function advance_chord_pattern()
       
       -- Check if it's the last pattern in the arrangement.
       if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
+        -- print("DEBUG arranger_one_shot_last_pattern")
+        
+        -- 24-02-13 instant stop after one-shot arranger
+        link_stop_source = "norns"  -- obsolete?
+        clock.link.stop() -- no stop quantization for sending Link stop out
+
+        transport_multi_stop()
+        -- clock.link.stop() -- no stop quantization for sending Link stop out
+        -- link_stop_source = "norns"
+        transport_active = false
+        -- transport_state = "stopped"
+        -- print(transport_state)
+        -- link_stop_source = nil
+
+        transport_active = false
+        stop = false
+        start = false
+        seq_lattice:stop()
+        disable_sprockets()
+        seq_lattice.transport = 0           --24.02.10
+        -- end of new bits
+
         arrangement_reset = true
-        reset_arrangement()
-        stop = true
+        reset_arrangement() -- also reset_pattern() >> reset_sprockets 
+        -- stop = true
       else
         -- changed from wrap to a check if incremented arranger_position exceeds seq_pattern_length
         arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
@@ -2758,6 +2792,8 @@ function advance_seq_pattern()
   end
 
   if seq_pattern[active_seq_pattern][seq_pattern_position] > 0 then
+
+    -- print("DEBUG seq_1 playing note")
     local player = params:lookup_param("seq_voice_raw_1"):get_player()
     local dynamics = (params:get("seq_dynamics_1") * .01)
     local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
