@@ -276,17 +276,6 @@ function init()
   params:set_action("crow_pullup", function(val) crow_pullup(val); save_prefs() end)
   
   params:add_separator ("MIDI CLOCK OUT") -- todo hide if no MIDI devices
-
-  -- can't delete params
-  -- can rename
-  -- unique key == port+name?
-  -- test scenario:
-  -- - create param
-  -- - disable clock on port
-  -- - param still exists but is hidden
-  -- - param state applied to midi_transport_ports which is where we read from 
-
-
     for i = 1, 16 do 
     -- for i = 1, #midi_transport_ports do
     local id = "midi_continue_" .. i
@@ -759,7 +748,7 @@ function init()
   chord_raw = next_chord
 
   -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc"}
+  pset_lookup = {"arranger", "events", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
   
   
   -----------------------------
@@ -777,7 +766,16 @@ function init()
     misc.current_shift_seq = current_shift_seq
     misc.current_shift_chord = current_shift_chord
     misc.current_rotation_seq = current_rotation_seq
-    
+
+    -- need to save and restore nb voices which can change based on what mods are enabled
+    voice = {}
+    local sources = {"chord", "seq", "crow", "midi"}
+    for i = 1, #sources do
+      local param_string = sources[i].."_voice"
+      local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
+      voice[param_string] = params:string(param_string)
+    end
+
     for i = 1, #pset_lookup do
       local tablename = pset_lookup[i]
       tab.save(_G[tablename],filepath..tablename..".data")
@@ -794,6 +792,7 @@ function init()
       screen_view_index = 1
       screen_view_name = "Session"
       misc = {}
+      voice = {}
       for i = 1, #pset_lookup do
         local tablename = pset_lookup[i]
           if util.file_exists(filepath..tablename..".data") then
@@ -808,6 +807,24 @@ function init()
       current_shift_seq = misc.current_shift_seq
       current_shift_chord = misc.current_shift_chord
       current_rotation_seq = misc.current_rotation_seq
+
+      -- restore nb voices based on string
+      local sources = {"chord", "seq", "crow", "midi"}
+      for i = 1, #sources do
+        local param_string = sources[i].."_voice"
+        local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
+        local prev_param_name = voice[param_string] --params:string(param_string)
+        local iterations = #params:lookup_param(param_string).options + 1
+        for j = 1, iterations do
+          if j == iterations then
+            params:set(param_string, 1)
+            print("Unable to find NB voice " .. prev_param_name .. " for " .. param_string)
+          elseif prev_param_name == params:lookup_param(param_string).options[j] then
+            params:set(param_string, j)
+            break
+          end
+        end
+      end
       
       -- reset event-related params so the event editor opens to the default view rather than the last-loaded event
       params:set("event_category", 1)
@@ -1528,7 +1545,6 @@ end
 
 -- updates voice selector options and sets (or resets) new param index after custom crow_out param changes
 function update_voice_params()
-  -- todo p0 hit all voice params
   local sources = {"chord", "seq", "crow", "midi"}
   for i = 1, #sources do
     local param_string = sources[i].."_voice"
@@ -1547,7 +1563,7 @@ function update_voice_params()
     end
   end
 end
-   
+
 
 -- return first number from a string
 function find_number(string)
@@ -2125,6 +2141,7 @@ function reset_arrangement() -- todo: Also have the chord readout updated (move 
 end
 
 
+-- todo p1 might need to reset seq_lattice.transport, as well (previously did clock ticks) If not, replace this!
 function reset_clock()
   -- Immediately update this so if Arranger is zeroed we can use the current-set pattern (even if paused)
   gen_arranger_padded()
@@ -2184,12 +2201,12 @@ function advance_chord_pattern()
         start = false
         seq_lattice:stop()
         disable_sprockets()
-        seq_lattice.transport = 0           --24.02.10
         -- end of new bits
 
         arrangement_reset = true
         reset_arrangement() -- also reset_pattern() >> reset_sprockets 
         -- stop = true
+        seq_lattice.transport = -1           --24.02.15 roll back since lattice has yet to increment
       else
         -- changed from wrap to a check if incremented arranger_position exceeds seq_pattern_length
         arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
