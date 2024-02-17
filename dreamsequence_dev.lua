@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240216 @modularbeat
+-- 240217 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24021601"
+  local version = "24021701"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -423,8 +423,8 @@ function init()
   params:add_option("chord_voice", "Voice", voice_param_options, 1)
   params:set_action("chord_voice", function(index) params:set("chord_voice_raw", voice_param_index[index]) end)
 
-  params:add_number("chord_duration_index", "Duration", 1, 57, 15, function(param) return divisions_string(param:get()) end)
-  params:set_action("chord_duration_index",function(val) chord_duration = division_names[val][1] end) -- set global once vs lookup each time. Not sure if worth the trade-off
+  params:add_number("chord_duration_index", "Duration", 0, 57, 0, function(param) return param:get() == 0 and "Step" or divisions_string(param:get()) end)
+  params:set_action("chord_duration_index",function(val) chord_duration = val == 0 and chord_div or division_names[val][1] end)
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
   
@@ -519,8 +519,8 @@ function init()
   params:add_option("seq_voice_1", "Voice", voice_param_options, 1)
   params:set_action("seq_voice_1", function(index) params:set("seq_voice_raw_1", voice_param_index[index]) end)
   
-  params:add_number("seq_duration_index_1", "Duration", 1, 57, 8, function(param) return divisions_string(param:get()) end)
-  params:set_action("seq_duration_index_1", function(val) seq_duration = division_names[val][1] end)
+  params:add_number("seq_duration_index_1", "Duration", 0, 57, 0, function(param) return param:get() == 0 and "Step" or divisions_string(param:get()) end)
+  params:set_action("seq_duration_index_1", function(val) seq_duration = val == 0 and division_names[params:get("seq_div_index_1")][1] or division_names[val][1] end)
 
   max_seq_pattern_length = 16  
   params:add_number("seq_rotate_1", "Pattern rotate", (max_seq_pattern_length * -1), max_seq_pattern_length, 0)
@@ -583,17 +583,25 @@ function init()
   
   params:add_option("crow_voice", "Voice", voice_param_options, 1)
   params:set_action("crow_voice", function(index) params:set("crow_voice_raw", voice_param_index[index]) end)
-  
-  params:add_number("crow_div_index", "Trigger", 1, 56, 56, function(param) return crow_trigger_string(param:get()) end)
-  params:set_action("crow_div_index", function(val) crow_div = crow_trigger_names[val][1] end)  -- TODO CHECK THIS
-  
+
+  params:add_number("crow_div_index", "Trigger", 0, 57, 0, function(param) return crow_trigger_string(param:get()) end)
+  params:set_action("crow_div_index", function(val) crow_div = val == 0 and 0 or division_names[val][1] end) -- overwritten
+
   params:add_option("crow_note_map", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode"}, 1)
 
   params:add_option("crow_auto_rest", "Auto-rest", {"Off", "On"}, 1)
 
-  params:add_number("crow_duration_index", "Duration", 1, 57, 10, function(param) return divisions_string(param:get()) end)
-  params:set_action("crow_duration_index", function(val) crow_duration = division_names[val][1] end) -- pointless?
-  
+  params:add_number("crow_duration_index", "Duration", 0, 57, 10, function(param) return param:get() == 0 and "Step" or divisions_string(param:get()) end)
+  params:set_action("crow_duration_index", function(val) 
+    if val == 0 then  -- if in "Step" mode
+      if crow_div ~= 0 then -- and not triggering via Crow IN 1
+        crow_duration = crow_div  -- set duration to div
+      end
+    else -- not in "Step" mode so just apply the value
+      crow_duration = division_names[val][1]
+    end  
+  end)
+
   params:add_number("crow_octave", "Octave", -4, 4, 0)
   
   params:add_number("cv_harm_swing", "Swing", 50, 99, 50, function(param) return percent(param:get()) end)
@@ -960,6 +968,9 @@ params:set_action("ts_numerator",
     function(val) 
       chord_div = division_names[val][1]; -- extra thing needed for chord. may get rid of this
       sprocket_chord:set_division(chord_div/global_clock_div/4)
+      if params:get("chord_duration_index") == 0 then
+        chord_duration = chord_div
+      end
     end
   )
 
@@ -972,12 +983,21 @@ params:set_action("ts_numerator",
   params:set_action("seq_div_index_1",
     function(val) 
       sprocket_seq_1:set_division(division_names[val][1]/global_clock_div/4)
+      if params:get("seq_duration_index_1") == 0 then
+        seq_duration = division_names[params:get("seq_div_index_1")][1]
+      end
     end
   )    
 
   params:set_action("crow_div_index",
     function(val) 
-      sprocket_cv_harm:set_division(division_names[val][1]/global_clock_div/4)
+      crow_div = val == 0 and 0 or division_names[val][1]
+      sprocket_cv_harm:set_division(val == 0 and (1/96) or division_names[val][1]/global_clock_div/4) -- 1/96 (64T) when in manual trigger mode
+      if params:get("crow_duration_index") == 0 then
+        if val ~= 0 then  -- if manually triggering CV harmo, don't change duration when in "Step" mode
+          crow_duration = crow_div
+        end
+      end
     end
   )    
   
@@ -1264,54 +1284,20 @@ params:set_action("ts_numerator",
   } 
   
 
-  function init_sprocket_measure(div) -- rename sprocket_measure
+  function init_sprocket_measure(div)
     sprocket_measure = seq_lattice:new_sprocket{
       action = function(t)
-
-        -- -- debug note player
-        -- local player = params:lookup_param("chord_voice_raw"):get_player()
-        -- to_player(player, 50, .5, chord_duration)
-
-          -- SEND MIDI CLOCK START/CONTINUE MESSAGES at the start of new measure for "pattern" syncing
-
+        -- SEND MIDI CLOCK START MESSAGES at the start of new measure for "pattern" syncing
         if start then
           transport_active = true
-          -- if clock_start_method == "start" then
-            transport_multi_start("sprocket_measure")
-            -- clock_start_method = "continue" -- 24-02-08 moved to K2 pause
-          -- elseif params:string("midi_continue") == "pattern" then
-            -- transport_multi_continue("sprocket_measure")
-          -- end
+          transport_multi_start("sprocket_measure")
           start = false
         end
 
-          ----------------------------
-          --DEBUG WITH multi_start first, then continue/spp!
-          -- clock_start_method = "start"  -- "time signature based "pattern" continue on next measure"
-          -- clock_start_method = "continue"  -- "time signature based "pattern" continue on next measure"
-          ------------------------------
-
-        -- if start == true and stop ~= true then
-        --   transport_active = true
-        -- -- Send out MIDI start/continue messages
-        --   if clock_start_method == "start" then
-        --     transport_multi_start("sprocket_measure")  
-        --   else
-        --     transport_multi_continue("sprocket_measure")
-        --   end
-        --   clock_start_method = "continue"
-        --   start = false
-        -- end
-        
-
-
       end,
       -- div_action = function(t)  -- call action when div change is processed
-      --   -- todo need some logic to enable/disable. consider dynamic menu for fixed/proportional duration types (e.g. 1-100% of step length)
-      --   params:set("chord_duration_index", params:get("chord_div_index"))
       -- end,
       division = div, -- params:get("ts_numerator") / params:string("ts_denominator"),
-      -- swing = params:get("chord_swing"),
       order = 2,
       enabled = true
     }
@@ -1346,10 +1332,8 @@ params:set_action("ts_numerator",
         -- end
         grid_dirty = true
       end,
-      div_action = function(t)  -- call action when div change is processed
-        -- todo need some logic to enable/disable. consider dynamic menu for fixed/proportional duration types (e.g. 1-100% of step length)
-        params:set("chord_duration_index", params:get("chord_div_index"))
-      end,
+      -- div_action = function(t)  -- call action when div change is processed
+      -- end,
       division = div,
       swing = params:get("chord_swing"),
       order = 3,
@@ -1396,10 +1380,8 @@ params:set_action("ts_numerator",
           end
         -- end
       end,
-      div_action = function(t)  -- call action when div change is processed
-        -- todo need some logic to enable/disable. consider dynamic menu for fixed/proportional duration types (e.g. 1-100% of step length)
-        params:set("seq_duration_index_1", params:get("seq_div_index_1"))
-      end,
+      -- div_action = function(t)  -- call action when div change is processed
+      -- end,
       division = div,
       swing = params:get("seq_swing_1"),
       order = 5, -- WAG
@@ -1425,11 +1407,8 @@ params:set_action("ts_numerator",
       end,
 
       division = div,
-      div_action = function(t)  -- call action when div change is processed
-        -- todo need some logic to enable/disable. consider dynamic menu for fixed/proportional duration types (e.g. 1-100% of step length)
-        -- also might need to consider Trigger mode (Scheduled vs Crow)
-        params:set("crow_duration_index", params:get("crow_div_index"))
-      end,    
+      -- div_action = function(t)  -- call action when div change is processed
+      -- end,    
       swing = params:get("cv_harm_swing"),
       order = 5, -- wag
       enabled = true
@@ -1437,14 +1416,11 @@ params:set_action("ts_numerator",
   end
   -- some weirdness around order in which param actions fire. So we do via a function the first time. 
 
-  -- Probably have it set to fastest div to resume on next valid beat
-  if crow_div == 0 then -- TODO WHAT ABOUT TRIGGER/0!!
-    -- don't init sprocket at all... or init but set to enabled = false
-    -- always need to init sprocket and keep it running for beat count?
-    -- just setting it to 1/4 for now
-    init_sprocket_cv_harm(48/global_clock_div/4)
+  if crow_div == 0 then
+  -- when in manual trigger mode, run seq at 1/96 (64T) so we can catch div changes
+    init_sprocket_cv_harm(1/96)
   else
-    init_sprocket_cv_harm(crow_trigger_names[params:get("crow_div_index")][1]/global_clock_div/4)
+    init_sprocket_cv_harm(division_names[params:get("crow_div_index")][1]/global_clock_div/4)
   end
   
   
@@ -1648,7 +1624,7 @@ end
 
 function reset_sprocket_cv_harm(from)
   -- print("reset_sprocket_cv_harm() called by " .. from)
-  sprocket_cv_harm.division = division_names[params:get("crow_div_index")][1]/global_clock_div/4
+  sprocket_cv_harm.division = params:get("crow_div_index") == 0 and (1/96) or division_names[params:get("crow_div_index")][1]/global_clock_div/4
   sprocket_cv_harm.phase = sprocket_cv_harm.division * seq_lattice.ppqn * 4 * (1 - sprocket_cv_harm.delay)
   sprocket_cv_harm.downbeat = false
 end
@@ -1825,10 +1801,7 @@ end
 
 
 function crow_trigger_string(index)
-  -- if index == 56 then
-    -- return(params:get("clock_source") == 4 and "N/A" or "CV1") else 
-      return(crow_trigger_names[index][2])
-    -- end
+  return(index == 0 and "Crow IN 1" or division_names[index][2])
 end
 
 
@@ -2310,7 +2283,7 @@ end
 
 
 -- variant of do_events specifically for handling chord division changes BEFORE chord is advanced
--- TODO p1 really need to optimize this by moving matching events into a new table rather than checking each event
+-- TODO p1 really need to optimize this by having top level "order" tables for events rather than checking each event
 -- Can also block these in standard do_events (but probably not hurting anything firing twice)
 function do_events_pre(arranger_pos,chord_pos)
   local arranger_position = arranger_pos

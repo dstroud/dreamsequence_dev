@@ -163,7 +163,7 @@ function Lattice:pulse()
             
               sprocket.division = sprocket.division_new
               sprocket.division_new = nil
-              sprocket.div_action()
+              -- sprocket.div_action()
 
               -- debugging
               print(
@@ -210,6 +210,7 @@ function Lattice:pulse()
               sprocket.delay = sprocket.delay_new
               sprocket.delay_new = nil
             end
+
             sprocket.action(self.transport)
             sprocket.downbeat = not sprocket.downbeat
           end
@@ -250,7 +251,7 @@ function Lattice:new_sprocket(args)
   args.order = args.order == nil and 3 or util.clamp(args.order, 1, 5)
   args.pre_action = args.pre_action == nil and function(t) return end or args.pre_action
   args.action = args.action == nil and function(t) return end or args.action
-  args.div_action = args.div_action == nil and function(t) return end or args.div_action
+  -- args.div_action = args.div_action == nil and function(t) return end or args.div_action
   args.division = args.division == nil and 1/4 or args.division
   args.enabled = args.enabled == nil and true or args.enabled
   args.phase = args.division * self.ppqn * 4 -- "4" because in music a "quarter note" == "1/4"
@@ -289,7 +290,7 @@ function Sprocket:new(args)
   p.division = args.division
   p.pre_action = args.pre_action
   p.action = args.action
-  p.div_action = args.div_action
+  -- p.div_action = args.div_action
   p.enabled = args.enabled
   p.flag = false
   p.swing = args.swing
