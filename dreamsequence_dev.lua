@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240217 @modularbeat
+-- 240218 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24021701"
+  local version = "24021801"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -1200,11 +1200,11 @@ params:set_action("ts_numerator",
         -- for all clock sources, stop and pause
         -- todo: why not stop sprockets here as well (external stop?)
         
-        -- print("a. stopping seq_lattice")
-        print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
-        "phase "..(sprocket_chord.phase or ""),
-        "beat "..round(clock.get_beats(),2),
-        "seq_lattice:stop")
+        -- -- print("a. stopping seq_lattice") -- debug stop
+        -- print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
+        -- "phase "..(sprocket_chord.phase or ""),
+        -- "beat "..round(clock.get_beats(),2),
+        -- "seq_lattice:stop")
 
         seq_lattice:stop()
 
@@ -1216,7 +1216,7 @@ params:set_action("ts_numerator",
           disable_sprockets()
 
           -- roll back transport position
-          print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
+          -- print("Rolling back transport from " .. seq_lattice.transport .. " to " .. (seq_lattice.transport - 1))
           seq_lattice.transport = seq_lattice.transport - 1
 
           -------------------------------------------------
@@ -1229,7 +1229,7 @@ params:set_action("ts_numerator",
           -- disable sprockets, necessary when 2x K2 jumps from "pausing" directly to "stopped" or sprocket actions fire
           disable_sprockets()
           reset_sprockets("transport start")  -- 24.02.10
-          print("debug 16th setting transport to -1")
+          -- print("debug 16th setting transport to -1")
           seq_lattice.transport = -1 -- 0 for internal?           --24.02.10
           -- print("DEBUG post-stop transport = " .. seq_lattice.transport)
           -- print("sprocket_seq_1.enabled = " .. tostring(sprocket_seq_1.enabled))
@@ -1250,7 +1250,7 @@ params:set_action("ts_numerator",
         if params:string("clock_source") == "internal" then
           if clock_start_method == "continue" then  -- if it's "start", we send a start via transport_multi_start
             if send_continue then
-              print("DEBUG SEND_CONTINUE TRUE")
+              -- print("DEBUG SEND_CONTINUE TRUE")
               transport_multi_continue("sprocket_measure") -- sends SPP out
               send_continue = false  -- set this so we don't keep sending SPP every 1/16th until next measure
             end
@@ -1765,14 +1765,14 @@ end
 
 -- check which ports the global midi clock is being sent to and sends a spp and continue message there
 function transport_multi_continue(source)
-  print("DEBUG transport_multi_continue called by " .. source)
+  -- print("DEBUG transport_multi_continue called by " .. source)
   for i = 1, #midi_transport_ports do
     -- local port midi_transport_ports[i].port
     if params:string("midi_continue_" .. midi_transport_ports[i].port) == "song" then
       local transport_midi = midi.connect(midi_transport_ports[i].port)
-      print("-------SENDING SPP bytes-----")
-      print(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
-      print("-----------------------------")
+      -- print("-------SENDING SPP bytes-----")
+      -- print(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
+      -- print("-----------------------------")
       transport_midi:song_position(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
       transport_midi:continue()
     end
@@ -2809,7 +2809,7 @@ function advance_seq_pattern()
   end
 
   local x = seq_pattern[active_seq_pattern][seq_pattern_position]
-  if next_chord_x > 0 then
+  if x > 0 then
     -- shared with g.key except for dynamics accent bit. Could consolidate
     local player = params:lookup_param("seq_voice_raw_1"):get_player()
     local dynamics = (params:get("seq_dynamics_1") * .01)
@@ -3661,7 +3661,7 @@ function key(n,z)
             else
               reset_pattern()
             end
-            print("K2 setting transport to 0")
+            -- print("K2 setting transport to 0")
             seq_lattice.transport = 0 -- check if needed
             -- pre_sync_val = nil -- no start sync offset needed when stopping
           end
