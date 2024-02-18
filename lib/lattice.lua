@@ -165,11 +165,11 @@ function Lattice:pulse()
               sprocket.division_new = nil
               -- sprocket.div_action()
 
-              -- debugging
-              print(
-                sprocket_name .. " new div: " .. sprocket.division,
-                sprocket_name .. " new phase: " .. sprocket.phase
-              )              
+              -- -- debugging
+              -- print(
+              --   sprocket_name .. " new div: " .. sprocket.division,
+              --   sprocket_name .. " new phase: " .. sprocket.phase
+              -- )              
               
 
               sprocket.phase = (txp_mod == 0 and ppd or txp_mod) -- alt. phase 0 is "wrapped" to ppd to fire immediately
@@ -181,19 +181,19 @@ function Lattice:pulse()
 
             end 
 
-            if sprocket_name == "chord" then
-              print(
-                sprocket_name,
-                "div "..round(sprocket.division, 2),
-                "txp "..string.format("%05d", (self.transport or 0)),
-                "txp_mod "..txp_mod,
-                "next_div_txp "..next_div_txp,
-                "next_db "..tostring(sprocket.downbeat),
-                "\u{F8} "..sprocket.phase,
-                "beat "..round(clock.get_beats(),2),
-                "en "..tostring(sprocket.enabled)
-              )
-            end
+            -- if sprocket_name == "chord" then
+            --   print(
+            --     sprocket_name,
+            --     "div "..round(sprocket.division, 2),
+            --     "txp "..string.format("%05d", (self.transport or 0)),
+            --     "txp_mod "..txp_mod,
+            --     "next_div_txp "..next_div_txp,
+            --     "next_db "..tostring(sprocket.downbeat),
+            --     "\u{F8} "..sprocket.phase,
+            --     "beat "..round(clock.get_beats(),2),
+            --     "en "..tostring(sprocket.enabled)
+            --   )
+            -- end
 
           end
 

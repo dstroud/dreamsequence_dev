@@ -1567,12 +1567,12 @@ end
 
 -- replacement for reset_clock()?
 function reset_lattice(from)
-  print("debug reset_lattice called by " .. (from or "nil"))
+  -- print("debug reset_lattice called by " .. (from or "nil"))
   if seq_lattice.enabled then -- not sure this condition ever happens
-    print("debug reset_lattice setting transport to -1")
+    -- print("debug reset_lattice setting transport to -1")
     seq_lattice.transport = -1
   else
-    print("debug reset_lattice setting transport to 0")
+    -- print("debug reset_lattice setting transport to 0")
     seq_lattice.transport = 0
   end
   reset_sprockets("reset_lattice")
@@ -1581,7 +1581,7 @@ end
 
 
 function reset_sprockets(from)
-  print("b. reset_sprockets called by " .. from)
+  -- print("b. reset_sprockets called by " .. from)
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
   reset_sprocket_16th("reset_sprockets")  
   reset_sprocket_measure("reset_sprockets")  
@@ -2035,8 +2035,9 @@ function clock.transport.start(sync_value)
   -- pre-sync to make sure lattice is in sync with system clock (not necessarily in phase though)
   clock.run(function()
     transport_state = "starting"
-    local clock_source = params:string("clock_source")
     print(transport_state)
+
+    local clock_source = params:string("clock_source")
 
     -- INITIAL SYNC DEPENDING ON CLOCK SOURCE
     if clock_source == "internal" then
@@ -2096,10 +2097,11 @@ function clock.transport.start(sync_value)
     transport_state = "playing"
     print(transport_state)
 
-    print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
-    "phase "..(sprocket_chord.phase or ""),
-    "beat "..round(clock.get_beats(),2),
-    "seq_lattice:start")
+    -- -- debug print for clock.transport.start
+    -- print("transport "..string.format("%05d", (seq_lattice.transport or 0)), 
+    -- "phase "..(sprocket_chord.phase or ""),
+    -- "beat "..round(clock.get_beats(),2),
+    -- "seq_lattice:start")
 
     enable_sprockets()
     seq_lattice:start()
@@ -2232,10 +2234,11 @@ function advance_chord_pattern()
       gen_dash("advance_chord_pattern")
     end
     
-    update_chord()
+    local x = chord_pattern[active_chord_pattern][chord_pattern_position]
+    update_chord(x)
 
     -- Play the chord
-    if chord_pattern[active_chord_pattern][chord_pattern_position] > 0 then
+    if x > 0 then
       play_chord()
       if seq_reset_on_1 == 2 then -- Chord
         seq_pattern_position = 0
@@ -2504,18 +2507,20 @@ function gen_chord_readout()
 end
 
 
-function update_chord()
--- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord. 
--- Mode is always updated in case no chord has been set but user has changed Mode param.
-  current_chord_x = chord_pattern[active_chord_pattern][chord_pattern_position] > 0 and chord_pattern[active_chord_pattern][chord_pattern_position] or current_chord_x
-  current_chord_o = chord_pattern[active_chord_pattern][chord_pattern_position] > 0 and (chord_pattern[active_chord_pattern][chord_pattern_position] > 7 and 1 or 0) or current_chord_o
-  current_chord_c = chord_pattern[active_chord_pattern][chord_pattern_position] > 0 and util.wrap(chord_pattern[active_chord_pattern][chord_pattern_position], 1, 7) or current_chord_c
-  
-  -- optionally: always includes 7th note since this will be used by seq, harmonizers
-  chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_c, true)
-  
-  transform_chord()
-end
+  -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
+  -- Also used for manual g.key presses while transport is stopped/paused
+  -- Mode is always updated in case no chord has been set but user has changed Mode param.
+function update_chord(x)
+    current_chord_x = x
+    current_chord_o = (x > 7) and 1 or 0
+    current_chord_c = util.wrap(x, 1, 7)
+    
+    -- optionally: always includes 7th note since this will be used by seq, harmonizers
+    chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_c, true)
+    
+    transform_chord()
+  end
+
 
 -- Expands chord notes (range), inverts, and thins based on max notes
 function transform_chord()
@@ -2803,13 +2808,13 @@ function advance_seq_pattern()
     seq_pattern_position = util.wrap(seq_pattern_position + 1, 1, seq_pattern_length[active_seq_pattern])
   end
 
-  if seq_pattern[active_seq_pattern][seq_pattern_position] > 0 then
-
-    -- print("DEBUG seq_1 playing note")
+  local x = seq_pattern[active_seq_pattern][seq_pattern_position]
+  if next_chord_x > 0 then
+    -- shared with g.key except for dynamics accent bit. Could consolidate
     local player = params:lookup_param("seq_voice_raw_1"):get_player()
     local dynamics = (params:get("seq_dynamics_1") * .01)
     local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
-    local note = _G["map_note_" .. params:get("seq_note_map_1")](seq_pattern[active_seq_pattern][seq_pattern_position], params:get("seq_octave_1")) + 36
+    local note = _G["map_note_" .. params:get("seq_note_map_1")](x, params:get("seq_octave_1")) + 36
     to_player(player, note, dynamics, seq_duration)
   end
   
@@ -3328,10 +3333,26 @@ function g.key(x,y,z)
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = 0
         else
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
+          
+          -- -- option A:
+          -- -- plays Chord when pressing on a blank Grid key
+          -- if transport_state == "stopped" or transport_state == "paused" then
+          --   update_chord(x)
+          --   play_chord()
+          -- end
+
         end
+
         chord_no = util.wrap(x, 1, 7) + ((params:get("chord_type") + 2) == 4 and 7 or 0) -- or 0
         gen_chord_readout()
-        
+
+        -- -- option B:
+        -- plays Chord when pressing on any Grid key (even turning chord off)
+        if transport_state == "stopped" or transport_state == "paused" then
+          update_chord(x)
+          play_chord()
+        end
+
       -- set chord_pattern_length  
       elseif x == 15 then
         params:set("chord_pattern_length", y + pattern_grid_offset)
@@ -3372,8 +3393,31 @@ function g.key(x,y,z)
           seq_pattern[active_seq_pattern][y + pattern_grid_offset] = 0
         else
           seq_pattern[active_seq_pattern][y + pattern_grid_offset] = x
-          grid_dirty = true
+
+          -- -- option A:
+          -- -- plays note when pressing on a blank Grid key
+          -- -- mostly shared with advance_seq. could be consolidated into one fn
+          -- if transport_state == "stopped" or transport_state == "paused" then
+          --   local player = params:lookup_param("seq_voice_raw_1"):get_player()
+          --   local dynamics = (params:get("seq_dynamics_1") * .01)
+          --   -- local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
+          --   local note = _G["map_note_" .. params:get("seq_note_map_1")](x, params:get("seq_octave_1")) + 36
+          --   to_player(player, note, dynamics, seq_duration)
+          -- end
+
         end
+
+        -- -- option B:
+        -- plays note when pressing on any Grid key (even turning note off)
+        -- mostly shared with advance_seq. could be consolidated into one fn
+        if transport_state == "stopped" or transport_state == "paused" then
+          local player = params:lookup_param("seq_voice_raw_1"):get_player()
+          local dynamics = (params:get("seq_dynamics_1") * .01)
+          -- local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
+          local note = _G["map_note_" .. params:get("seq_note_map_1")](x, params:get("seq_octave_1")) + 36
+          to_player(player, note, dynamics, seq_duration)
+        end
+
       elseif x == 15 then
         params:set("seq_pattern_length_" .. active_seq_pattern, y + pattern_grid_offset)
       end
