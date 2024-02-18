@@ -822,13 +822,15 @@ function init()
         local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
         local prev_param_name = voice[param_string] --params:string(param_string)
         local iterations = #params:lookup_param(param_string).options + 1
-        for j = 1, iterations do
-          if j == iterations then
-            params:set(param_string, 1)
-            print("Unable to find NB voice " .. prev_param_name .. " for " .. param_string)
-          elseif prev_param_name == params:lookup_param(param_string).options[j] then
-            params:set(param_string, j)
-            break
+        if prev_param_name ~= nil then -- skip if not found (old pset data)
+          for j = 1, iterations do
+            if j == iterations then
+              params:set(param_string, 1)
+              print("Unable to find NB voice " .. prev_param_name .. " for " .. param_string)
+            elseif prev_param_name == params:lookup_param(param_string).options[j] then
+              params:set(param_string, j)
+              break
+            end
           end
         end
       end
