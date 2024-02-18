@@ -81,13 +81,11 @@ function chord_generator(mode)
   -- Don't start with a dim or aug chord
   -- Aug and dim chords are used as "passing chords" so a dim chord will be followed by a chord one degree down, and an aug will be followed by a chord one degree up.
   table.insert(chord_algos["name"], chord_algo_name)
-  table.insert(chord_algos["func"], function()      
-    
+  table.insert(chord_algos["func"], function()
     params:set("chord_pattern_length", 4)
     build_mode_chord_types()
     progression_valid = false
     progression = {}
-    
     while progression_valid == false do
       for i = 1,4 do
         if i == 1 then
@@ -126,6 +124,7 @@ function chord_generator(mode)
       end
     end
     
+
     octave_split_up()
     for i = 1, chord_pattern_length[active_chord_pattern] do
       local x = progression[i]
@@ -719,17 +718,21 @@ end
 
 --builds a lookup table of chord types: aug/dim etc...
 function build_mode_chord_types()
-    mode_chord_types = {}
-    safe_chord_degrees = {}    
-    for i = 1,7 do
-      local chord_type = chord_type_simplified(get_chord_name(2, params:get("mode"), MusicUtil.SCALE_CHORD_DEGREES[params:get("mode")]["chords"][i]))
-      mode_chord_types[i] = chord_type
-      if chord_type == "maj" or chord_type == "min" then table.insert(safe_chord_degrees, i) end  --todo p0 what about 7ths here?
-    end
-    -- print("--------")
-    -- print("mode " .. params:get("mode") .. " chord types")    
-    -- tab.print(mode_chord_types)
-    -- print("--------")
+  mode_chord_types = {}
+  safe_chord_degrees = {}    
+
+  for i = 1,7 do
+    local modifier = chord_lookup[params:get("mode")]["quality"][i]
+    local chord_type = chord_type_simplified(modifier)
+    
+    mode_chord_types[i] = chord_type
+    if chord_type == "maj" or chord_type == "min" then table.insert(safe_chord_degrees, i) end  --todo p0 what about 7ths here?
+  end
+  
+  -- print("--------")
+  -- print("mode " .. params:get("mode") .. " chord types")    
+  -- tab.print(mode_chord_types)
+  -- print("--------")
 end
 
 -- -- Chance of playing higher chord degrees an octave lower

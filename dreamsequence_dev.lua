@@ -300,7 +300,7 @@ function init()
   ------------------
   -- GLOBAL PARAMS --
   ------------------
-  params:add_group("global", "GLOBAL", 14)
+  params:add_group("global", "GLOBAL", 13)
   
   params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
   
@@ -333,8 +333,9 @@ function init()
   params:add_number("dedupe_threshold", "Dedupe <", 0, 10, div_to_index("1/32"), function(param) return divisions_string(param:get()) end)
   params:set_action("dedupe_threshold", function() dedupe_threshold() end)
   
-  params:add_number("chord_preload", "Chord preload", 0, 10, div_to_index("1/64"), function(param) return divisions_string(param:get()) end)
-  params:set_action("chord_preload", function(x) chord_preload(x) end)     
+  -- deprecated
+  -- params:add_number("chord_preload", "Chord preload", 0, 10, div_to_index("1/64"), function(param) return divisions_string(param:get()) end)
+  -- params:set_action("chord_preload", function(x) chord_preload(x) end)     
 
   -- figured better here since generators can touch things outside of the chord/seq space
   params:add_option("chord_generator", "C-gen", chord_algos["name"], 1)
@@ -749,7 +750,7 @@ function init()
   seq_pattern_position = 0
   note_history = {}  -- todo p2 performance of having one vs dynamically created history for each voice
   dedupe_threshold()
-  reset_clock() -- will turn over to step 0 on first loop
+  -- reset_clock() -- might need reset_lattice but it hasn't been intialized
   get_next_chord()
   chord_raw = next_chord
 
@@ -850,7 +851,7 @@ function init()
   
       -- todo p2 loading pset while transport is active gets a little weird with Link and MIDI but I got other stuff to deal with
       if params:get("clock_source") == "internal" then 
-        reset_clock()
+        reset_lattice() -- reset_clock() -- untested
       else
         gen_arranger_padded()
       end
@@ -1024,7 +1025,7 @@ params:set_action("ts_numerator",
   -- keep track of playing notes and decrement each pulse of lattice (whether enabled or disabled!)
   function process_notes()
     -- todo: spin up tables for active voices so new notes only check against history for the matching voice
-    -- Assumes PPQN == global_clock_div. Lookup tables will need adjustments if switching to 96 PPQN
+    -- Assumes PPQN == global_clock_div. Lookup tables will need adjustments if PPQN ~= 48
     for i = #note_history, 1, -1 do -- Steps backwards to account for table.remove messing with [i]
       note_history[i].step = note_history[i].step - 1
       if note_history[i].step == 0 then
@@ -1061,12 +1062,9 @@ params:set_action("ts_numerator",
     action = function(t)
       process_notes()
     end
-  } 
+  }
 
 
-  -- todo think about order wrt start+stop race condition
-  -- todo explore splitting into two sprockets: 
-  -- one at 1/seq_lattice.ppqn for immediate stop to avoid end-of-measure rollover, one for starting on 1/16 (SPP)
   sprocket_16th = seq_lattice:new_sprocket{
     division = 1/16, -- SPP quantum, also used for start pre-sync
     order = 1,  -- todo p0 think about this
@@ -1324,12 +1322,8 @@ params:set_action("ts_numerator",
         
       end,
       action = function(t)
-        -- -- something like this is needed or stop during "pausing" (2x K2) will reset and play sequence again
-        -- -- might be better to include a check in lattice since this probably affects all sprockets (including crow/harm)
-        -- if transport_state == "playing" or transport_state == "pausing" then         
-          get_next_chord()  -- todo p0 Deprecate or move to new sprocket. How to fire early?
+          -- get_next_chord()  -- todo p0 Deprecate or move to new sprocket. How to fire early?
           advance_chord_pattern()
-        -- end
         grid_dirty = true
       end,
       -- div_action = function(t)  -- call action when div change is processed
@@ -1445,7 +1439,7 @@ end -- end of init
   
 function update_menus()
   -- GLOBAL MENU 
-  menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_preload", "chord_generator", "seq_generator"}
+  menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"}
   
   -- CHORD MENU
   menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"}
@@ -1568,6 +1562,21 @@ end
 -- return first number from a string
 function find_number(string)
   return tonumber(string.match (string, "%d+"))
+end
+
+
+-- replacement for reset_clock()?
+function reset_lattice(from)
+  print("debug reset_lattice called by " .. (from or "nil"))
+  if seq_lattice.enabled then -- not sure this condition ever happens
+    print("debug reset_lattice setting transport to -1")
+    seq_lattice.transport = -1
+  else
+    print("debug reset_lattice setting transport to 0")
+    seq_lattice.transport = 0
+  end
+  reset_sprockets("reset_lattice")
+  gen_arranger_padded()
 end
 
 
@@ -1891,9 +1900,9 @@ function dedupe_threshold()
 end  
 
 
-function chord_preload(index)
-  chord_preload_tics = (index == 0) and 0 or division_names[index][1]
-end  
+-- function chord_preload(index)
+--   chord_preload_tics = (index == 0) and 0 or division_names[index][1]
+-- end  
 
 
 function percent_chance (percent)
@@ -2114,7 +2123,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   seq_pattern_position = 0
   chord_pattern_position = 0
   reset_sprockets("reset_pattern")
-  reset_clock()
+  reset_lattice() -- reset_clock()
   get_next_chord()
   chord_raw = next_chord
   gen_dash("reset_pattern")
@@ -2129,13 +2138,6 @@ function reset_arrangement() -- todo: Also have the chord readout updated (move 
   if arranger[1] > 0 then set_chord_pattern(arranger[1]) end
   if params:string("arranger") == "On" then arranger_active = true end
   reset_pattern()
-end
-
-
--- todo p1 might need to reset seq_lattice.transport, as well (previously did clock ticks) If not, replace this!
-function reset_clock()
-  -- Immediately update this so if Arranger is zeroed we can use the current-set pattern (even if paused)
-  gen_arranger_padded()
 end
 
 
@@ -2195,7 +2197,7 @@ function advance_chord_pattern()
         -- end of new bits
 
         arrangement_reset = true
-        reset_arrangement() -- also reset_pattern() >> reset_sprockets 
+        reset_arrangement() -- also reset_pattern() >> reset_lattice
         -- stop = true
         seq_lattice.transport = -1           --24.02.15 roll back since lattice has yet to increment
       else
@@ -2488,8 +2490,6 @@ function do_events()
 end
 
 
-
-
 -- todo p2: More thoughtful selection of chord_name and sharp/flat depending on mode and key
 function gen_chord_readout()
   if chord_no > 0 then
@@ -2703,6 +2703,7 @@ function play_chord()
 end
 
 
+-- Get upcoming chord. Was used for harmonizers but disabling for now..
 -- Pre-load upcoming chord to address race condition around map_note() events occurring before chord change
 function get_next_chord()
   local pre_arrangement_reset = false
@@ -2761,24 +2762,27 @@ function get_next_chord()
 end
 
 
-function map_note_1(note_num, octave, pre) -- triad chord mapping
+function map_note_1(note_num, octave)-- , pre) -- triad chord mapping
   local chord_length = 3
-  local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
+  -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
+  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
 
-function map_note_2(note_num, octave, pre) -- 7th chord mapping
+function map_note_2(note_num, octave) --, pre) -- 7th chord mapping
   local chord_length = 4
-  local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
+  -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
+  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
 
-function map_note_3(note_num, octave, pre)  -- mode mapping + diatonic transposition
-  local diatonic_transpose = (math.max(pre == true and next_chord_x or current_chord_x, 1)) -1
+function map_note_3(note_num, octave) --, pre)  -- mode mapping + diatonic transposition
+  -- local diatonic_transpose = (math.max(pre == true and next_chord_x or current_chord_x, 1)) -1
+  local diatonic_transpose = (math.max(current_chord_x, 1)) -1
   local note_num = note_num + diatonic_transpose
   local quantized_note = notes_nums[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
   return(quantized_note + (octave * 12) + params:get("transpose"))
@@ -2835,7 +2839,8 @@ end
 
 -- cv harmonizer input
 function sample_crow(volts)
-  local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave"), params:get("chord_preload") ~= 0) + 36
+  -- local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave"), params:get("chord_preload") ~= 0) + 36
+  local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave")) + 36
   -- Blocks duplicate notes within a chord step so rests can be added to simple CV sources
   if chord_pattern_retrig == true
   or params:get("crow_auto_rest") == 1
@@ -2859,7 +2864,8 @@ midi_event = function(data)
   local d = midi.to_msg(data)
   if d.type == "note_on" then
 
-    local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave"), params:get("chord_preload") ~= 0) + 36 -- todo p1 octave validation for all sources
+    -- local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave"), params:get("chord_preload") ~= 0) + 36 -- todo p1 octave validation for all sources
+    local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
 
     local player = params:lookup_param("midi_voice_raw"):get_player()
     local dynamics = params:get("midi_dynamics") * .01 -- todo p1 velocity passthru (normalize to 0-1)
@@ -3707,7 +3713,7 @@ function key(n,z)
           -- When Chord+Seq Grid View keys are held down, K3 runs Generator (and resets pattern+seq on internal clock)
           generator()
 
-          -- This reset patterns and resynces seq, but only for internal clock. todo p1 think on this. Not great and might be weird with new seq reset logic
+          -- This reset patterns and resyncs seq, but only for internal clock. todo p1 think on this. Not great and might be weird with new seq reset logic
           if params:string("clock_source") == "internal" then
             local prev_transport_state = transport_state
             reset_external_clock()
