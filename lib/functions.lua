@@ -4,7 +4,7 @@
 
 -- Rotate looping portion of pattern
 function rotate_pattern(view, direction)
-  if view == 'Chord' then
+  if view == "Chord" then
     local length = chord_pattern_length[active_chord_pattern]
     local temp_chord_pattern = {}
     for i = 1, length do
@@ -13,7 +13,7 @@ function rotate_pattern(view, direction)
     for i = 1, length do
       chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - direction,1,length)]
     end
-  elseif view == 'Seq' then
+  elseif view == "Seq" then
     local length = seq_pattern_length[active_seq_pattern]
     local temp_seq_pattern = {}
     for i = 1, length do
@@ -83,20 +83,20 @@ end
 
 -- --for queuing pset load in-advance
 -- function load_pset()
---   pset_load_source = 'load_event'
---   pset_queue = params:get('load_pset')
+--   pset_load_source = "load_event"
+--   pset_queue = params:get("load_pset")
 -- end
 
 
 -- --for queuing pset load in-advance
 -- function splice_pset()
---   pset_load_source = 'splice_event'
---   pset_queue = params:get('splice_pset')
+--   pset_load_source = "splice_event"
+--   pset_queue = params:get("splice_pset")
 -- end
 
 
 -- function save_pset()
---   params:write(params:get('save_pset'), 'ds ' ..os.date())
+--   params:write(params:get("save_pset"), "ds " ..os.date())
 --   -- local filepath = norns.state.data.."/"..number.."/"
 -- end
 
@@ -115,7 +115,7 @@ end
 
 
 function event_seq_gen()
-seq_generator('run')
+seq_generator("run")
 seq_pattern_position = 0
 end    
 
@@ -129,8 +129,8 @@ end
 -- Event Crow trigger out
 function crow_trigger(out)
   local out = tonumber(out)
-  if params:get('crow_out_'..out) == 4 then
-    crow.output[out].action = 'pulse(.01,10,1)' -- (time,level,polarity)
+  if params:get("crow_out_"..out) == 4 then
+    crow.output[out].action = "pulse(.01,10,1)" -- (time,level,polarity)
     crow.output[out]()
   end
 end
@@ -142,7 +142,7 @@ function crow_5v_8_steps_1(step)
   local out = 1
   local volts = 5
   local steps = 8
-  if params:get('crow_out_'..out) == 4 then
+  if params:get("crow_out_"..out) == 4 then
     crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
   end
 end
@@ -154,7 +154,7 @@ function crow_5v_8_steps_2(step)
   local out = 2
   local volts = 5
   local steps = 8
-  if params:get('crow_out_'..out) == 4 then
+  if params:get("crow_out_"..out) == 4 then
     crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
   end
 end
@@ -166,7 +166,7 @@ function crow_5v_8_steps_3(step)
   local out = 3
   local volts = 5
   local steps = 8
-  if params:get('crow_out_'..out) == 4 then
+  if params:get("crow_out_"..out) == 4 then
     crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
   end
 end
@@ -178,7 +178,7 @@ function crow_5v_8_steps_4(step)
   local out = 4
   local volts = 5
   local steps = 8
-  if params:get('crow_out_'..out) == 4 then
+  if params:get("crow_out_"..out) == 4 then
     crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
   end
 end
@@ -186,13 +186,13 @@ end
 
 -- "Transposes" pattern if you can call it that
 function transpose_pattern(view, direction)
-if view == 'Chord' then
+if view == "Chord" then
   for y = 1, max_chord_pattern_length do
     if chord_pattern[active_chord_pattern][y] ~= 0 then
       chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + direction, 1, 14)
     end
   end
-elseif view == 'Seq' then
+elseif view == "Seq" then
   for y = 1, max_seq_pattern_length do
     if seq_pattern[active_seq_pattern][y] ~= 0 then
       seq_pattern[active_seq_pattern][y] = util.wrap(seq_pattern[active_seq_pattern][y] + direction, 1, 14)
@@ -211,14 +211,14 @@ end
 -- always use this to set the current chord pattern so we can also silently update the param as well
 function set_chord_pattern(y)
 active_chord_pattern = y
-params:set('chord_pattern_length', chord_pattern_length[y], true) -- silent
+params:set("chord_pattern_length", chord_pattern_length[y], true) -- silent
 end
 
 
 function deepcopy(orig)
 local orig_type = type(orig)
 local copy
-if orig_type == 'table' then
+if orig_type == "table" then
   copy = {}
   for orig_key, orig_value in next, orig, nil do
     copy[deepcopy(orig_key)] = deepcopy(orig_value)
@@ -240,20 +240,20 @@ end
 -- function to swap options table on an existing param and reset count
 function swap_param_options(param, table)
 params:lookup_param(param).options = table
--- print('setting ' .. param .. ' options to :')
+-- print("setting " .. param .. " options to :")
 -- tab.print(table)
 params:lookup_param(param).count = #table   -- existing index may exceed this so it needs to be set afterwards by whatever called (not every time)
 end
 
 
--- converts the string value of an 'add_options' param into a value index # suitable for params:set
--- args: param id and string value         eg 'event_category', 'Seq' == 3
+-- converts the string value of an "add_options" param into a value index # suitable for params:set
+-- args: param id and string value         eg "event_category", "Seq" == 3
 function param_option_to_index(param, str)
 return(tab.key(params.params[params.lookup[param]].options, str))
 end
 
 
--- passed string arg will be looked up in param's .options and set using index
+-- passed string arg will be looked up in param"s .options and set using index
 function set_param_string(param, str)
 params:set(param, param_option_to_index(param, str))
 end  
@@ -281,14 +281,14 @@ return extents
 end
 
 
--- param action to send cc out as encoder is turned
-function send_cc(source, cc_no, val, suffix)
-  if val > -1 then
-    local port = params:get(source .. '_midi_out_port' .. (suffix or ""))
-    local channel = params:get(source .. '_midi_ch' .. (suffix or ""))
-    midi_device[port]:cc(cc_no, val, channel)
-  end
-end
+-- -- param action to send cc out as encoder is turned
+-- function send_cc(source, cc_no, val, suffix)
+--   if val > -1 then
+--     local port = params:get(source .. "_midi_out_port" .. (suffix or ""))
+--     local channel = params:get(source .. "_midi_ch" .. (suffix or ""))
+--     midi_device[port]:cc(cc_no, val, channel)
+--   end
+-- end
 
 -------------------------
 -- UI FUNCTIONS
@@ -327,7 +327,7 @@ while event_k2 == true do
   key_counter = key_counter - 1
   redraw()
   if key_counter == 0 then
-    print('Deleting all events in segment ' .. event_edit_segment)
+    print("Deleting all events in segment " .. event_edit_segment)
     for step = 1, max_chord_pattern_length do
       events[event_edit_segment][step] = {}
     end
@@ -339,6 +339,6 @@ while event_k2 == true do
   clock.sleep(.2)
 end
 key_counter = 4
---todo p3 should probably have a 'Deleted message appear until key up'
+--todo p3 should probably have a "Deleted message appear until key up"
 redraw()
 end

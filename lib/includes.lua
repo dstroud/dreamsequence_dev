@@ -1,12 +1,15 @@
 -- ships with norns
 er = require("er")
 
--- musicutil = require("musicutil") -- subbed
+musicutil = require("musicutil") -- subbed
 
 local lib = norns.state.shortname.."/lib/"
 
--- @dewb's updated musicutil with some modified chord names I've added
-include(lib .. "musicutil_ds")
+-- modified version of lattice lib
+lattice = include(lib .. "lattice")
+
+-- lookup table for chord names/qualities in mode
+include(lib .. "modes")
 
 -- divisions for clock modulo and durations
 include(lib .. "divisions")
