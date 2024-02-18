@@ -1,5 +1,13 @@
 # dreamsequence_dev
 
+### Changelog:
+
+2023-11-24
+- REQUIRES NORNS 231114
+- 60fps screen refresh
+- NB MIDI "port.voice" suffix
+- Fix for NBout crashing script
+- Minor screen redraw/Grid refresh optimizations
 
 ***Things to know about NB:***
 1. The script comes with built-in support for MIDI and Crow voices, but you'll have to install other voices yourself. See the [official NB post](https://llllllll.co/t/60374) for info. I highly recommend you also grab [Doubledecker](https://llllllll.co/t/doubledecker/61525) while you're at it.
