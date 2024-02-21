@@ -2,6 +2,64 @@
 
 ### Changelog:
 
+2024-02-21
+- REQUIRES NORNS 240221
+
+**New features**
+
+- Swing settings for Chord, Seq, CV harmonizer, and Crow clock out.
+
+- Seq ‘Accent’ param applies a positive or negative dynamics offset to swing steps. Coming to CV harmonizer eventually.
+
+- "Step" duration setting adjusts note duration to always match the step length (Chord and Seq) or Trigger division (CV harmonizer).
+
+- Pressing a Grid pattern key when transport is stopped will play that chord or note (feels okay but LMK if you want a way to turn this off).
+
+------------------------------------
+
+**Important transport changes** (depending on clock source)
+
+- Internal clock source (preferred)
+  - Pressing K2 will immediately pause Dreamsequence and send a stop message out to synced devices.
+
+  - New `MIDI CLOCK OUT` settings are available for each MIDI clock port via `K3>>PARAMETERS>>EDIT>>PREFERENCES` and determine behavior when continuing after pausing. 
+    - The “song” option will send out MIDI Song Position Pointer (SPP) and ‘continue’ messages which should work well for things like DAWs.
+    - The “pattern” setting will cause Dreamsequence to continue playback and then send a ’start’ message at the beginning of the next measure. This works well for devices that don’t support SPP: drum machines, loopers, Ableton live’s “Session” view, etc…
+    - In order for ‘pattern’ mode to work as expected, you must set a time signature via GLOBAL>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires a stop and restart, I think.
+
+
+- Link clock source (WIP)
+  - The good news: the issue with starting Link from Norns is addressed in update [240221](/t/norns-update-240221/66241)!
+
+  - The bad news: the way the Link issue is being addressed prevents pause/continue from working at all. I’ve raised an [issue](https://github.com/monome/norns/issues/1756) about this and hopefully a solution can be found. For now, K2 or a stop message from a synced device will result in a full stop.
+
+- MIDI clock source (barely tested)
+  - K2/K3 are disabled.
+
+  - No pause/continue (full stop).
+
+- Crow (minimally supported)
+  - K2/K3 will start/stop.
+
+------------------------------------
+
+**Other changes**
+
+- Chord preload setting is disabled. I’m not sure how necessary this feature was (it was intended to allow jamming on a keyboard into the MIDI/CV harmonizers, even if the notes were hit a little before the chord change). I never really used it and it’s a bit complicated to implement with Lattice so I’m just turning it off for now. LMK if you need this and I can look into bringing it back.
+
+- MIDI device names may be shortened to fit (acronym-based) and, somewhat confusingly, will appear alphabetically as if they have an invisible prefix of "MIDI". The numbers at the end are the assigned MIDI port in `system>>devices` and voice instance (always 1 until I can figure out a way to enable more instances).
+
+- Chord division change events will fire before the chord step is processed
+
+------------------------------------
+
+**Known issues**
+
+- Harmonizer input before transport is started will result in hanging notes until transport is started once.
+- At the end of a 1-shot arrangement, a MIDI/Link stop message is sent. This technically occurs at the start of the next measure which may cause synced devices to stop late (Link in particular as there's no latency compensation).
+- Live time signature changes probably will break something, IDK.
+
+- 
 2023-11-24
 - REQUIRES NORNS 231114
 - 60fps screen refresh
