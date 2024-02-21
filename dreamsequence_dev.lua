@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240218 @modularbeat
+-- 240221 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -20,7 +20,7 @@
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
-norns.version.required = 231114
+norns.version.required = 240221
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- or else transport won't start if external link clock is already running
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24021801"
+  local version = "24022101"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -1311,6 +1311,7 @@ params:set_action("ts_numerator",
       pre_action = function(t)  -- handle div-quantized pause and div changes
        
         if params:string("arranger") == "On" then
+          arranger_ending() -- check if arranger is ending
           if chord_pattern_position >= chord_pattern_length[active_chord_pattern] then -- advance arranger
             if not arranger_one_shot_last_pattern then
               do_events_pre(arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1, 1)
@@ -2170,6 +2171,8 @@ function advance_chord_pattern()
   -- Advance arranger sequence if enabled
   if params:string("arranger") == "On" then
 
+    -- arranger_ending() moved to pre-action so this can be used for events, too
+    
     -- If it's post-reset or at the end of chord sequence
     -- TODO: Really need a global var for when in a reset state (arranger_position == 0 and chord_pattern_position == 0)
     if (arranger_position == 0 and chord_pattern_position == 0) or chord_pattern_position >= chord_pattern_length[active_chord_pattern] then
@@ -2215,7 +2218,7 @@ function advance_chord_pattern()
       arranger_retrig = true
     end
     -- Flag if arranger is on the last pattern of a 1-shot sequence
-    arranger_ending()
+    -- arranger_ending() -- moved to beginning of fn
   end
 
   -- If arrangement was not just reset, update chord position. 
