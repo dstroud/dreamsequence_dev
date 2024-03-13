@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240221 @modularbeat
+-- 240313 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24022101"
+  local version = "24031301"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -2292,9 +2292,10 @@ function update_arranger_active()
 end  
 
 
--- variant of do_events specifically for handling chord division changes BEFORE chord is advanced
+-- variant of do_events specifically for handling chord division changes BEFORE chord plays
+-- gets passed a false arranger_pos/chord_pos for upcoming chord by sprocket
 -- TODO p1 really need to optimize this by having top level "order" tables for events rather than checking each event
--- Can also block these in standard do_events (but probably not hurting anything firing twice)
+-- Can also block these in standard do_events (but probably catching some edge-cases (resets?) by firing chord_div_index twice)
 function do_events_pre(arranger_pos,chord_pos)
   local arranger_position = arranger_pos
   local chord_pattern_position = chord_pos
@@ -2302,7 +2303,7 @@ function do_events_pre(arranger_pos,chord_pos)
     if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
       for i = 1, 16 do
         local event_path = events[arranger_position][chord_pattern_position][i]
-        if event_path ~= nil and event_path.id == "chord_div_index" then -- bodge
+        if event_path ~= nil and event_path.order == 1 then
           if math.random(1, 100) <= event_path.probability then
             local event_type = event_path.event_type
             local event_name = event_path.id
@@ -3805,7 +3806,8 @@ function key(n,z)
         if event_edit_active then
 
           local event_index = params:get("event_name")
-          
+          local order = tonumber(events_lookup[event_index].order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
+
           -- function or param
           local event_type = events_lookup[event_index].event_type
           local value = params:get("event_value")
@@ -3844,6 +3846,7 @@ function key(n,z)
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = events_lookup[event_index].id, 
+                order = order,
                 event_type = event_type,
                 value_type = value_type,
                 operation = operation,  -- sorta redundant but we do use it to simplify reads
@@ -3853,6 +3856,7 @@ function key(n,z)
               
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")
             print(">> id = " .. events_lookup[event_index].id)
+            print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
@@ -3862,6 +3866,7 @@ function key(n,z)
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = events_lookup[event_index].id, 
+                order = order,
                 event_type = event_type, 
                 value_type = value_type,
                 operation = operation,
@@ -3871,6 +3876,7 @@ function key(n,z)
               
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")     
             print(">> id = " .. events_lookup[event_index].id)
+            print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
@@ -3882,6 +3888,7 @@ function key(n,z)
               events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = events_lookup[event_index].id, 
+                order = order,
                 event_type = event_type, 
                 value_type = value_type,
                 operation = operation,
@@ -3892,6 +3899,7 @@ function key(n,z)
               events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = events_lookup[event_index].id, 
+                order = order,
                 event_type = event_type, 
                 value_type = value_type,
                 operation = operation,
@@ -3904,6 +3912,7 @@ function key(n,z)
             
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")       
             print(">> id = " .. events_lookup[event_index].id)
+            print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
@@ -3920,6 +3929,7 @@ function key(n,z)
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = events_lookup[event_index].id, 
+                order = order,
                 event_type = event_type, 
                 value_type = value_type,
                 operation = operation,
@@ -3931,6 +3941,7 @@ function key(n,z)
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = events_lookup[event_index].id, 
+                order = order,
                 event_type = event_type, 
                 value_type = value_type,
                 operation = operation,
@@ -3943,6 +3954,7 @@ function key(n,z)
             end  
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")       
             print(">> id = " .. events_lookup[event_index].id)
+            print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
