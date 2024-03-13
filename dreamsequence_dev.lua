@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240221 @modularbeat
+-- 240313 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24022101"
+  local version = "24031301"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -687,6 +687,7 @@ function init()
   d_cuml = 0
   interaction = nil
   events = {}
+  events_pre = {}
   for segment = 1, max_arranger_length do
     events[segment] = {}
     for step = 1, max_chord_pattern_length do
@@ -2172,7 +2173,7 @@ function advance_chord_pattern()
   if params:string("arranger") == "On" then
 
     -- arranger_ending() moved to pre-action so this can be used for events, too
-    
+
     -- If it's post-reset or at the end of chord sequence
     -- TODO: Really need a global var for when in a reset state (arranger_position == 0 and chord_pattern_position == 0)
     if (arranger_position == 0 and chord_pattern_position == 0) or chord_pattern_position >= chord_pattern_length[active_chord_pattern] then
@@ -2293,16 +2294,20 @@ end
 
 
 -- variant of do_events specifically for handling chord division changes BEFORE chord is advanced
--- TODO p1 really need to optimize this by having top level "order" tables for events rather than checking each event
--- Can also block these in standard do_events (but probably not hurting anything firing twice)
 function do_events_pre(arranger_pos,chord_pos)
   local arranger_position = arranger_pos
   local chord_pattern_position = chord_pos
-  if events[arranger_position] ~= nil then
-    if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
-      for i = 1, 16 do
-        local event_path = events[arranger_position][chord_pattern_position][i]
-        if event_path ~= nil and event_path.id == "chord_div_index" then -- bodge
+  if events_pre[arranger_position] ~= nil 
+    and events_pre[arranger_position][chord_pattern_position] ~= nil then
+    -- if events_pre[arranger_position][chord_pattern_position].populated or 0 > 0 then
+    -- if events_pre[arranger_position][chord_pattern_position].populated or 0 > 0 then
+      -- for i = 1, 16 do
+      for k, v in pairs(events_pre[arranger_position][chord_pattern_position]) do
+        
+        -- local event_path = events[arranger_position][chord_pattern_position][i]
+        -- print("DEBUG firing event_pre " , arranger_position, chord_pattern_position, k) 
+        local event_path = events[arranger_position][chord_pattern_position][k]
+        -- if event_path ~= nil and event_path.id == "chord_div_index" then -- bodge
           if math.random(1, 100) <= event_path.probability then
             local event_type = event_path.event_type
             local event_name = event_path.id
@@ -2388,9 +2393,9 @@ function do_events_pre(arranger_pos,chord_pos)
               
             end
           end
-        end
+        -- end
       end
-    end
+    -- end
   end
 end
 
@@ -2406,9 +2411,11 @@ function do_events()
   
   if events[arranger_position] ~= nil then
     if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
-      for i = 1, 16 do
+      for i = 1, 16 do  -- todo change to in pairs with nil checking
         local event_path = events[arranger_position][chord_pattern_position][i]
         if event_path ~= nil and math.random(1, 100) <= event_path.probability then
+        -- local order = event_path.order or nil
+        -- if event_path ~= nil and event_path.order == nil and (math.random(1, 100) <= event_path.probability)then
           local event_type = event_path.event_type
           local event_name = event_path.id
           local value = event_path.value or ""
@@ -2913,6 +2920,8 @@ function grid_redraw()
       for y = 1, rows do -- pattern steps
         local led = events[event_edit_segment][y + pattern_grid_offset][x] ~= nil and 7 or (y + pattern_grid_offset > length and 0 or 2)
 
+        -- todo need blinky for events below current view
+
         if length > rows - pattern_grid_offset 
         and length - pattern_grid_offset > rows 
         and y == rows then
@@ -3191,6 +3200,7 @@ function g.key(x,y,z)
             local value = events_path.value
             local operation = events_path.operation
             local limit = events_path.limit or "Off"
+            -- local order = tonumber(events_path.order) or 2
 
             params:set("event_category", param_option_to_index("event_category", events_lookup[index].category))
             change_category()
@@ -3223,9 +3233,33 @@ function g.key(x,y,z)
           local og_event_populated = events[event_edit_segment][y + pattern_grid_offset][x] ~= nil
           local copied_event_populated = events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil
 
-          -- Then copy
+          -- Then copy event
           events[event_edit_segment][y + pattern_grid_offset][x] = deepcopy(events[event_edit_segment][event_edit_step][event_edit_lane])
-          
+
+          -- Also copy events_pre
+          if events_pre[event_edit_segment][event_edit_step][event_edit_lane] == true then  -- is order==1 pre event
+            print("DEBUG copying event_pre == TRUE")
+            if events_pre[event_edit_segment] ~= nil then
+              if events_pre[event_edit_segment][y + pattern_grid_offset] ~= nil then
+                events_pre[event_edit_segment][y + pattern_grid_offset][x] = true -- set flag
+              else -- create 2 levels of heirarchy and set flag
+                events_pre[event_edit_segment][event_edit_step] = {}
+                events_pre[event_edit_segment][y + pattern_grid_offset][x] = true
+              end
+            else  -- create all 3 levels of heirarchy and set flag
+              events_pre[event_edit_segment] = {}
+              events_pre[event_edit_segment][event_edit_step] = {}
+              events_pre[event_edit_segment][y + pattern_grid_offset][x] = true
+            end
+          else  -- not copying pre event so check if we need to flip TRUE to nil
+            -- todo p2 should also check other lanes and delete heirarchy when possible
+            if events_pre[event_edit_segment] ~= nil
+            and events_pre[event_edit_segment][y + pattern_grid_offset] ~= nil
+            and events_pre[event_edit_segment][y + pattern_grid_offset][x] ~= nil then
+              events_pre[event_edit_segment][y + pattern_grid_offset][x] =  nil
+            end
+          end
+
           -- Adjust populated events count at the step level. todo: also set at the segment level once implemented
           if og_event_populated and not copied_event_populated then
             events[event_edit_segment][y + pattern_grid_offset].populated = events[event_edit_segment][y + pattern_grid_offset].populated - 1
@@ -3805,7 +3839,8 @@ function key(n,z)
         if event_edit_active then
 
           local event_index = params:get("event_name")
-          
+          local order = tonumber(events_lookup[event_index].order) or 2
+
           -- function or param
           local event_type = events_lookup[event_index].event_type
           local value = params:get("event_value")
@@ -3839,6 +3874,28 @@ function key(n,z)
             end
           end
 
+          -- set flag if priority event exists
+          if order == 1 then
+            if events_pre[event_edit_segment] == nil then
+              events_pre[event_edit_segment] = {}
+              events_pre[event_edit_segment][event_edit_step] = {}
+              events_pre[event_edit_segment][event_edit_step][event_edit_lane] = true
+            elseif events_pre[event_edit_segment][event_edit_step] == nil then
+              events_pre[event_edit_segment][event_edit_step] = {}
+              events_pre[event_edit_segment][event_edit_step][event_edit_lane] = true
+            else
+              events_pre[event_edit_segment][event_edit_step][event_edit_lane] = true
+            end
+          else
+            if events_pre[event_edit_segment] 
+              and events_pre[event_edit_segment][event_edit_step] 
+              and events_pre[event_edit_segment][event_edit_step][event_edit_lane] then
+                events_pre[event_edit_segment][event_edit_step][event_edit_lane] = nil
+              -- todo p1 also maintain populated counts to clean up heirarchy so less checks are needed in pre_action
+            end
+          end
+          
+
           -- Wipe existing events, write the event vars to events
           if value_type == "trigger" then
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
@@ -3868,7 +3925,7 @@ function key(n,z)
                 value = value, 
                 probability = probability
               }
-              
+
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")     
             print(">> id = " .. events_lookup[event_index].id)
             print(">> event_type = " .. event_type)
@@ -3889,17 +3946,17 @@ function key(n,z)
                 probability = probability
               }
               else
-              events[event_edit_segment][event_edit_step][event_edit_lane] = 
-              {
-                id = events_lookup[event_index].id, 
-                event_type = event_type, 
-                value_type = value_type,
-                operation = operation,
-                limit = limit, -- note different source here but using the same field for storage
-                  limit_min = limit_min,  -- adding
-                  limit_max = limit_max,  -- adding
-                probability = probability
-              }
+                events[event_edit_segment][event_edit_step][event_edit_lane] = 
+                  {
+                    id = events_lookup[event_index].id, 
+                    event_type = event_type, 
+                    value_type = value_type,
+                    operation = operation,
+                    limit = limit, -- note different source here but using the same field for storage
+                      limit_min = limit_min,  -- adding
+                      limit_max = limit_max,  -- adding
+                    probability = probability
+                  }
             end
             
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")       
