@@ -1433,6 +1433,11 @@ params:set_action("ts_numerator",
   countdown_timer.count = -1
   countdown_timer:start()
 
+  -- start and reset lattice to get note durations working
+  seq_lattice:start()
+  seq_lattice:stop()
+  reset_lattice("init")
+
 end -- end of init
 
 
