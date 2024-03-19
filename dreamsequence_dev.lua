@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240313 @modularbeat
+-- 240319 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24031301"
+  local version = "24031901"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -466,7 +466,7 @@ function init()
   ------------------
   params:add_group("seq", "SEQ", 17)
 
-  params:add_option("seq_note_map_1", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode"}, 1)
+  params:add_option("seq_note_map_1", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode", "Chromatic"}, 1)
   
   -- todo p1 rename these and update documentation: {"Repeat", "Chord step", "Chord", "Cue"}
   params:add_option("seq_start_on_1", "Start on", {"Seq end", "Step", "Chord", "Cue"}, 1)
@@ -548,7 +548,7 @@ function init()
   ------------------
   params:add_group("midi_harmonizer", "MIDI HARMONIZER", 8)  
 
-  params:add_option("midi_note_map", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode"}, 1)
+  params:add_option("midi_note_map", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode", "Chromatic"}, 1)
 
   nb:add_param("midi_voice_raw", "Voice raw")
   params:hide("midi_voice_raw")
@@ -588,7 +588,7 @@ function init()
   params:add_number("crow_div_index", "Trigger", 0, 57, 0, function(param) return crow_trigger_string(param:get()) end)
   params:set_action("crow_div_index", function(val) crow_div = val == 0 and 0 or division_names[val][1] end) -- overwritten
 
-  params:add_option("crow_note_map", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode"}, 1)
+  params:add_option("crow_note_map", "Notes", {"Triad", "7th", "Mode+Transp.", "Mode", "Chromatic"}, 1)
 
   params:add_option("crow_auto_rest", "Auto-rest", {"Off", "On"}, 1)
 
@@ -2300,7 +2300,7 @@ function do_events_pre(arranger_pos,chord_pos)
   local arranger_position = arranger_pos
   local chord_pattern_position = chord_pos
   if events[arranger_position] ~= nil then
-    if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
+    if (events[arranger_position][chord_pattern_position].populated or 0) > 0 then
       for i = 1, 16 do
         local event_path = events[arranger_position][chord_pattern_position][i]
         if event_path ~= nil and event_path.order == 1 then
@@ -2397,16 +2397,15 @@ end
 
 
 function do_events()
-  -- if arranger_position == 0 then
-  --   print("arranger_position = 0")
-  -- end
-  
-  -- if chord_pattern_position == 0 then
-  --   print("chord_pattern_position = 0")
-  -- end  
-  
   if events[arranger_position] ~= nil then
     if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
+
+      -- alt if we need to be strict about not double-firing order 1 events
+      -- for i = 1, 16 do
+        -- local event_path = events[arranger_position][chord_pattern_position][i]
+        -- if event_path ~= nil and event_path.order == 2 then
+        --   if math.random(1, 100) <= event_path.probability then
+
       for i = 1, 16 do
         local event_path = events[arranger_position][chord_pattern_position][i]
         if event_path ~= nil and math.random(1, 100) <= event_path.probability then
@@ -2804,6 +2803,10 @@ function map_note_4(note_num, octave) -- mode mapping
   local note_num = note_num
   local quantized_note = notes_nums[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
   return(quantized_note + (octave * 12) + params:get("transpose"))
+end
+
+function map_note_5(note_num, octave) -- chromatic mapping
+  return(note_num -1 + (octave * 12) + params:get("transpose"))
 end
 
 
