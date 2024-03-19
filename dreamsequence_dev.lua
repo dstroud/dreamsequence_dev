@@ -2595,7 +2595,6 @@ end
 
 -- todo relocate!
 function to_player(player, note, dynamics, duration)
-
   -- todo check if note_history exists and create if not?
   -- also need to keep a list of players to run countdown functions on
   
@@ -2884,7 +2883,7 @@ midi_event = function(data)
     local player = params:lookup_param("midi_voice_raw"):get_player()
     local dynamics = params:get("midi_dynamics") * .01 -- todo p1 velocity passthru (normalize to 0-1)
 
-    to_player(player, note, dynamics, seq_duration)
+    to_player(player, note, dynamics, midi_duration)
     
   end
 end
