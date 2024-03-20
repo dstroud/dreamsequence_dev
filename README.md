@@ -2,6 +2,20 @@
 
 ### Changelog:
 
+2024-03-20
+- Reverted to v1.2 Crow input mapping: IN 1 is CV and IN 2 is trigger. Syncing to Crow clock is unsupported.
+
+- Added Chromatic Notes param option.
+
+- Improved events to show formatted min/max limits rather than index.
+
+- Swing events
+
+- Fixed issue with handing notes prior to transport starting.
+
+- Fixed incorrect MIDI Harmonizer note durations
+
+
 2024-02-21
 - REQUIRES NORNS 240221
 
@@ -38,8 +52,7 @@
 
   - No pause/continue (full stop).
 
-- Crow (minimally supported)
-  - K2/K3 will start/stop.
+- Crow (not supportes)
 
 ------------------------------------
 
@@ -77,17 +90,16 @@
 4. It's pretty easy to overload the CPU and get audio crackles (or worse) by sending too many notes to a pseudo-engine like Emplaitress. Shorter note duration/envelope helps.
 
 ***Things to know about Crow:***
-1. Inputs for the CV harmonizer have been flipped. For now, Crow input 1 is now trigger and Crow input 2 is CV. The restriction of using Crow as a clock source has been lifted and works in conjunction with CV harmonizer.
 
-2. *Default* Crow out have changed: 
+1. *Default* Crow out have changed: 
 - Out 1: CV
 - Out 2: Env
 - Out 3: Events
 - Out 4: Clock
 
-3. The GLOBAL menu now has settings for configuring Crow's outputs which will result in various CV or CV/Env pair options appearing in Voice parameters. All outs can send CV, Env, and Events while out 4 can send also send a Clock pulse when transport is running. There's no option for outputting Chord to multiple outs (yet).
+2. The GLOBAL menu now has settings for configuring Crow's outputs which will result in various CV or CV/Env pair options appearing in Voice parameters. All outs can send CV, Env, and Events while out 4 can send also send a Clock pulse when transport is running. There's no option for outputting Chord to multiple outs (yet).
 
-4. A new "Trigger" param in CV harmonizer provides options for triggering the harmonizer voltage sampling on a schedule or when a trigger is received at Crow in 1 (default). The former works best for continuous or random voltage sources and might not produce expected results with clock-synced modules that produced stepped voltage changes right on the beat (sequencers, for instance). Scheduled sampling may occur before the round trip of Crow clock out>>pitch change>>sampling can occur.
+3. A new "Trigger" param in CV harmonizer provides options for triggering the harmonizer voltage sampling on a schedule or when a trigger is received at Crow in 2 (default). The former works best for continuous or random voltage sources and might not produce expected results with clock-synced modules that produced stepped voltage changes right on the beat (sequencers, for instance). Scheduled sampling may occur before the round trip of Crow clock out>>pitch change>>sampling can occur.
 
 ***Misc:***
 1. Crow events have been moved from Global into their own categories for each out, 1-4. There's also a new event "5v 8-steps" event for driving my sequential switch (Vice Virga) that maybe works with similar devices (0.31v, 0.94v, 1.56v, 2.19v, 2.81v, 3.44v, 4.06v, 4.69v). I'd like to have more configurable events along these lines but it'll take some work so take-it-or-leave-it.
