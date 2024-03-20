@@ -13,10 +13,10 @@
 -- ENC 2: Select
 -- ENC 3: Edit
 --
--- Crow IN 1: Trigger in
--- Crow IN 2: CV in
+-- Crow IN 1: CV in
+-- Crow IN 2: Trigger in
 -- Crow OUT 1: V/oct out
--- Crow OUT 2: Trigger/envelope out
+-- Crow OUT 2: Envelope/trigger out
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
@@ -67,25 +67,32 @@ function init()
     transport_midi_update()
   end
 
-  -- called by crow.input[1].change when clock_source == crow
-  -- passes through original event for crow clock
-  function process_crow_cv_1_change(v)
-    norns.crow.send[[tell("change",1,1)]]
-    crow_trigger_in()
-  end
+  -- -- called by crow.input[1].change when clock_source == crow
+  -- -- passes through original event for crow clock
+  -- function process_crow_cv_1_change(v)
+  --   -- bit to start transport but stopping is a question. Prob need high/low start/stop on Crow IN 2
+  --   -- if transport_state ~= "playing" then
+  --   --   transport_state = "playing"
+  --   --   print(transport_state)
+  --   --   enable_sprockets()
+  --   --   seq_lattice:start()
+  --   -- end
+  --   norns.crow.send[[tell("change",1,1)]]
+  --   crow_trigger_in()
+  -- end
 
-  -- modifies norns.crow.clock_enable to also call crow_trigger_in()
-  -- this way we can send a swung clock into Crow CV1 to get swing notes
-  -- from the CV harmonizer while also driving the system clock
-  function redefine_crow_input_1()
-    if params:string("clock_source") == "crow" then
-      norns.crow.clock_enable = function()
-        crow.input[1].change = process_crow_cv_1_change
-        crow.input[1].mode("change",2,0.1,"rising")
-      end
-      norns.crow.clock_enable()
-    end
-  end
+  -- -- modifies norns.crow.clock_enable to also call crow_trigger_in()
+  -- -- this way we can send a swung clock into Crow CV1 to get swing notes
+  -- -- from the CV harmonizer while also driving the system clock
+  -- function redefine_crow_input_1()
+  --   if params:string("clock_source") == "crow" then
+  --     norns.crow.clock_enable = function()
+  --       crow.input[1].change = process_crow_cv_1_change
+  --       crow.input[1].mode("change",2,0.1,"rising")
+  --     end
+  --     norns.crow.clock_enable()
+  --   end
+  -- end
 
   -- thanks @dndrks for this little bit of magic to check ^^crow^^ version!!
   norns.crow.events.version = function(...)
@@ -102,26 +109,26 @@ function init()
         print("Crow compatibility mode enabled per https://github.com/monome/crow/pull/463")
         crow_trigger_in = function()
           if crow_div == 0 then
-            crow.send("input[2].query = function() stream_handler(2, input[2].volts) end")
-            crow.input[2].query()
+            crow.send("input[1].query = function() stream_handler(1, input[1].volts) end")
+            crow.input[1].query()
           end
         end
       else
         crow_trigger_in = function()
           -- todo p2 could just overwrite function so nothing happens. Not sure how to do that and maintain crow clock_source though
           if crow_div == 0 then
-            crow.input[2].query()
+            crow.input[1].query()
           end
         end
       end
-      crow.input[2].stream = sample_crow
-      crow.input[2].mode("none")
+      crow.input[1].stream = sample_crow
+      crow.input[1].mode("none")
       -- todo idea: could do a gate with "both" for ADSR envelope so this can do passthrough note duration
       if params:get("clock_source") ~= 4 then
-        crow.input[1].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
-        crow.input[1].change = crow_trigger_in
+        crow.input[2].mode("change", 2 , 0.1, "rising") -- voltage threshold, hysteresis, "rising", "falling", or “both"
+        crow.input[2].change = crow_trigger_in
       end
-      redefine_crow_input_1()
+      -- redefine_crow_input_1()
     end
   )
 
@@ -172,16 +179,16 @@ function init()
       end
     end
     
-    -- revert changes made to clock_enable
-    norns.crow.clock_enable = function()
-      -- directly set the change event on crow so it conforms to old-style event names
-      norns.crow.send[[
-        input[1].change = function()
-          tell("change",1,1)
-        end
-        input[1].mode("change",2,0.1,"rising")
-      ]]
-    end
+    -- -- revert changes made to clock_enable
+    -- norns.crow.clock_enable = function()
+    --   -- directly set the change event on crow so it conforms to old-style event names
+    --   norns.crow.send[[
+    --     input[1].change = function()
+    --       tell("change",1,1)
+    --     end
+    --     input[1].mode("change",2,0.1,"rising")
+    --   ]]
+    -- end
 
   end
   
@@ -424,7 +431,7 @@ function init()
   params:add_option("chord_voice", "Voice", voice_param_options, 1)
   params:set_action("chord_voice", function(index) params:set("chord_voice_raw", voice_param_index[index]) end)
 
-  params:add_number("chord_duration_index", "Duration", 0, 57, 0, function(param) return param:get() == 0 and "Step" or divisions_string(param:get()) end)
+  params:add_number("chord_duration_index", "Duration", 0, 57, 0, function(param) return durations_string(param:get()) end)
   params:set_action("chord_duration_index",function(val) chord_duration = val == 0 and chord_div or division_names[val][1] end)
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
@@ -510,9 +517,6 @@ function init()
   params:set_action("seq_reset_1",function() seq_pattern_position = 0 end)
   
   params:add_number("seq_div_index_1", "Step length", 1, 57, 8, function(param) return divisions_string(param:get()) end)
-  -- params:set_action("seq_div_index_1", function(val) seq_div = division_names[val][1] end)
-  -- params:set_action("seq_div_index_1", function(val) params:set("seq_duration_index_1", val) end)  -- temporary - for debugging but would be a nice feature!
-
 
   nb:add_param("seq_voice_raw_1", "Voice raw")
   params:hide("seq_voice_raw_1")
@@ -520,7 +524,7 @@ function init()
   params:add_option("seq_voice_1", "Voice", voice_param_options, 1)
   params:set_action("seq_voice_1", function(index) params:set("seq_voice_raw_1", voice_param_index[index]) end)
   
-  params:add_number("seq_duration_index_1", "Duration", 0, 57, 0, function(param) return param:get() == 0 and "Step" or divisions_string(param:get()) end)
+  params:add_number("seq_duration_index_1", "Duration", 0, 57, 0, function(param) return durations_string(param:get()) end)
   params:set_action("seq_duration_index_1", function(val) seq_duration = val == 0 and division_names[params:get("seq_div_index_1")][1] or division_names[val][1] end)
 
   max_seq_pattern_length = 16  
@@ -566,7 +570,7 @@ function init()
     in_midi = midi.connect(params:get("midi_harmonizer_in_port"))
     in_midi.event = midi_event
   
-  params:add_number("midi_duration_index", "Duration", 1, 57, 10, function(param) return divisions_string(param:get()) end)
+  params:add_number("midi_duration_index", "Duration", 1, 57, 10, function(param) return durations_string(param:get()) end)
   params:set_action("midi_duration_index", function(val) midi_duration = division_names[val][1] end) -- pointless?
     
   params:add_number("midi_octave", "Octave", -4, 4, 0)
@@ -592,7 +596,7 @@ function init()
 
   params:add_option("crow_auto_rest", "Auto-rest", {"Off", "On"}, 1)
 
-  params:add_number("crow_duration_index", "Duration", 0, 57, 10, function(param) return param:get() == 0 and "Step" or divisions_string(param:get()) end)
+  params:add_number("crow_duration_index", "Duration", 0, 57, 10, function(param) return durations_string(param:get()) end)
   params:set_action("crow_duration_index", function(val) 
     if val == 0 then  -- if in "Step" mode
       if crow_div ~= 0 then -- and not triggering via Crow IN 1
@@ -1398,7 +1402,7 @@ params:set_action("ts_numerator",
         -- for now, this sprocket always runs but not necessarily the action. 
         -- look into disabling sprocket when not needed (not sure if downbeat and phase can be reset using cv_harm_self_sample)
         if crow_div ~= 0 then
-          crow.input[2].query()
+          crow.input[1].query()
           -- cv_harm_self_sample()
         end
       end,
@@ -1437,6 +1441,7 @@ params:set_action("ts_numerator",
   seq_lattice:start()
   seq_lattice:stop()
   reset_lattice("init")
+  reset_arrangement()
 
 end -- end of init
 
@@ -1816,6 +1821,10 @@ function divisions_string(index)
   if index == 0 then return("Off") else return(division_names[index][2]) end
 end
 
+function durations_string(index) 
+  if index == 0 then return("Step") else return(division_names[index][2]) end
+end
+
 
 function crow_trigger_string(index)
   return(index == 0 and "Crow IN 1" or division_names[index][2])
@@ -2092,8 +2101,8 @@ function clock.transport.start(sync_value)
       clock.sync(params:get("link_quantum"))
     elseif clock_source == "midi" then
       clock.sync(1/24)  -- I think this makes sense for MIDI clock?
-    elseif clock_source == "crow" then
-      clock.sync(1/24) -- wag lol
+    -- elseif clock_source == "crow" then
+      -- clock.sync(1/24) -- wag lol
     -- elseif sync_val ~= nil then -- indicates MIDI clock but starting from K3
       -- clock.sync(sync_val)  -- uses sync_val arg (chord_div / global_clock_div) to sync on the correct beat of an already running MIDI clock
     end
@@ -2245,10 +2254,10 @@ function advance_chord_pattern()
     end
     
     local x = chord_pattern[active_chord_pattern][chord_pattern_position]
-    update_chord(x)
 
     -- Play the chord
     if x > 0 then
+      update_chord(x)
       play_chord()
       if seq_reset_on_1 == 2 then -- Chord
         seq_pattern_position = 0
@@ -3737,21 +3746,21 @@ function key(n,z)
         --     end
         --   end
           
-          elseif params:string("clock_source") == "crow" then
-          if transport_state == "starting" or transport_state == "playing" then
-            stop = true
-            transport_state = "pausing"
-            print(transport_state)        
-            clock_start_method = "continue"
-            -- start = true
-          else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == "pausing" or transport_state == "paused" then
-            reset_external_clock()
-            if params:get("arranger") == 2 then
-              reset_arrangement()
-            else
-              reset_pattern()       
-            end
-          end          
+          -- elseif params:string("clock_source") == "crow" then
+          -- if transport_state == "starting" or transport_state == "playing" then
+          --   stop = true
+          --   transport_state = "pausing"
+          --   print(transport_state)        
+          --   clock_start_method = "continue"
+          --   -- start = true
+          -- else --  remove so we can always do a stop (external sync and weird state exceptions)  if transport_state == "pausing" or transport_state == "paused" then
+          --   reset_external_clock()
+          --   if params:get("arranger") == 2 then
+          --     reset_arrangement()
+          --   else
+          --     reset_pattern()       
+          --   end
+          -- end
         end
         
       end
@@ -4080,14 +4089,14 @@ function key(n,z)
           end
           
         -- todo p0 untested in 1.3
-        elseif params:string("clock_source") == "crow" then
-          if transport_active == false then
-            clock.transport.start(1)  -- sync on next beat
-          else -- we can cancel a pending pause by pressing K3 before it fires
-            stop = false
-            transport_state = "playing"
-            print(transport_state)            
-          end          
+        -- elseif params:string("clock_source") == "crow" then
+        --   if transport_active == false then
+        --     clock.transport.start(1)  -- sync on next beat
+        --   else -- we can cancel a pending pause by pressing K3 before it fires
+        --     stop = false
+        --     transport_state = "playing"
+        --     print(transport_state)            
+        --   end          
         end
       end
       -----------------------------------
