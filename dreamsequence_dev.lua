@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240319 @modularbeat
+-- 240320 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -23,7 +23,7 @@
 norns.version.required = 240221
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
-clock.link.stop() -- or else transport won't start if external link clock is already running
+clock.link.stop() -- transport won't start if external link clock is already running
 
 -- locals
 local latest_strum_coroutine = coroutine.running()
@@ -31,12 +31,12 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24031901"
+  local version = "24032001"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
   nb:init()
-  -- suppress some default nb_crow and nb_jf mod players-- they come back on next nb init
+  -- suppress some nb_crow and nb_jf mod players-- they come back on next nb init
   nb.players["crow 1/2"] = nil
   nb.players["crow 3/4"] = nil
   nb.players["crow para"] = nil
@@ -59,7 +59,7 @@ function init()
     )
   end
 
-  function midi.add(dev)   -- Restored on script init
+  function midi.add(dev)      -- Restored on script init
     transport_midi_update()
   end
 
@@ -326,7 +326,7 @@ function init()
   params:set_action("crow_out_4",function() gen_voice_lookups(); update_voice_params() end)  
 
   -- Crow clock uses hybrid notation/PPQN
-  params:add_number("crow_clock_index", "Crow clk", 1, 65, 7,function(param) return crow_clock_string(param:get()) end)
+  params:add_number("crow_clock_index", "Crow clk", 1, 58, 7,function(param) return crow_clock_string(param:get()) end)
   
   params:add_number("crow_clock_swing", "Crow swing", 50, 99, 50, function(param) return percent(param:get()) end)
   
@@ -4407,13 +4407,15 @@ function set_event_range()
   local event_index = params:get("event_name")
   -- Determine if event range should be clamped
   if events_lookup[event_index].event_type == "param" then
-        if events_lookup[event_index].value_type ~= "trigger" then
-          if params:string("event_operation") == "Increment" then
-            event_range = {-9999,9999}
-          else -- discreet"
-            event_range = params:get_range(params.lookup[events_lookup[event_index].id]) or {-9999, 9999}
-          end
-        end
+    if events_lookup[event_index].value_type ~= "trigger" then
+      
+      -- 2024-03-20 removed this which was causing issues with range when flipping from chord step length to mode
+      -- if params:string("event_operation") == "Increment" then
+      --   event_range = {-9999,9999}
+      -- else -- discreet"
+        event_range = params:get_range(params.lookup[events_lookup[event_index].id]) or {-9999, 9999}
+      -- end
+    end
   else -- function. May have hardcoded ranges in events_lookup at some point
     event_range = {-9999,9999}
   end
@@ -4762,10 +4764,17 @@ function redraw()
         --------------------------
         -- Scrolling events menu
         --------------------------
+        -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
+        
+        local lookup = events_lookup[params:get("event_name")]
+        local formatter = _G[lookup.formatter] -- _G[events_lookup[params:get("event_name")].formatter]
+        local options = lookup.event_type == "param" and get_options(lookup.id) or nil
+
+        
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
         line = 1
-        for i = 1,#events_menus do
+        for i = 1, #events_menus do
           local debug = false
           
           screen.move(2, line * 10 + 8 - menu_offset)
@@ -4773,16 +4782,24 @@ function redraw()
 
           local menu_id = events_menus[i]
           local menu_index = params:get(menu_id)
-          event_val_string = params:string(menu_id)
+          local event_val_string = params:string(menu_id)
+        
+          if string.sub(menu_id, 1, 15) == "event_op_limit_" then -- format ranges (should just write to event_range?)
+            if formatter ~= nil then
+              event_val_string = formatter(event_val_string)
+            elseif options ~= nil then
+              event_val_string = options[event_val_string]
+            end
+          end
 
 
-         -- use event_value to format values
-         -- values are already set on var event_val_string so if no conditions are met they pass through raw
-         -- >> "Set" operation should do .options lookup where possible
-         -- >> functions are raw
-         -- >> inc, random, wander are raw
-         -- >> todo p1: think about using formatter on increment and wander. Like how do we handle percentages and large frequencies?
-         -- might need an events_lookup[params:get("event_name")].event_type == param check
+          -- use event_value to format values
+          -- values are already set on var event_val_string so if no conditions are met they pass through raw
+          -- >> "Set" operation should do .options lookup where possible
+          -- >> functions are raw
+          -- >> inc, random, wander are raw
+          -- >> todo p1: think about using formatter on increment and wander. Like how do we handle percentages and large frequencies?
+          -- might need an events_lookup[params:get("event_name")].event_type == param check
           if menu_id == "event_value" then
             if debug then print("-------------------") end
             if debug then print("formatting event_value menu") end
@@ -4791,21 +4808,18 @@ function redraw()
             if operation == "Set" then
               if debug then print("Set operator") end
               -- params with a formatter
-              if events_lookup[params:get("event_name")].formatter ~= nil then -- this operates on functions too :(
+              if lookup.formatter ~= nil then -- this operates on functions too :(
                 if debug then print("Formatting") end
-                event_val_string = _G[events_lookup[params:get("event_name")].formatter](params:string("event_value"))
+                event_val_string = formatter(params:string("event_value"))
                 
                 
-                elseif events_lookup[params:get("event_name")].event_type == "param" 
-                
+              elseif lookup.event_type == "param" 
                 -- params:t == 2 means it's an add_options type param                
-                and params:t(events_lookup[params:get("event_name")].id) == 2 then
-                  if debug then print("Setting string val from options") end
-                  -- print("value set options")
-                  -- Uses event index to look up all the options for that param, then select using index
-                  local options = get_options(events_lookup[params:get("event_name")].id)
-                  event_val_string = options[menu_index]
-
+              and params:t(lookup.id) == 2 then
+                if debug then print("Setting string val from options") end
+                -- print("value set options")
+                -- Uses event index to look up all the options for that param, then select using index
+                event_val_string = options[menu_index]
               end
               if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
