@@ -213,42 +213,53 @@ function init()
   init_generator()
   
 
+  local events_lookup_names = {}
+  local events_lookup_ids = {}
+  local event_categories = {}
+  
   ---------------------
   -- Initialize Events
   ---------------------
-  local events_lookup_names = {}
-  local events_lookup_ids = {}
-  for i = 1, #events_lookup do
-    events_lookup_names[i] = events_lookup[i].name
-    events_lookup_ids[i] = events_lookup[i].id
-  end
-  
-  
-  -- key = event_id, value = index
-  events_lookup_index = tab.invert(events_lookup_ids)
-  
-  -- Used to derive the min and max indices for the selected event category (Global, Chord, Seq, etc...)
-  local event_categories = {}
-  for i = 1, #events_lookup do
-    event_categories[i] = events_lookup[i].category
-  end
-
-  event_categories_unique = {}
-  for i = 1, #event_categories do
-    if i == 1 then
-      table.insert(event_categories_unique, event_categories[i])
-    elseif event_categories[i] ~= event_categories_unique[#event_categories_unique] then
-      table.insert(event_categories_unique, event_categories[i])
+  function init_events()
+    -- local events_lookup_names = {}
+    -- local events_lookup_ids = {}
+    events_lookup_names = {}  -- locals defined outside of function
+    events_lookup_ids = {}
+    for i = 1, #events_lookup do
+      events_lookup_names[i] = events_lookup[i].name
+      events_lookup_ids[i] = events_lookup[i].id
     end
+    
+    
+    -- key = event_id, value = index
+    events_lookup_index = tab.invert(events_lookup_ids)
+    
+    -- Used to derive the min and max indices for the selected event category (Global, Chord, Seq, etc...)
+    -- local event_categories = {}
+    event_categories = {}
+    for i = 1, #events_lookup do
+      event_categories[i] = events_lookup[i].category
+    end
+  
+    event_categories_unique = {}
+    for i = 1, #event_categories do
+      if i == 1 then
+        table.insert(event_categories_unique, event_categories[i])
+      elseif event_categories[i] ~= event_categories_unique[#event_categories_unique] then
+        table.insert(event_categories_unique, event_categories[i])
+      end
+    end
+  
+    -- Generate subcategories lookup tables
+    gen_event_tables()
+    -- Derivatives:
+    --  event_subcategories: Unique, ordered event subcategories for each category. For generating subcategories
+    --  event_indices: key = conctat category_subcategory with first_index and last_index values
   end
 
-  -- Generate subcategories lookup tables
-  gen_event_tables()
-  -- Derivatives:
-  --  event_subcategories: Unique, ordered event subcategories for each category. For generating subcategories
-  --  event_indices: key = conctat category_subcategory with first_index and last_index values
-
-
+  -- init_events()
+  
+  
   --------------------
   -- PARAMS
   --------------------
@@ -290,7 +301,6 @@ function init()
     transport_midi_update() -- renames midi_continue_ params
 
   
-
   ------------------
   -- ARRANGER PARAMS --
   ------------------
@@ -316,20 +326,16 @@ function init()
   params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
   params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
 
-  
   params:add_option("crow_out_1", "Crow out 1", {"Off", "CV", "Env", "Events"}, 2)
   params:set_action("crow_out_1",function() gen_voice_lookups(); update_voice_params() end)  
   
   params:add_option("crow_out_2", "Crow out 2", {"Off", "CV", "Env", "Events"}, 3)
   params:set_action("crow_out_2",function() gen_voice_lookups(); update_voice_params() end)
   
-
   params:add_option("crow_out_3", "Crow out 3", {"Off", "CV", "Env", "Events"}, 4)
-  -- params:set_action("crow_out_3",function() crow_clock_config(); gen_voice_lookups(); update_voice_params() end)  
   params:set_action("crow_out_3",function() gen_voice_lookups(); update_voice_params() end)  
 
   params:add_option("crow_out_4", "Crow out 4", {"Off", "CV", "Env", "Events", "Clock"}, 5)
-  -- params:set_action("crow_out_4",function() crow_clock_config(); gen_voice_lookups(); update_voice_params() end)  
   params:set_action("crow_out_4",function() gen_voice_lookups(); update_voice_params() end)  
 
   -- Crow clock uses hybrid notation/PPQN
@@ -349,66 +355,6 @@ function init()
 
   params:add_option("seq_generator", "S-gen", seq_algos["name"], 1)
 
-
-  ------------------
-  -- EVENT PARAMS --
-  ------------------
-  params:add_option("event_category", "Category", event_categories_unique, 1)
-  params:hide("event_category")
-  
-  -- options will be dynamically swapped out based on the current event_global param
-  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
-  params:add_option("event_subcategory", "Subcategory", event_subcategories["Global"], 1)
-  params:hide("event_subcategory")
- 
-  params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
-  params:hide("event_name")
-  
-  -- options will be dynamically swapped out based on the current event_name param
-  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
-  event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
-  event_operation_options_discreet = {"Set", "Random"}
-  event_operation_options_trigger = {"Trigger"} 
-  params:add_option("event_operation", "Operation", _G["event_operation_options_" .. events_lookup[1].value_type], 1)
-  params:hide("event_operation")
-
-  -- todo p1 needs paramcontrol if this is even still used?
-  params:add_number("event_value", "Value", -9999, 9999, get_default_event_value())
-  params:hide("event_value")
-
-  params:add_number("event_probability", "Probability", 0, 100, 100, function(param) return percent(param:get()) end)
-  params:hide("event_probability")
-  
-  params:add_option("event_op_limit", "Limit", {"Off", "Clamp", "Wrap"}, 1)
-  params:set_action("event_op_limit",function() gen_menu_events() end)
-  params:hide("event_op_limit")
-
-  params:add_option("event_op_limit_random", "Limit", {"Off", "On"}, 1)
-  params:set_action("event_op_limit_random",function() gen_menu_events() end)
-  params:hide("event_op_limit_random")
-
-  params:add_number("event_op_limit_min", "Min", -9999, 9999, 0)
-  params:hide("event_op_limit_min")
-  
-  params:add_number("event_op_limit_max", "Max", -9999, 9999, 0)
-  params:hide("event_op_limit_max")
-  
-  params:add_number("crow_5v_8_steps_1", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_1", function(param) crow_5v_8_steps_1(param) end)
-  params:hide("crow_5v_8_steps_1")
-  
-  params:add_number("crow_5v_8_steps_2", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_2", function(param) crow_5v_8_steps_2(param) end)
-  params:hide("crow_5v_8_steps_2")
-  
-  params:add_number("crow_5v_8_steps_3", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_3", function(param) crow_5v_8_steps_3(param) end)
-  params:hide("crow_5v_8_steps_3")
-  
-  params:add_number("crow_5v_8_steps_4", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_4", function(param) crow_5v_8_steps_4(param) end)
-  params:hide("crow_5v_8_steps_4")
-
   
   ------------------
   -- CHORD PARAMS --
@@ -417,9 +363,7 @@ function init()
 
   params:add_number("chord_div_index", "Step length", 6, 57, 15, function(param) return divisions_string(param:get()) end)
   -- action required here for pset loading. Will then be redefined post-bang with action for lattice
-  params:set_action("chord_div_index",function(val) 
-    chord_div = division_names[val][1]
-  end)
+  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
 
   -- chord_div needs to be set *before* the bang happens
   chord_div = division_names[params:get("chord_div_index")][1]
@@ -464,7 +408,7 @@ function init()
   
   -- will act on current pattern unlike numbered seq param
   max_chord_pattern_length = 16
-  params:add_number("chord_pattern_length", "Pattern length", 1, max_chord_pattern_length, 4) -- max length to be based on 
+  params:add_number("chord_pattern_length", "Pattern length", 1, max_chord_pattern_length, 4)
   params:set_action("chord_pattern_length", function() pattern_length("chord_pattern_length") end)
 
 
@@ -620,6 +564,67 @@ function init()
   params:add_separator("VOICES")
   nb:add_player_params()
   
+  
+  init_events()
+   
+  ------------------
+  -- EVENT PARAMS --
+  ------------------
+  params:add_option("event_category", "Category", event_categories_unique, 1)
+  params:hide("event_category")
+  
+  -- options will be dynamically swapped out based on the current event_global param
+  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
+  params:add_option("event_subcategory", "Subcategory", event_subcategories["Global"], 1)
+  params:hide("event_subcategory")
+ 
+  params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
+  params:hide("event_name")
+  
+  -- options will be dynamically swapped out based on the current event_name param
+  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
+  event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
+  event_operation_options_discreet = {"Set", "Random"}
+  event_operation_options_trigger = {"Trigger"} 
+  params:add_option("event_operation", "Operation", _G["event_operation_options_" .. events_lookup[1].value_type], 1)
+  params:hide("event_operation")
+
+  -- todo p1 needs paramcontrol if this is even still used?
+  params:add_number("event_value", "Value", -9999, 9999, get_default_event_value())
+  params:hide("event_value")
+
+  params:add_number("event_probability", "Probability", 0, 100, 100, function(param) return percent(param:get()) end)
+  params:hide("event_probability")
+  
+  params:add_option("event_op_limit", "Limit", {"Off", "Clamp", "Wrap"}, 1)
+  params:set_action("event_op_limit",function() gen_menu_events() end)
+  params:hide("event_op_limit")
+
+  params:add_option("event_op_limit_random", "Limit", {"Off", "On"}, 1)
+  params:set_action("event_op_limit_random",function() gen_menu_events() end)
+  params:hide("event_op_limit_random")
+
+  params:add_number("event_op_limit_min", "Min", -9999, 9999, 0)
+  params:hide("event_op_limit_min")
+  
+  params:add_number("event_op_limit_max", "Max", -9999, 9999, 0)
+  params:hide("event_op_limit_max")
+  
+  params:add_number("crow_5v_8_steps_1", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_1", function(param) crow_5v_8_steps_1(param) end)
+  params:hide("crow_5v_8_steps_1")
+  
+  params:add_number("crow_5v_8_steps_2", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_2", function(param) crow_5v_8_steps_2(param) end)
+  params:hide("crow_5v_8_steps_2")
+  
+  params:add_number("crow_5v_8_steps_3", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_3", function(param) crow_5v_8_steps_3(param) end)
+  params:hide("crow_5v_8_steps_3")
+  
+  params:add_number("crow_5v_8_steps_4", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_4", function(param) crow_5v_8_steps_4(param) end)
+  params:hide("crow_5v_8_steps_4")
   
   
   
@@ -1450,6 +1455,75 @@ end -- end of init
 -- Assorted functions junkdrawer
 -----------------------------------------------
   
+-- -- WIP thing to jump immediately to voice's param group when tapping K1. Needs bits to pass group id from new nb tables when page or voice is changed (enc)
+-- -- todo handle based on whether group is true or false
+-- -- test in alternate menu mode (mapping)
+-- function hack()
+--         -- if t == params.tGROUP then
+--         -- build_sub(i)
+--         -- m.group = true
+--         -- m.groupid = i
+--         -- m.groupname = params:string(i)
+--         -- m.oldpos = m.pos
+--         -- m.pos = 0
+        
+
+--   local group_idx = 228 --388
+  
+--   _menu.m.PARAMS.groupid = group_idx
+--   _menu.m.PARAMS.groupname = "doubledecker"
+--   -- _menu.m.PARAMS.oldpos = 14 -- need to set this so backing out of param group works as expected
+  
+--   -- _menu.rebuild_params(); _menu.m.PARAMS.group = true
+  
+--   -- recreate top-level PARAMS menu so we can use this to set oldpos for group
+--   local params_page = {}
+--   -- local function build_page()
+--     -- params_page = {}
+--     local i = 1
+--     repeat
+--       if params:visible(i) then 
+--         -- print("inserting " .. i)
+--         table.insert(params_page, i)
+        
+--         -- this is the good bit. Don't really need the table except to count
+--         if i == group_idx then
+--           _menu.m.PARAMS.oldpos = #params_page - 1 -- so backing out of param group works as expected
+--           print("setting oldpos to " .. _menu.m.PARAMS.oldpos)
+--         end
+        
+--       end
+--       if params:t(i) == params.tGROUP then
+--         -- print("one")
+--         i = i + params:get(i) + 1
+--       else
+--         -- print("two")
+--         i = i + 1 
+--       end
+--     until i > params.count
+    
+--     -- print("done")
+--   -- end
+  
+--   -- build_
+--   -- print("wtf")
+--   -- print("page index 228 " .. params_page[1])
+
+--   -- local function build_sub(sub)
+--     -- local page = {}
+--     -- for i = 1,params:get(group_idx) do
+--     --   if params:visible(i + group_idx) then
+--     --     table.insert(page, i + group_idx)
+--     --   end
+--     -- end
+--   -- end
+  
+--   _menu.rebuild_params()
+--   -- _menu.redraw()
+--   -- tab.print(page)
+-- end
+
+
 function update_menus()
   -- GLOBAL MENU 
   menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"}
@@ -3593,11 +3667,9 @@ function key(n,z)
   -- KEY 1 just increments keys and key_count to bring up alt menu
     keys[n] = 1
     key_count = key_count + 1
-    if n == 1 then
-      -- Fn menu is displayed since keys[1] == 1
-      
+    -- if n == 1 then
     -- KEY 2  
-    elseif n == 2 then
+    if n == 2 then
       -- if keys[1] == 1 then
       -- Not used at the moment
         

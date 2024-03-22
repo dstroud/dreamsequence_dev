@@ -189,13 +189,48 @@ local function pairsByKeys(t, f)
     return iter
 end
 
+-- modified to create lookup tables for each voice's params
 function nb:add_player_params()
     if params.lookup['nb_sentinel_param'] then
         return
     end
+    
+    nb.indices = {} -- table containing first(group) and last param indices
+    
     for name, player in pairsByKeys(self:get_players()) do
+        local index = params.count
         player:add_params()
+        -- nb.indices[name] = {}  -- placing here will always create voice entry even if no params are created
+        if params.count ~= index then
+            nb.indices[name] = {} -- only created voice entry if params were created
+            nb.indices[name].start_index = index + 1
+            nb.indices[name].end_index = params.count
+        end
     end
+    
+    nb.events_lookup_extd = {}
+    for k, v in pairs(nb.indices) do
+      -- if v.start_index ~= nil and v.end_index ~= nil then -- not necessary based on current construction of nb.indices
+        for i = 1, params:get(v.start_index) do
+          -- if params:visible(i + v.start_index) then  -- do we care about visibility?
+            
+            local event = {
+                id = params:lookup_param(i + v.start_index).id,
+                category = "Voice",
+                value_type = "continuous",
+                formatter	= nil, -- TODO grab from table but convert to string
+                name = params:lookup_param(i + v.start_index).name,
+                subcategory	= k,
+                event_type = "param"
+              }
+            
+            table.insert(events_lookup, event)
+
+          -- end
+        end
+      -- end
+    end
+    
     params:add_binary('nb_sentinel_param', 'nb_sentinel_param')
     params:hide('nb_sentinel_param')
 end
