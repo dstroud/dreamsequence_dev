@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240320 @modularbeat
+-- 240322 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032001"
+  local version = "24032201"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -570,6 +570,10 @@ function init()
   ------------------
   -- EVENT PARAMS --
   ------------------
+  
+  params:add_number("formatter", "formatter", 1, 1, 1) -- clones event_name for event menu formatting
+  params:hide("formatter")
+
   params:add_option("event_category", "Category", event_categories_unique, 1)
   params:hide("event_category")
   
@@ -579,6 +583,7 @@ function init()
   params:hide("event_subcategory")
  
   params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
+  -- params:set_action("event_name",function() clone_param() end) -- moved to change_event() in case dynamic swapping affects this param (IDK)
   params:hide("event_name")
   
   -- options will be dynamically swapped out based on the current event_name param
@@ -1455,6 +1460,27 @@ end -- end of init
 -- Assorted functions junkdrawer
 -----------------------------------------------
   
+
+function clone_param()
+  -- clear everything from the param table except for these constants
+  for k, v in pairs(params.params[params.lookup["formatter"]]) do
+    if k ~= "action" and k ~= "id" and k ~= "name" then
+      params.params[params.lookup["formatter"]][k] = nil
+    end
+  end
+    
+  -- copy everything else over from the target param
+  local target_id = events_lookup[params:get("event_name")].id
+  if params.params[params.lookup[target_id]] ~= nil then
+    for k, v in pairs(params.params[params.lookup[target_id]]) do
+      if k ~= "action" and k ~= "id" and k ~= "name" then
+        params.params[params.lookup["formatter"]][k] = v
+      end
+    end
+  end
+end
+
+
 -- -- WIP thing to jump immediately to voice's param group when tapping K1. Needs bits to pass group id from new nb tables when page or voice is changed (enc)
 -- -- todo handle based on whether group is true or false
 -- -- test in alternate menu mode (mapping)
@@ -4394,7 +4420,8 @@ function change_event() -- index
     params:set("event_operation", 1) -- no action so call on next line
     change_operation("change_event")  -- pass arg so we can tell change_operation to set values even if op hasn't changed
     params:set("event_probability", 100) -- Only reset probability when event changes
-    end
+    clone_param()
+  end
   prev_event = event
 end
 
@@ -4847,12 +4874,8 @@ function redraw()
         --------------------------
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
-        
-        local lookup = events_lookup[params:get("event_name")]
-        local formatter = _G[lookup.formatter] -- _G[events_lookup[params:get("event_name")].formatter]
+        local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
         local options = lookup.event_type == "param" and get_options(lookup.id) or nil
-
-        
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
         line = 1
         for i = 1, #events_menus do
@@ -4865,22 +4888,22 @@ function redraw()
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
         
+          -- not sure this is the best place for this... overlaps with Set value logic
           if string.sub(menu_id, 1, 15) == "event_op_limit_" then -- format ranges (should just write to event_range?)
-            if formatter ~= nil then
-              event_val_string = formatter(event_val_string)
+            if params.params[params.lookup["formatter"]].formatter ~= nil then
+              params:set("formatter", event_val_string)
+              event_val_string = params:string("formatter")
             elseif options ~= nil then
               event_val_string = options[event_val_string]
             end
           end
 
-
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
           -- >> "Set" operation should do .options lookup where possible
           -- >> functions are raw
-          -- >> inc, random, wander are raw
-          -- >> todo p1: think about using formatter on increment and wander. Like how do we handle percentages and large frequencies?
-          -- might need an events_lookup[params:get("event_name")].event_type == param check
+          -- >> inc, random, wander are raw but ranges have been formatted above
+
           if menu_id == "event_value" then
             if debug then print("-------------------") end
             if debug then print("formatting event_value menu") end
@@ -4888,15 +4911,16 @@ function redraw()
             
             if operation == "Set" then
               if debug then print("Set operator") end
-              -- params with a formatter
-              if lookup.formatter ~= nil then -- this operates on functions too :(
+            
+              -- clone method! TODO: Needs to handle controlspec as well (e.g. nb_polyperc cutoff)
+              if params.params[params.lookup["formatter"]].formatter ~= nil then -- necessary?
                 if debug then print("Formatting") end
-                event_val_string = formatter(params:string("event_value"))
-                
-                
+                params:set("formatter", event_val_string)
+                event_val_string = params:string("formatter")
+
+
               elseif lookup.event_type == "param" 
-                -- params:t == 2 means it's an add_options type param                
-              and params:t(lookup.id) == 2 then
+              and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
                 if debug then print("Setting string val from options") end
                 -- print("value set options")
                 -- Uses event index to look up all the options for that param, then select using index

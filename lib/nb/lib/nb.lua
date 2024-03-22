@@ -218,7 +218,7 @@ function nb:add_player_params()
                 id = params:lookup_param(i + v.start_index).id,
                 category = "Voice",
                 value_type = "continuous",
-                formatter	= nil, -- TODO grab from table but convert to string
+                formatter	= nil,
                 name = params:lookup_param(i + v.start_index).name,
                 subcategory	= k,
                 event_type = "param"
