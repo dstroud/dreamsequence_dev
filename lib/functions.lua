@@ -210,24 +210,31 @@ end
 
 -- always use this to set the current chord pattern so we can also silently update the param as well
 function set_chord_pattern(y)
-active_chord_pattern = y
-params:set("chord_pattern_length", chord_pattern_length[y], true) -- silent
+  active_chord_pattern = y
+  params:set("chord_pattern_length", chord_pattern_length[y], true) -- silent
 end
 
 
+-- shallow copy
+function copy(t)
+  local u = { }
+  for k, v in pairs(t) do u[k] = v end
+  return setmetatable(u, getmetatable(t))
+end
+  
 function deepcopy(orig)
-local orig_type = type(orig)
-local copy
-if orig_type == "table" then
-  copy = {}
-  for orig_key, orig_value in next, orig, nil do
-    copy[deepcopy(orig_key)] = deepcopy(orig_value)
+  local orig_type = type(orig)
+  local copy
+  if orig_type == "table" then
+    copy = {}
+    for orig_key, orig_value in next, orig, nil do
+      copy[deepcopy(orig_key)] = deepcopy(orig_value)
+    end
+    setmetatable(copy, deepcopy(getmetatable(orig)))
+  else -- number, string, boolean, etc
+    copy = orig
   end
-  setmetatable(copy, deepcopy(getmetatable(orig)))
-else -- number, string, boolean, etc
-  copy = orig
-end
-return copy
+  return copy
 end
 
 

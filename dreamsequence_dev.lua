@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240322 @modularbeat
+-- 240326 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032201"
+  local version = "24032601"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -213,23 +213,21 @@ function init()
   init_generator()
   
 
+  ---------------------
+  -- Initialize Events
+  ---------------------
+  
   local events_lookup_names = {}
   local events_lookup_ids = {}
   local event_categories = {}
   
-  ---------------------
-  -- Initialize Events
-  ---------------------
   function init_events()
-    -- local events_lookup_names = {}
-    -- local events_lookup_ids = {}
     events_lookup_names = {}  -- locals defined outside of function
     events_lookup_ids = {}
     for i = 1, #events_lookup do
       events_lookup_names[i] = events_lookup[i].name
       events_lookup_ids[i] = events_lookup[i].id
     end
-    
     
     -- key = event_id, value = index
     events_lookup_index = tab.invert(events_lookup_ids)
@@ -256,9 +254,6 @@ function init()
     --  event_subcategories: Unique, ordered event subcategories for each category. For generating subcategories
     --  event_indices: key = conctat category_subcategory with first_index and last_index values
   end
-
-  -- init_events()
-  
   
   --------------------
   -- PARAMS
@@ -320,7 +315,7 @@ function init()
   params:add_group("global", "GLOBAL", 13)
   
   params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
-  
+
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
   params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
@@ -564,15 +559,15 @@ function init()
   params:add_separator("VOICES")
   nb:add_player_params()
   
-  
-  init_events()
+  init_events() -- creates lookup tables for events
    
   ------------------
   -- EVENT PARAMS --
   ------------------
   
-  params:add_number("formatter", "formatter", 1, 1, 1) -- clones event_name for event menu formatting
-  params:hide("formatter")
+  -- params:add_number("formatter", "formatter", 1, 1, 1) -- clones event_name for event menu formatting
+  -- params:add_control("formatter", "formatter", controlspec.new(50, 5000, 'exp', 0, 800, "hz"))
+  -- params:hide("formatter")
 
   params:add_option("event_category", "Category", event_categories_unique, 1)
   params:hide("event_category")
@@ -1461,22 +1456,33 @@ end -- end of init
 -----------------------------------------------
   
 
-function clone_param()
-  -- clear everything from the param table except for these constants
-  for k, v in pairs(params.params[params.lookup["formatter"]]) do
-    if k ~= "action" and k ~= "id" and k ~= "name" then
-      params.params[params.lookup["formatter"]][k] = nil
-    end
-  end
+function clone_param(id)
+  -- -- clear everything from the param table except for these constants
+  -- for k, v in pairs(params.params[params.lookup["formatter"]]) do
+  --   if k ~= "action" and k ~= "id" and k ~= "name" then
+  --     params.params[params.lookup["formatter"]][k] = nil
+  --   end
+  -- end
     
-  -- copy everything else over from the target param
-  local target_id = events_lookup[params:get("event_name")].id
-  if params.params[params.lookup[target_id]] ~= nil then
-    for k, v in pairs(params.params[params.lookup[target_id]]) do
-      if k ~= "action" and k ~= "id" and k ~= "name" then
-        params.params[params.lookup["formatter"]][k] = v
-      end
-    end
+  -- -- copy everything else over from the target param
+  -- -- todo optimize
+  -- local target_id = events_lookup[params:get("event_name")].id
+  -- local target_param = params.params[params.lookup[target_id]]
+  -- if target_param ~= nil then
+  --   for k, v in pairs(target_param) do
+  --     if k ~= "action" and k ~= "id" and k ~= "name" then -- and k ~= "controlspec" then
+  --       params.params[params.lookup["formatter"]][k] = v
+  --     -- elseif k == "controlspec" then
+  --       -- params.params[params.lookup["formatter"]].controlspec = {}
+  --       -- params.params[params.lookup["formatter"]].controlspec = target_param.controlspec:copy()
+  --     end
+  --   end
+  -- end
+  
+  if params:lookup_param(id) ~= nil then
+    -- preview = copy(params:lookup_param(events_lookup[params:get("event_name")].id))
+    preview = copy(params:lookup_param(id))
+    preview.action = function() end
   end
 end
 
@@ -4420,7 +4426,10 @@ function change_event() -- index
     params:set("event_operation", 1) -- no action so call on next line
     change_operation("change_event")  -- pass arg so we can tell change_operation to set values even if op hasn't changed
     params:set("event_probability", 100) -- Only reset probability when event changes
-    clone_param()
+    local event = events_lookup[params:get("event_name")]
+    if event.event_type == "param" then
+      clone_param(event.id)
+    end
   end
   prev_event = event
 end
@@ -4595,7 +4604,7 @@ function s_to_min_sec(seconds)
 end
 
 
-function param_formatter(param)
+function param_formatter(param) -- todo lowercase all?
   if param == "source" then
     return("Clock:")
   -- elseif param == "midi out" then
@@ -4877,6 +4886,7 @@ function redraw()
         local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
         local options = lookup.event_type == "param" and get_options(lookup.id) or nil
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
+        local clone = params.params[params.lookup["formatter"]]
         line = 1
         for i = 1, #events_menus do
           local debug = false
@@ -4888,15 +4898,16 @@ function redraw()
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
         
-          -- not sure this is the best place for this... overlaps with Set value logic
-          if string.sub(menu_id, 1, 15) == "event_op_limit_" then -- format ranges (should just write to event_range?)
-            if params.params[params.lookup["formatter"]].formatter ~= nil then
-              params:set("formatter", event_val_string)
-              event_val_string = params:string("formatter")
-            elseif options ~= nil then
-              event_val_string = options[event_val_string]
-            end
-          end
+          -- -- not sure this is the best place for this... overlaps with Set value logic
+          -- if string.sub(menu_id, 1, 15) == "event_op_limit_" then -- format ranges (should just write to event_range?)
+          --   -- if params.params[params.lookup["formatter"]].formatter ~= nil then
+          --   if clone.formatter ~= nil then
+          --     params:set("formatter", event_val_string)
+          --     event_val_string = params:string("formatter")
+          --   elseif options ~= nil then
+          --     event_val_string = options[event_val_string]
+          --   end
+          -- end
 
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
@@ -4911,20 +4922,22 @@ function redraw()
             
             if operation == "Set" then
               if debug then print("Set operator") end
-            
-              -- clone method! TODO: Needs to handle controlspec as well (e.g. nb_polyperc cutoff)
-              if params.params[params.lookup["formatter"]].formatter ~= nil then -- necessary?
-                if debug then print("Formatting") end
-                params:set("formatter", event_val_string)
-                event_val_string = params:string("formatter")
+              if lookup.event_type == "param" then  -- move above operation check?
+                
+                preview:set(event_val_string)
+                event_val_string = preview:string()
+                
+                -- params:set("event_name", 68)
+                -- "nb_jf_slew_5" -- first in list
+                -- tab.print(params.params[params.lookup["nb_jf_slew_5"]])
 
-
-              elseif lookup.event_type == "param" 
-              and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
-                if debug then print("Setting string val from options") end
+              -- elseif lookup.event_type == "param" 
+              
+              -- and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
+                -- if debug then print("Setting string val from options") end
                 -- print("value set options")
                 -- Uses event index to look up all the options for that param, then select using index
-                event_val_string = options[menu_index]
+                -- event_val_string = options[menu_index]
               end
               if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
