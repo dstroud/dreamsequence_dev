@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240326 @modularbeat
+-- 240327 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032601"
+  local version = "24032701"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -1457,32 +1457,9 @@ end -- end of init
   
 
 function clone_param(id)
-  -- -- clear everything from the param table except for these constants
-  -- for k, v in pairs(params.params[params.lookup["formatter"]]) do
-  --   if k ~= "action" and k ~= "id" and k ~= "name" then
-  --     params.params[params.lookup["formatter"]][k] = nil
-  --   end
-  -- end
-    
-  -- -- copy everything else over from the target param
-  -- -- todo optimize
-  -- local target_id = events_lookup[params:get("event_name")].id
-  -- local target_param = params.params[params.lookup[target_id]]
-  -- if target_param ~= nil then
-  --   for k, v in pairs(target_param) do
-  --     if k ~= "action" and k ~= "id" and k ~= "name" then -- and k ~= "controlspec" then
-  --       params.params[params.lookup["formatter"]][k] = v
-  --     -- elseif k == "controlspec" then
-  --       -- params.params[params.lookup["formatter"]].controlspec = {}
-  --       -- params.params[params.lookup["formatter"]].controlspec = target_param.controlspec:copy()
-  --     end
-  --   end
-  -- end
-  
   if params:lookup_param(id) ~= nil then
-    -- preview = copy(params:lookup_param(events_lookup[params:get("event_name")].id))
     preview = copy(params:lookup_param(id))
-    preview.action = function() end
+    preview.action = function() end -- kill off action
   end
 end
 
@@ -2544,6 +2521,8 @@ function do_events()
               params:set(event_name, value)
             elseif operation == "Increment" then
               if limit == "Clamp" then
+                -- params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
+                -- WIP delta method!
                 params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
               elseif limit == "Wrap" then
                 params:set(event_name, util.wrap(params:get(event_name) + value, limit_min, limit_max))
@@ -4300,7 +4279,9 @@ function enc(n,d)
         
       elseif selected_events_menu == "event_value" then
         if params:string("event_operation") == "Set" then
-          delta_menu(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
+          -- alternate function to process via preview
+          delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
+
         elseif params:string("event_operation") == "Wander" then
           delta_menu(d, 1) -- nil max defaults to 9999
         else
@@ -4359,6 +4340,26 @@ function delta_menu(d, minimum, maximum)
   local minimum = minimum or params:get_range(selected_events_menu)[1]
   local maximum = maximum or params:get_range(selected_events_menu)[2]
   local value = util.clamp(prev_value + d, minimum, maximum)
+  if value ~= prev_value then
+    params:set(selected_events_menu, value)
+    edit_status_edited()
+    return(true)
+  else
+    return(false)
+  end
+end
+
+
+-- alt of delta_menu used when selected_events_menu == "event_value" to handle preview
+function delta_menu_set(d, minimum, maximum)
+  -- local d = d > 0 and 1 or -1 -- revisit if we want this or not
+  local prev_value = params:get(selected_events_menu)
+  local minimum = minimum or params:get_range(selected_events_menu)[1]
+  local maximum = maximum or params:get_range(selected_events_menu)[2]
+  
+  preview:delta(d)
+  local value = util.clamp(preview:get(), minimum, maximum)
+
   if value ~= prev_value then
     params:set(selected_events_menu, value)
     edit_status_edited()
