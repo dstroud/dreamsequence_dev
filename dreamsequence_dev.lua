@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240327 @modularbeat
+-- 240328 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032701"
+  local version = "24032801"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -1457,6 +1457,7 @@ end -- end of init
   
 
 function clone_param(id)
+  -- print("debug clone_param called")
   if params:lookup_param(id) ~= nil then
     preview = copy(params:lookup_param(id))
     preview.action = function() end -- kill off action
@@ -2508,7 +2509,7 @@ function do_events()
         if event_path ~= nil and math.random(1, 100) <= event_path.probability then
           local event_type = event_path.event_type
           local event_name = event_path.id
-          local value = event_path.value or ""
+          local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
           local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
           local limit_min = event_path.limit_min
           local limit_max = event_path.limit_max
@@ -2519,24 +2520,65 @@ function do_events()
           if event_type == "param" then
             if operation == "Set" then
               params:set(event_name, value)
-            elseif operation == "Increment" then
+            elseif operation == "Increment" or operation == "Wander" then
+              
               if limit == "Clamp" then
-                -- params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
-                -- WIP delta method!
-                params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
+                -- issue: ideally should use a variant of clone_param() used to preview delta (make sure to write to a different table than `preview`!), clamp within limits, then set once. This way the action doesn't fire repeatedly.
+                params:delta(event_name, value) 
+                if params:get(event_name) < limit_min then
+                  params:set(event_name, limit_min)
+                elseif params:get(event_name) > limit_max then
+                  params:set(event_name, limit_max)
+                end
+                
+              -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
+              -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
+              -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
+              -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
               elseif limit == "Wrap" then
-                params:set(event_name, util.wrap(params:get(event_name) + value, limit_min, limit_max))
+                local reset = false
+                
+                -- positive delta
+                if value > 0 then
+                  if params:get(event_name) >= limit_max then
+                    reset = true
+                  end
+                  if reset then
+                    params:set(event_name, limit_min)
+                    break
+                  else
+                    for i = 1, value do
+                      if params:get(event_name) < limit_max then
+                        params:delta(event_name, 1)
+                      else
+                        break
+                      end
+                    end
+                  end
+                
+                -- negative delta
+                elseif value < 0 then
+                  if params:get(event_name) <= limit_min then
+                    reset = true
+                  end
+                  if reset then
+                    params:set(event_name, limit_max)
+                    break
+                  else
+                    for i = value, -1 do
+                      if params:get(event_name) > limit_min then
+                        params:delta(event_name, -1)
+                      else
+                        break
+                      end
+                    end
+                  end            
+                end
+                
               else
-                params:set(event_name, params:get(event_name) + value)
-              end  
-            elseif operation == "Wander" then
-              if limit == "Clamp" then
-                params:set(event_name, util.clamp(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-              elseif limit == "Wrap" then
-                params:set(event_name, util.wrap(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-              else
-                params:set(event_name, params:get(event_name) + cointoss_inverse(value))
-              end  
+                params:delta(event_name, value) 
+              end
+              
             elseif operation == "Random" then
               if limit == "On" then
                 local rand = math.random(limit_min, limit_max)
@@ -3304,6 +3346,7 @@ function g.key(x,y,z)
             change_event()
             
             params:set("event_operation", param_option_to_index("event_operation", operation))
+            change_operation("g.key") -- 2024-03-28 added to update prev_operation in called function
             if operation == "Random" then
               params:set("event_op_limit_random", param_option_to_index("event_op_limit_random", limit))
             else
@@ -4290,10 +4333,10 @@ function enc(n,d)
         end
       
       elseif selected_events_menu == "event_op_limit_min" then
-        delta_menu(d, event_range[1], params:get("event_op_limit_max"))
+        delta_menu_range(d, event_range[1], params:get("event_op_limit_max"))
 
       elseif selected_events_menu == "event_op_limit_max" then
-        delta_menu(d, params:get("event_op_limit_min"), event_range[2])
+        delta_menu_range(d, params:get("event_op_limit_min"), event_range[2])
   
       -- this should work for the remaining event menus that don't need to fire functions: probability, limit, limit_random
       else
@@ -4370,10 +4413,42 @@ function delta_menu_set(d, minimum, maximum)
 end
 
 
+-- alt of delta_menu used when using preview to adjust op range min/max
+-- 1. store current preview value (or not... see alt)
+-- 2. set current preview value to min/max
+-- 3. use delta to adjust and return delta'd preview value as min/max
+-- 4. restore preview value from step 1 (or just clone_param())
+
+function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
+  -- local s = selected_events_menu -- can also pass as arg
+
+  -- local d = d > 0 and 1 or -1 -- revisit if we want this or not
+  local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
+  preview:set(prev_value) -- pass the min/max value to preview so we can delta it
+  -- local minimum = minimum or params:get_range(selected_events_menu)[1]
+  -- local maximum = maximum or params:get_range(selected_events_menu)[2]
+  
+  preview:delta(d)
+  -- local value = util.clamp(preview:get(), minimum, maximum)
+  local value = preview:get() -- more accurate but displays without rounding
+  -- local value = tonumber(preview:string()) -- less accurate. Do errors accumulate? YES.
+  -- print("debug value = " .. value)
+
+  if value ~= prev_value then
+    params:set(selected_events_menu, value)
+
+    edit_status_edited()
+    return(true)
+  else
+    return(false)
+  end
+end
+
+
 ---------------------------------------
 -- CASCADING EVENTS EDITOR FUNCTIONS --
 ---------------------------------------
-debug_change_functions = false
+local debug_change_functions = false
 
 function change_category()
   local category = params:get("event_category")
@@ -4439,7 +4514,8 @@ end
 function change_operation(source)
   if debug_change_functions then print("4. change_operation called") end
   local operation = params:string("event_operation")
-  
+  if debug_change_functions then print("   operation = " .. operation) end
+
   -- We also need to set default value if the event changed!
   if source == "change_event" or operation ~= prev_operation then
     
@@ -4471,8 +4547,9 @@ function change_operation(source)
     -- else -- SKIP TRIGGER AND RANDOM!!!
     end
     gen_menu_events()
-  end  
+  end
   prev_operation = operation
+  if debug_change_functions then print("     debug setting prev_operation to " .. prev_operation) end
 end
 
 
@@ -4501,7 +4578,7 @@ end
 function edit_status_edited()
   if event_edit_status == "(Saved)" then
     event_edit_status = "(Edited)"
-    print("setting event_edit_status to " .. event_edit_status)
+    -- print("setting event_edit_status to " .. event_edit_status)
   end
 end
     
@@ -4885,9 +4962,9 @@ function redraw()
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
         local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
-        local options = lookup.event_type == "param" and get_options(lookup.id) or nil
+        -- local options = lookup.event_type == "param" and get_options(lookup.id) or nil
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
-        local clone = params.params[params.lookup["formatter"]]
+        -- local clone = params.params[params.lookup["formatter"]]
         line = 1
         for i = 1, #events_menus do
           local debug = false
@@ -4898,24 +4975,12 @@ function redraw()
           local menu_id = events_menus[i]
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
-        
-          -- -- not sure this is the best place for this... overlaps with Set value logic
-          -- if string.sub(menu_id, 1, 15) == "event_op_limit_" then -- format ranges (should just write to event_range?)
-          --   -- if params.params[params.lookup["formatter"]].formatter ~= nil then
-          --   if clone.formatter ~= nil then
-          --     params:set("formatter", event_val_string)
-          --     event_val_string = params:string("formatter")
-          --   elseif options ~= nil then
-          --     event_val_string = options[event_val_string]
-          --   end
-          -- end
-
+          
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
           -- >> "Set" operation should do .options lookup where possible
           -- >> functions are raw
           -- >> inc, random, wander are raw but ranges have been formatted above
-
           if menu_id == "event_value" then
             if debug then print("-------------------") end
             if debug then print("formatting event_value menu") end
@@ -4928,12 +4993,6 @@ function redraw()
                 preview:set(event_val_string)
                 event_val_string = preview:string()
                 
-                -- params:set("event_name", 68)
-                -- "nb_jf_slew_5" -- first in list
-                -- tab.print(params.params[params.lookup["nb_jf_slew_5"]])
-
-              -- elseif lookup.event_type == "param" 
-              
               -- and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
                 -- if debug then print("Setting string val from options") end
                 -- print("value set options")
@@ -4944,7 +5003,17 @@ function redraw()
             elseif operation == "Wander" then
               event_val_string = "\u{0b1}" .. event_val_string
             end
-          if debug then print("Value passed raw") end
+            if debug then print("Value passed raw") end
+          
+          -- hack to use preview to get formatting for min/max
+          -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
+          elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
+            -- print("DEBUG menu_id = " .. menu_id) 
+            -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
+            local actual_val = preview:get()
+            preview:set(event_val_string)
+            event_val_string = preview:string()
+            preview:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
           end -- end of event_value stuff
       
           ------------------------------------------------
