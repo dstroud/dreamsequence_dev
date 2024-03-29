@@ -1,3 +1,6 @@
+-- modified version of https://github.com/sixolet/nb/blob/main/lib/nb.lua
+-- add_player_params() generates a param lookup table for each voice in nb.indices
+
 local mydir = debug.getinfo(1).source:match("@?" .. _path.code .. "(.*/)")
 local player_lib = include(mydir .. "player")
 local nb = {}
@@ -190,94 +193,20 @@ local function pairsByKeys(t, f)
 end
 
 
-local function gen_subcategory(string)
-  local string = string
-  
-  -- shorten midi names
-  if nb.players[string] ~= nil and nb.players[string].conn ~= nil then
-
-    local function find_vport(name)
-      for k,v in pairs(midi.vports) do
-        if v.name == name then
-          return k
-        end
-      end
-    end
-
-    local vport_name = nb.players[string].conn.name
-    -- can't rely on nb.players[string].conn.device.port since nbout doesn't set this :/
-    local port = find_vport(vport_name)
-    local voice = string.match(string, "(%d+)$")
-    local name = string.lower(vport_name)
-    if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
-      name = string.upper(util.acronym(name))
-    end
-    string = name .. " " .. port .. "." .. voice
-  else
-    -- if not MIDI, use param group name (in case of shared params like crow_ds)
-    string = params.params[nb.indices[string].start_index].name
-  end
-  return util.trim_string_to_width(string, 67) -- different length for events menu
-end
-
-
--- modified to create lookup tables for each voice's params
 function nb:add_player_params()
     if params.lookup['nb_sentinel_param'] then
         return
     end
-    
-    nb.indices = {} -- table containing first(group) and last param indices per voice
-    
+    nb.indices = {} -- table containing first and last param indices per voice
     for name, player in pairsByKeys(self:get_players()) do
         local index = params.count
         player:add_params()
-        -- nb.indices[name] = {}  -- placing here will always create voice entry even if no params are created
         if params.count ~= index then
-            nb.indices[name] = {} -- only created voice entry if params were created
+            nb.indices[name] = {}
             nb.indices[name].start_index = index + 1
             nb.indices[name].end_index = params.count
         end
     end
-    
-    -- Dreamsequence-specific hack to append to events_lookup table
-    -- Function to sort table keys alphabetically
-    local function sort_keys(tbl)
-        local keys = {}
-        for key in pairs(tbl) do
-            table.insert(keys, key)
-        end
-        table.sort(keys)
-        return keys
-    end
-
-    local sorted = sort_keys(nb.indices)
-    -- tab.print(sorted)
-    
-    for _, k in pairs(sorted) do
-      -- if v.start_index ~= nil and v.end_index ~= nil then -- not necessary if all table entries have at least one param (see above)
-      local v = nb.indices[k]
-        for i = 1, params:get(v.start_index) do
-          local param = params:lookup_param(i + v.start_index)
-          -- print(params:lookup_param("doubledecker_layer_1").t) == 0
-          if param.t == 1 or param.t == 2 or param.t == 3 or param.t == 5 or param.t == 6 or param.t == 7 then
-            local event = {
-                -- id = params:lookup_param(i + v.start_index).id,
-                id = param.id,
-                category = "Voice",
-                value_type = param.t == 6 and "trigger" or "continuous",
-                -- formatter	= nil, deprecated
-                -- name = params:lookup_param(i + v.start_index).name,
-                name = param.name,
-                subcategory	= gen_subcategory(k), -- todo shared function with gen_voice_lookup()
-                event_type = "param"
-              }
-            table.insert(events_lookup, event)
-          end
-        end
-      -- end
-    end
-    
     params:add_binary('nb_sentinel_param', 'nb_sentinel_param')
     params:hide('nb_sentinel_param')
 end

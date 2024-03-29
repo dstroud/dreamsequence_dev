@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240328 @modularbeat
+-- 240329 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032801"
+  local version = "24032901"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -558,7 +558,78 @@ function init()
   ------------------  
   params:add_separator("VOICES")
   nb:add_player_params()
+  -- append nb params to events_lookup (based on nb.indices which was hacked in to nb)
+  -- todo shared function with gen_voice_lookup() but mind the different trim width
+  local function gen_subcategory(string)
+    local string = string
+    
+    -- shorten midi names
+    if nb.players[string] ~= nil and nb.players[string].conn ~= nil then
   
+      local function find_vport(name)
+        for k,v in pairs(midi.vports) do
+          if v.name == name then
+            return k
+          end
+        end
+      end
+  
+      local vport_name = nb.players[string].conn.name
+      -- can't rely on nb.players[string].conn.device.port since nbout doesn't set this :/
+      local port = find_vport(vport_name)
+      local voice = string.match(string, "(%d+)$")
+      local name = string.lower(vport_name)
+      if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
+        name = string.upper(util.acronym(name))
+      end
+      string = name .. " " .. port .. "." .. voice
+    else
+      -- if not MIDI, use param group name (in case of shared params like crow_ds)
+      string = params.params[nb.indices[string].start_index].name
+    end
+    return util.trim_string_to_width(string, 67) -- different length for events menu
+  end
+
+  -- Function to sort table keys alphabetically. Might move to lib/functions
+  local function sort_keys(tbl)
+    local keys = {}
+    for key in pairs(tbl) do
+      table.insert(keys, key)
+    end
+    table.sort(keys)
+    return keys
+  end
+  local sorted = sort_keys(nb.indices)
+
+  for _, k in pairs(sorted) do
+    local v = nb.indices[k]
+    local separator = "general"
+    for i = 1, params:get(v.start_index) do
+      local param = params:lookup_param(i + v.start_index) -- skips inital group
+
+    -- tSEPARATOR = 0, tNUMBER = 1, tOPTION = 2, tCONTROL = 3, tFILE = 4, tTAPER = 5, tTRIGGER = 6, tGROUP = 7, tTEXT = 8, tBINARY = 9,
+      if param.t == 1 -- number
+      or param.t == 2 -- option
+      or param.t == 3 -- control
+      or param.t == 5 -- taper
+      or param.t == 6 -- trigger
+      or param.t == 9 then -- binary
+        local event = {
+          id = param.id,
+          category = gen_subcategory(k),
+          value_type = param.t == 6 and "trigger" or "continuous",
+          name = param.name,
+          subcategory	= separator,
+          event_type = "param"
+          }
+          table.insert(events_lookup, event)
+      elseif param.t == 0 then
+        separator = param.name
+      end
+    end
+  end
+
+
   init_events() -- creates lookup tables for events
    
   ------------------
@@ -2440,7 +2511,7 @@ function do_events_pre(arranger_pos,chord_pos)
                   params:set(event_name, rand)
                 else
                   -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                  local rand = math.random(event_range[1], event_range[2])
+                  local rand = math.random(event_range[1], event_range[2])  -- TODO P0 THIS IS WRONG!
                   -- print("Event randomization value " .. event_name .. " to " .. rand)                
                   params:set(event_name, rand)
                 end
@@ -2580,16 +2651,41 @@ function do_events()
               end
               
             elseif operation == "Random" then
-              if limit == "On" then
+              local param = params:lookup_param(event_name)
+
+              if param.t == 1 then -- number
+                if limit == "Off" then
+                  limit_min = param.min
+                  limit_max = param.max
+                end
+ 
                 local rand = math.random(limit_min, limit_max)
-                -- print("Event randomization (limited) value " .. event_name .. " to " .. rand)
-                params:set(event_name, rand)
-              else
-                -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                local rand = math.random(event_range[1], event_range[2])
-                -- print("Event randomization value " .. event_name .. " to " .. rand)                
-                params:set(event_name, rand)
+                params:set(event_name, rand)  
+                
+              elseif param.t == 2 then -- options
+                if limit == "Off" then
+                  limit_min = 1
+                  limit_max = param.count
+                end
+                
+                local rand = math.random(limit_min, limit_max)
+                params:set(event_name, rand)  
+                
+                -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. Not sure it's worth the trouble but what the heck.
+              elseif param.t == 3 then -- controlspec
+                limit_min = param.controlspec:unmap(limit_min or param.controlspec.minval)
+                limit_max = param.controlspec:unmap(limit_max or param.controlspec.maxval)
+
+                params:set(event_name, param.controlspec:map(quantize(random_float(limit_min, limit_max), param.controlspec.quantum)))
+
+              elseif param.t == 5 then -- taper
+                limit_min = param:unmap_value(limit_min or param.min)
+                limit_max = param:unmap_value(limit_max or param.max)
+
+                params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
               end
+            -- print("Event randomization value " .. event_name .. " to " .. params:string(event_name))
+
             -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
             elseif operation == "Trigger" then
               params:set(event_name, 1)

@@ -208,7 +208,16 @@ end
 --- UTILITY FUNCTIONS
 
 
--- always use this to set the current chord pattern so we can also silently update the param as well
+function random_float(limit_min, limit_max)
+  return limit_min + math.random() * (limit_max - limit_min)
+end
+
+  
+function quantize(value, quantum)
+  return math.floor(value / quantum + 0.5) * quantum
+end
+                  
+                  -- always use this to set the current chord pattern so we can also silently update the param as well
 function set_chord_pattern(y)
   active_chord_pattern = y
   params:set("chord_pattern_length", chord_pattern_length[y], true) -- silent
