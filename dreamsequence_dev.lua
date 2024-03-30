@@ -999,6 +999,39 @@ function init()
     end
   
   grid_dirty = true
+
+  local function verify_events()
+    local warning = false
+    for segment = 1, max_arranger_length do
+      for step = 1, max_chord_pattern_length do
+        for slot = 1, 16 do
+          local event = events[segment][step][slot]
+          if event ~= nil then
+            if events_lookup_index[event.id] == nil then
+              warning = true
+              print("WARNING: unable to locate " .. event.event_type .. " " ..  event.id .. " on event ["..segment.."][" .. step .. "][" .. slot .. "]")
+              
+              events[segment][step][slot] = nil
+              events[segment][step].populated = events[segment][step].populated - 1
+              -- If the step's new populated count == 0, decrement count of populated event STEPS in the segment
+              if (events[segment][step].populated or 0) == 0 then
+                events[segment].populated = (events[segment].populated or 0) - 1
+              end
+            end
+          end
+        end
+      end
+    end
+    if warning then
+      print("Possible options:")
+      print("1. Enable appropriate NB voice mods and restart")
+      print("2. Remove or modify " .. filename)
+      print("3. Continue using this .pset with event(s) removed")
+      print("DO NOT SAVE .PSET UNLESS YOU WISH TO LOSE AFFECTED EVENT(S)")
+    end
+  end
+  verify_events()
+
   end
 
 
