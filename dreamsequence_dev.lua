@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240329 @modularbeat
+-- 240330 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -15,8 +15,8 @@
 --
 -- Crow IN 1: CV in
 -- Crow IN 2: Trigger in
--- Crow OUT 1: V/oct out
--- Crow OUT 2: Envelope/trigger out
+-- Crow OUT 1: CV out
+-- Crow OUT 2: Envelope out
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032901"
+  local version = "24033001"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -557,10 +557,29 @@ function init()
   -- NB PARAMS --
   ------------------  
   params:add_separator("VOICES")
-  nb:add_player_params()
-  -- append nb params to events_lookup (based on nb.indices which was hacked in to nb)
+  nb:add_player_params() -- modified to also add nb.indices
+  
+  -- due to crow_ds adding *all* shared params for Crow outs 1-4 in one player, break them up:
+  local function subdivide_indices(string)
+    local category
+    local indices = nb.indices[string]
+    for i = indices.start_index, indices.end_index do
+      local param = params.params[i]
+      if param.t == 7 then -- group
+        category = param.name
+        nb.indices[category] = {start_index = i}
+      else
+        nb.indices[category].end_index = i
+      end
+    end
+    nb.indices[string] = nil
+  end
+  subdivide_indices("crow_ds 1/0") -- cv params
+  subdivide_indices("crow_ds 1/2") -- env params
+  
+  -- append nb params to events_lookup
   -- todo shared function with gen_voice_lookup() but mind the different trim width
-  local function gen_subcategory(string)
+  local function gen_category_name(string)
     local string = string
     
     -- shorten midi names
@@ -583,11 +602,8 @@ function init()
         name = string.upper(util.acronym(name))
       end
       string = name .. " " .. port .. "." .. voice
-    else
-      -- if not MIDI, use param group name (in case of shared params like crow_ds)
-      string = params.params[nb.indices[string].start_index].name
     end
-    return util.trim_string_to_width(string, 67) -- different length for events menu
+    return util.trim_string_to_width(string, 81) -- different length for event vs standard menus
   end
 
   -- Function to sort table keys alphabetically. Might move to lib/functions
@@ -616,15 +632,15 @@ function init()
       or param.t == 9 then -- binary
         local event = {
           id = param.id,
-          category = gen_subcategory(k),
+          category = gen_category_name(k),
           value_type = param.t == 6 and "trigger" or "continuous",
-          name = param.name,
+          name = util.trim_string_to_width(param.name, 84),
           subcategory	= separator,
           event_type = "param"
           }
           table.insert(events_lookup, event)
       elseif param.t == 0 then
-        separator = param.name
+        separator = util.trim_string_to_width(param.name, 78)
       end
     end
   end
