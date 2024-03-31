@@ -2525,9 +2525,11 @@ function do_events_pre(arranger_pos,chord_pos)
         local event_path = events[arranger_position][chord_pattern_position][i]
         if event_path ~= nil and event_path.order == 1 then
           if math.random(1, 100) <= event_path.probability then
+   
+            -- from here on out, same as do_events (todo consolidate or optimize)
             local event_type = event_path.event_type
             local event_name = event_path.id
-            local value = event_path.value or ""
+            local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
             local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
             local limit_min = event_path.limit_min
             local limit_max = event_path.limit_max
@@ -2535,37 +2537,104 @@ function do_events_pre(arranger_pos,chord_pos)
             local action = event_path.action or nil
             local args = event_path.args or nil
             
-            -- TODO p2 simplify for relevant event types only
             if event_type == "param" then
               if operation == "Set" then
                 params:set(event_name, value)
-              elseif operation == "Increment" then
+              elseif operation == "Increment" or operation == "Wander" then
+                
                 if limit == "Clamp" then
-                  params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
+                  -- issue: ideally should use a variant of clone_param() used to preview delta (make sure to write to a different table than `preview`!), clamp within limits, then set once. This way the action doesn't fire repeatedly.
+                  params:delta(event_name, value) 
+                  if params:get(event_name) < limit_min then
+                    params:set(event_name, limit_min)
+                  elseif params:get(event_name) > limit_max then
+                    params:set(event_name, limit_max)
+                  end
+                  
+                -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
+                -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
+                -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
+                -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
                 elseif limit == "Wrap" then
-                  params:set(event_name, util.wrap(params:get(event_name) + value, limit_min, limit_max))
+                  local reset = false
+                  
+                  -- positive delta
+                  if value > 0 then
+                    if params:get(event_name) >= limit_max then
+                      reset = true
+                    end
+                    if reset then
+                      params:set(event_name, limit_min)
+                      break
+                    else
+                      for i = 1, value do
+                        if params:get(event_name) < limit_max then
+                          params:delta(event_name, 1)
+                        else
+                          break
+                        end
+                      end
+                    end
+                  
+                  -- negative delta
+                  elseif value < 0 then
+                    if params:get(event_name) <= limit_min then
+                      reset = true
+                    end
+                    if reset then
+                      params:set(event_name, limit_max)
+                      break
+                    else
+                      for i = value, -1 do
+                        if params:get(event_name) > limit_min then
+                          params:delta(event_name, -1)
+                        else
+                          break
+                        end
+                      end
+                    end            
+                  end
+                  
                 else
-                  params:set(event_name, params:get(event_name) + value)
-                end  
-              elseif operation == "Wander" then
-                if limit == "Clamp" then
-                  params:set(event_name, util.clamp(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-                elseif limit == "Wrap" then
-                  params:set(event_name, util.wrap(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-                else
-                  params:set(event_name, params:get(event_name) + cointoss_inverse(value))
-                end  
-              elseif operation == "Random" then
-                if limit == "On" then
-                  local rand = math.random(limit_min, limit_max)
-                  -- print("Event randomization (limited) value " .. event_name .. " to " .. rand)
-                  params:set(event_name, rand)
-                else
-                  -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                  local rand = math.random(event_range[1], event_range[2])  -- TODO P0 THIS IS WRONG!
-                  -- print("Event randomization value " .. event_name .. " to " .. rand)                
-                  params:set(event_name, rand)
+                  params:delta(event_name, value) 
                 end
+                
+              elseif operation == "Random" then
+                local param = params:lookup_param(event_name)
+  
+                if param.t == 1 then -- number
+                  if limit == "Off" then
+                    limit_min = param.min
+                    limit_max = param.max
+                  end
+   
+                  local rand = math.random(limit_min, limit_max)
+                  params:set(event_name, rand)  
+                  
+                elseif param.t == 2 then -- options
+                  if limit == "Off" then
+                    limit_min = 1
+                    limit_max = param.count
+                  end
+                  
+                  local rand = math.random(limit_min, limit_max)
+                  params:set(event_name, rand)  
+                  
+                  -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. Not sure it's worth the trouble but what the heck.
+                elseif param.t == 3 then -- controlspec
+                  limit_min = param.controlspec:unmap(limit_min or param.controlspec.minval)
+                  limit_max = param.controlspec:unmap(limit_max or param.controlspec.maxval)
+  
+                  params:set(event_name, param.controlspec:map(quantize(random_float(limit_min, limit_max), param.controlspec.quantum)))
+  
+                elseif param.t == 5 then -- taper
+                  limit_min = param:unmap_value(limit_min or param.min)
+                  limit_max = param:unmap_value(limit_max or param.max)
+  
+                  params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
+                end
+              -- print("Event randomization value " .. event_name .. " to " .. params:string(event_name))
+  
               -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
               elseif operation == "Trigger" then
                 params:set(event_name, 1)
@@ -2584,9 +2653,7 @@ function do_events_pre(arranger_pos,chord_pos)
               --       _G[action](args)
               --     end                
               --   else
-              --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-              --     local value = math.random(event_range[1], event_range[2])
-              --     _G[event_name](value)
+              --     -- todo: make sure we pick up the latest range in case it has changed since event was saved (pset load)
                   
               --     -- currently not using actions other than param actions which will fire automatically.
               --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
@@ -2608,6 +2675,7 @@ function do_events_pre(arranger_pos,chord_pos)
               end
               
             end
+ 
           end
         end
       end
@@ -2755,9 +2823,7 @@ function do_events()
             --       _G[action](args)
             --     end                
             --   else
-            --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-            --     local value = math.random(event_range[1], event_range[2])
-            --     _G[event_name](value)
+            --     -- todo: make sure we pick up the latest range in case it has changed since event was saved (pset load)
                 
             --     -- currently not using actions other than param actions which will fire automatically.
             --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
