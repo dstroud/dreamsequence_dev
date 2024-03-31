@@ -2,6 +2,16 @@
 
 ### Changelog:
 
+2024-03-31
+- Fixed auto playback on .pset load
+
+- Event verification on .pset load (missing params for disabled NB voices will be deleted!)
+
+- Event increment/wander ops will respect controlspec/taper mapping
+
+- Fixed issue with event not loading correctly in events menu after .pset load
+
+
 2024-03-20
 - Reverted to v1.2 Crow input mapping: IN 1 is CV and IN 2 is trigger. Syncing to Crow clock is unsupported.
 
