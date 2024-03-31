@@ -2,6 +2,19 @@
 
 ### Changelog:
 
+2024-03-31
+
+- Events now include NB voice parameters with categories for each voice. WARNING: if a pset is loaded that includes events for a disabled NB voice mod, those events will be deleted. 
+
+- Event verification on .pset load (will notify of missing params)
+
+- Event increment/wander ops will respect controlspec/taper mapping
+
+- Fixed issue with event not loading correctly in events menu after .pset load
+
+- Fixed lattice pulsing and on .pset load which could produce unwanted sounds
+
+
 2024-03-20
 - Reverted to v1.2 Crow input mapping: IN 1 is CV and IN 2 is trigger. Syncing to Crow clock is unsupported.
 

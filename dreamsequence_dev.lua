@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240320 @modularbeat
+-- 240331 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -15,8 +15,8 @@
 --
 -- Crow IN 1: CV in
 -- Crow IN 2: Trigger in
--- Crow OUT 1: V/oct out
--- Crow OUT 2: Envelope/trigger out
+-- Crow OUT 1: CV out
+-- Crow OUT 2: Envelope out
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24032001"
+  local version = "24033101"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -216,39 +216,45 @@ function init()
   ---------------------
   -- Initialize Events
   ---------------------
+  
   local events_lookup_names = {}
   local events_lookup_ids = {}
-  for i = 1, #events_lookup do
-    events_lookup_names[i] = events_lookup[i].name
-    events_lookup_ids[i] = events_lookup[i].id
-  end
-  
-  
-  -- key = event_id, value = index
-  events_lookup_index = tab.invert(events_lookup_ids)
-  
-  -- Used to derive the min and max indices for the selected event category (Global, Chord, Seq, etc...)
   local event_categories = {}
-  for i = 1, #events_lookup do
-    event_categories[i] = events_lookup[i].category
-  end
-
-  event_categories_unique = {}
-  for i = 1, #event_categories do
-    if i == 1 then
-      table.insert(event_categories_unique, event_categories[i])
-    elseif event_categories[i] ~= event_categories_unique[#event_categories_unique] then
-      table.insert(event_categories_unique, event_categories[i])
+  
+  function init_events()
+    events_lookup_names = {}  -- locals defined outside of function
+    events_lookup_ids = {}
+    for i = 1, #events_lookup do
+      events_lookup_names[i] = events_lookup[i].name
+      events_lookup_ids[i] = events_lookup[i].id
     end
+    
+    -- key = event_id, value = index
+    events_lookup_index = tab.invert(events_lookup_ids)
+    
+    -- Used to derive the min and max indices for the selected event category (Global, Chord, Seq, etc...)
+    -- local event_categories = {}
+    event_categories = {}
+    for i = 1, #events_lookup do
+      event_categories[i] = events_lookup[i].category
+    end
+  
+    event_categories_unique = {}
+    for i = 1, #event_categories do
+      if i == 1 then
+        table.insert(event_categories_unique, event_categories[i])
+      elseif event_categories[i] ~= event_categories_unique[#event_categories_unique] then
+        table.insert(event_categories_unique, event_categories[i])
+      end
+    end
+  
+    -- Generate subcategories lookup tables
+    gen_event_tables()
+    -- Derivatives:
+    --  event_subcategories: Unique, ordered event subcategories for each category. For generating subcategories
+    --  event_indices: key = conctat category_subcategory with first_index and last_index values
   end
-
-  -- Generate subcategories lookup tables
-  gen_event_tables()
-  -- Derivatives:
-  --  event_subcategories: Unique, ordered event subcategories for each category. For generating subcategories
-  --  event_indices: key = conctat category_subcategory with first_index and last_index values
-
-
+  
   --------------------
   -- PARAMS
   --------------------
@@ -290,7 +296,6 @@ function init()
     transport_midi_update() -- renames midi_continue_ params
 
   
-
   ------------------
   -- ARRANGER PARAMS --
   ------------------
@@ -310,26 +315,22 @@ function init()
   params:add_group("global", "GLOBAL", 13)
   
   params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
-  
+
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
   params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
   params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
 
-  
   params:add_option("crow_out_1", "Crow out 1", {"Off", "CV", "Env", "Events"}, 2)
   params:set_action("crow_out_1",function() gen_voice_lookups(); update_voice_params() end)  
   
   params:add_option("crow_out_2", "Crow out 2", {"Off", "CV", "Env", "Events"}, 3)
   params:set_action("crow_out_2",function() gen_voice_lookups(); update_voice_params() end)
   
-
   params:add_option("crow_out_3", "Crow out 3", {"Off", "CV", "Env", "Events"}, 4)
-  -- params:set_action("crow_out_3",function() crow_clock_config(); gen_voice_lookups(); update_voice_params() end)  
   params:set_action("crow_out_3",function() gen_voice_lookups(); update_voice_params() end)  
 
   params:add_option("crow_out_4", "Crow out 4", {"Off", "CV", "Env", "Events", "Clock"}, 5)
-  -- params:set_action("crow_out_4",function() crow_clock_config(); gen_voice_lookups(); update_voice_params() end)  
   params:set_action("crow_out_4",function() gen_voice_lookups(); update_voice_params() end)  
 
   -- Crow clock uses hybrid notation/PPQN
@@ -349,66 +350,6 @@ function init()
 
   params:add_option("seq_generator", "S-gen", seq_algos["name"], 1)
 
-
-  ------------------
-  -- EVENT PARAMS --
-  ------------------
-  params:add_option("event_category", "Category", event_categories_unique, 1)
-  params:hide("event_category")
-  
-  -- options will be dynamically swapped out based on the current event_global param
-  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
-  params:add_option("event_subcategory", "Subcategory", event_subcategories["Global"], 1)
-  params:hide("event_subcategory")
- 
-  params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
-  params:hide("event_name")
-  
-  -- options will be dynamically swapped out based on the current event_name param
-  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
-  event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
-  event_operation_options_discreet = {"Set", "Random"}
-  event_operation_options_trigger = {"Trigger"} 
-  params:add_option("event_operation", "Operation", _G["event_operation_options_" .. events_lookup[1].value_type], 1)
-  params:hide("event_operation")
-
-  -- todo p1 needs paramcontrol if this is even still used?
-  params:add_number("event_value", "Value", -9999, 9999, get_default_event_value())
-  params:hide("event_value")
-
-  params:add_number("event_probability", "Probability", 0, 100, 100, function(param) return percent(param:get()) end)
-  params:hide("event_probability")
-  
-  params:add_option("event_op_limit", "Limit", {"Off", "Clamp", "Wrap"}, 1)
-  params:set_action("event_op_limit",function() gen_menu_events() end)
-  params:hide("event_op_limit")
-
-  params:add_option("event_op_limit_random", "Limit", {"Off", "On"}, 1)
-  params:set_action("event_op_limit_random",function() gen_menu_events() end)
-  params:hide("event_op_limit_random")
-
-  params:add_number("event_op_limit_min", "Min", -9999, 9999, 0)
-  params:hide("event_op_limit_min")
-  
-  params:add_number("event_op_limit_max", "Max", -9999, 9999, 0)
-  params:hide("event_op_limit_max")
-  
-  params:add_number("crow_5v_8_steps_1", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_1", function(param) crow_5v_8_steps_1(param) end)
-  params:hide("crow_5v_8_steps_1")
-  
-  params:add_number("crow_5v_8_steps_2", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_2", function(param) crow_5v_8_steps_2(param) end)
-  params:hide("crow_5v_8_steps_2")
-  
-  params:add_number("crow_5v_8_steps_3", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_3", function(param) crow_5v_8_steps_3(param) end)
-  params:hide("crow_5v_8_steps_3")
-  
-  params:add_number("crow_5v_8_steps_4", "5v 8-steps", 1, 8, 1)
-  params:set_action("crow_5v_8_steps_4", function(param) crow_5v_8_steps_4(param) end)
-  params:hide("crow_5v_8_steps_4")
-
   
   ------------------
   -- CHORD PARAMS --
@@ -417,9 +358,7 @@ function init()
 
   params:add_number("chord_div_index", "Step length", 6, 57, 15, function(param) return divisions_string(param:get()) end)
   -- action required here for pset loading. Will then be redefined post-bang with action for lattice
-  params:set_action("chord_div_index",function(val) 
-    chord_div = division_names[val][1]
-  end)
+  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
 
   -- chord_div needs to be set *before* the bang happens
   chord_div = division_names[params:get("chord_div_index")][1]
@@ -464,7 +403,7 @@ function init()
   
   -- will act on current pattern unlike numbered seq param
   max_chord_pattern_length = 16
-  params:add_number("chord_pattern_length", "Pattern length", 1, max_chord_pattern_length, 4) -- max length to be based on 
+  params:add_number("chord_pattern_length", "Pattern length", 1, max_chord_pattern_length, 4)
   params:set_action("chord_pattern_length", function() pattern_length("chord_pattern_length") end)
 
 
@@ -618,8 +557,161 @@ function init()
   -- NB PARAMS --
   ------------------  
   params:add_separator("VOICES")
-  nb:add_player_params()
+  nb:add_player_params() -- modified to also add nb.indices
   
+  -- due to crow_ds adding *all* shared params for Crow outs 1-4 in one player, break them up:
+  local function subdivide_indices(string)
+    local category
+    local indices = nb.indices[string]
+    for i = indices.start_index, indices.end_index do
+      local param = params.params[i]
+      if param.t == 7 then -- group
+        category = param.name
+        nb.indices[category] = {start_index = i}
+      else
+        nb.indices[category].end_index = i
+      end
+    end
+    nb.indices[string] = nil
+  end
+  subdivide_indices("crow_ds 1/0") -- cv params
+  subdivide_indices("crow_ds 1/2") -- env params
+  
+  -- append nb params to events_lookup
+  -- todo shared function with gen_voice_lookup() but mind the different trim width
+  local function gen_category_name(string)
+    local string = string
+    
+    -- shorten midi names
+    if nb.players[string] ~= nil and nb.players[string].conn ~= nil then
+  
+      local function find_vport(name)
+        for k,v in pairs(midi.vports) do
+          if v.name == name then
+            return k
+          end
+        end
+      end
+  
+      local vport_name = nb.players[string].conn.name
+      -- can't rely on nb.players[string].conn.device.port since nbout doesn't set this :/
+      local port = find_vport(vport_name)
+      local voice = string.match(string, "(%d+)$")
+      local name = string.lower(vport_name)
+      if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
+        name = string.upper(util.acronym(name))
+      end
+      string = name .. " " .. port .. "." .. voice
+    end
+    return util.trim_string_to_width(string, 81) -- different length for event vs standard menus
+  end
+
+  -- Function to sort table keys alphabetically. Might move to lib/functions
+  local function sort_keys(tbl)
+    local keys = {}
+    for key in pairs(tbl) do
+      table.insert(keys, key)
+    end
+    table.sort(keys)
+    return keys
+  end
+  local sorted = sort_keys(nb.indices)
+
+  for _, k in pairs(sorted) do
+    local v = nb.indices[k]
+    local separator = "general"
+    for i = 1, params:get(v.start_index) do
+      local param = params:lookup_param(i + v.start_index) -- skips inital group
+
+    -- tSEPARATOR = 0, tNUMBER = 1, tOPTION = 2, tCONTROL = 3, tFILE = 4, tTAPER = 5, tTRIGGER = 6, tGROUP = 7, tTEXT = 8, tBINARY = 9,
+      if param.t == 1 -- number
+      or param.t == 2 -- option
+      or param.t == 3 -- control
+      or param.t == 5 -- taper
+      or param.t == 6 -- trigger
+      or param.t == 9 then -- binary
+        local event = {
+          id = param.id,
+          category = gen_category_name(k),
+          value_type = param.t == 6 and "trigger" or "continuous",
+          name = util.trim_string_to_width(param.name, 84),
+          subcategory	= separator,
+          event_type = "param"
+          }
+          table.insert(events_lookup, event)
+      elseif param.t == 0 then
+        separator = util.trim_string_to_width(param.name, 78)
+      end
+    end
+  end
+
+
+  init_events() -- creates lookup tables for events
+   
+  ------------------
+  -- EVENT PARAMS --
+  ------------------
+  
+  -- params:add_number("formatter", "formatter", 1, 1, 1) -- clones event_name for event menu formatting
+  -- params:add_control("formatter", "formatter", controlspec.new(50, 5000, 'exp', 0, 800, "hz"))
+  -- params:hide("formatter")
+
+  params:add_option("event_category", "Category", event_categories_unique, 1)
+  params:hide("event_category")
+  
+  -- options will be dynamically swapped out based on the current event_global param
+  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
+  params:add_option("event_subcategory", "Subcategory", event_subcategories["Global"], 1)
+  params:hide("event_subcategory")
+ 
+  params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
+  -- params:set_action("event_name",function() clone_param() end) -- moved to change_event() in case dynamic swapping affects this param (IDK)
+  params:hide("event_name")
+  
+  -- options will be dynamically swapped out based on the current event_name param
+  -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
+  event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
+  event_operation_options_discreet = {"Set", "Random"}
+  event_operation_options_trigger = {"Trigger"} 
+  params:add_option("event_operation", "Operation", _G["event_operation_options_" .. events_lookup[1].value_type], 1)
+  params:hide("event_operation")
+
+  -- todo p1 needs paramcontrol if this is even still used?
+  params:add_number("event_value", "Value", -9999, 9999, get_default_event_value())
+  params:hide("event_value")
+
+  params:add_number("event_probability", "Probability", 0, 100, 100, function(param) return percent(param:get()) end)
+  params:hide("event_probability")
+  
+  params:add_option("event_op_limit", "Limit", {"Off", "Clamp", "Wrap"}, 1)
+  params:set_action("event_op_limit",function() gen_menu_events() end)
+  params:hide("event_op_limit")
+
+  params:add_option("event_op_limit_random", "Limit", {"Off", "On"}, 1)
+  params:set_action("event_op_limit_random",function() gen_menu_events() end)
+  params:hide("event_op_limit_random")
+
+  params:add_number("event_op_limit_min", "Min", -9999, 9999, 0)
+  params:hide("event_op_limit_min")
+  
+  params:add_number("event_op_limit_max", "Max", -9999, 9999, 0)
+  params:hide("event_op_limit_max")
+  
+  params:add_number("crow_5v_8_steps_1", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_1", function(param) crow_5v_8_steps_1(param) end)
+  params:hide("crow_5v_8_steps_1")
+  
+  params:add_number("crow_5v_8_steps_2", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_2", function(param) crow_5v_8_steps_2(param) end)
+  params:hide("crow_5v_8_steps_2")
+  
+  params:add_number("crow_5v_8_steps_3", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_3", function(param) crow_5v_8_steps_3(param) end)
+  params:hide("crow_5v_8_steps_3")
+  
+  params:add_number("crow_5v_8_steps_4", "5v 8-steps", 1, 8, 1)
+  params:set_action("crow_5v_8_steps_4", function(param) crow_5v_8_steps_4(param) end)
+  params:hide("crow_5v_8_steps_4")
   
   
   
@@ -907,6 +999,39 @@ function init()
     end
   
   grid_dirty = true
+
+  local function verify_events()
+    local warning = false
+    for segment = 1, max_arranger_length do
+      for step = 1, max_chord_pattern_length do
+        for slot = 1, 16 do
+          local event = events[segment][step][slot]
+          if event ~= nil then
+            if events_lookup_index[event.id] == nil then
+              warning = true
+              print("WARNING: unable to locate " .. event.event_type .. " " ..  event.id .. " on event ["..segment.."][" .. step .. "][" .. slot .. "]")
+              
+              events[segment][step][slot] = nil
+              events[segment][step].populated = events[segment][step].populated - 1
+              -- If the step's new populated count == 0, decrement count of populated event STEPS in the segment
+              if (events[segment][step].populated or 0) == 0 then
+                events[segment].populated = (events[segment].populated or 0) - 1
+              end
+            end
+          end
+        end
+      end
+    end
+    if warning then
+      print("Possible options:")
+      print("1. Enable appropriate NB voice mods and restart")
+      print("2. Remove or modify " .. filename)
+      print("3. Continue using this .pset with event(s) removed")
+      print("DO NOT SAVE .PSET UNLESS YOU WISH TO LOSE AFFECTED EVENT(S)")
+    end
+  end
+  verify_events()
+
   end
 
 
@@ -1061,6 +1186,7 @@ params:set_action("ts_numerator",
   end
 
 
+  -- Continually-running high-resolution sprocket to process note duration/note-off
   sprocket_notes = seq_lattice:new_sprocket{
     division = 1 / (seq_lattice.ppqn * 4),
     order = 1,  -- todo ensure 1st within order
@@ -1438,6 +1564,7 @@ params:set_action("ts_numerator",
   countdown_timer:start()
 
   -- start and reset lattice to get note durations working
+  disable_sprockets()
   seq_lattice:start()
   seq_lattice:stop()
   reset_lattice("init")
@@ -1450,6 +1577,85 @@ end -- end of init
 -- Assorted functions junkdrawer
 -----------------------------------------------
   
+
+function clone_param(id)
+  -- print("debug clone_param called")
+  if params:lookup_param(id) ~= nil then
+    preview = copy(params:lookup_param(id))
+    preview.action = function() end -- kill off action
+  end
+end
+
+
+-- -- WIP thing to jump immediately to voice's param group when tapping K1. Needs bits to pass group id from new nb tables when page or voice is changed (enc)
+-- -- todo handle based on whether group is true or false
+-- -- test in alternate menu mode (mapping)
+-- function hack()
+--         -- if t == params.tGROUP then
+--         -- build_sub(i)
+--         -- m.group = true
+--         -- m.groupid = i
+--         -- m.groupname = params:string(i)
+--         -- m.oldpos = m.pos
+--         -- m.pos = 0
+        
+
+--   local group_idx = 228 --388
+  
+--   _menu.m.PARAMS.groupid = group_idx
+--   _menu.m.PARAMS.groupname = "doubledecker"
+--   -- _menu.m.PARAMS.oldpos = 14 -- need to set this so backing out of param group works as expected
+  
+--   -- _menu.rebuild_params(); _menu.m.PARAMS.group = true
+  
+--   -- recreate top-level PARAMS menu so we can use this to set oldpos for group
+--   local params_page = {}
+--   -- local function build_page()
+--     -- params_page = {}
+--     local i = 1
+--     repeat
+--       if params:visible(i) then 
+--         -- print("inserting " .. i)
+--         table.insert(params_page, i)
+        
+--         -- this is the good bit. Don't really need the table except to count
+--         if i == group_idx then
+--           _menu.m.PARAMS.oldpos = #params_page - 1 -- so backing out of param group works as expected
+--           print("setting oldpos to " .. _menu.m.PARAMS.oldpos)
+--         end
+        
+--       end
+--       if params:t(i) == params.tGROUP then
+--         -- print("one")
+--         i = i + params:get(i) + 1
+--       else
+--         -- print("two")
+--         i = i + 1 
+--       end
+--     until i > params.count
+    
+--     -- print("done")
+--   -- end
+  
+--   -- build_
+--   -- print("wtf")
+--   -- print("page index 228 " .. params_page[1])
+
+--   -- local function build_sub(sub)
+--     -- local page = {}
+--     -- for i = 1,params:get(group_idx) do
+--     --   if params:visible(i + group_idx) then
+--     --     table.insert(page, i + group_idx)
+--     --   end
+--     -- end
+--   -- end
+  
+--   _menu.rebuild_params()
+--   -- _menu.redraw()
+--   -- tab.print(page)
+-- end
+
+
 function update_menus()
   -- GLOBAL MENU 
   menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"}
@@ -2319,9 +2525,11 @@ function do_events_pre(arranger_pos,chord_pos)
         local event_path = events[arranger_position][chord_pattern_position][i]
         if event_path ~= nil and event_path.order == 1 then
           if math.random(1, 100) <= event_path.probability then
+   
+            -- from here on out, same as do_events (todo consolidate or optimize)
             local event_type = event_path.event_type
             local event_name = event_path.id
-            local value = event_path.value or ""
+            local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
             local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
             local limit_min = event_path.limit_min
             local limit_max = event_path.limit_max
@@ -2329,37 +2537,104 @@ function do_events_pre(arranger_pos,chord_pos)
             local action = event_path.action or nil
             local args = event_path.args or nil
             
-            -- TODO p2 simplify for relevant event types only
             if event_type == "param" then
               if operation == "Set" then
                 params:set(event_name, value)
-              elseif operation == "Increment" then
+              elseif operation == "Increment" or operation == "Wander" then
+                
                 if limit == "Clamp" then
-                  params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
+                  -- issue: ideally should use a variant of clone_param() used to preview delta (make sure to write to a different table than `preview`!), clamp within limits, then set once. This way the action doesn't fire repeatedly.
+                  params:delta(event_name, value) 
+                  if params:get(event_name) < limit_min then
+                    params:set(event_name, limit_min)
+                  elseif params:get(event_name) > limit_max then
+                    params:set(event_name, limit_max)
+                  end
+                  
+                -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
+                -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
+                -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
+                -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
                 elseif limit == "Wrap" then
-                  params:set(event_name, util.wrap(params:get(event_name) + value, limit_min, limit_max))
+                  local reset = false
+                  
+                  -- positive delta
+                  if value > 0 then
+                    if params:get(event_name) >= limit_max then
+                      reset = true
+                    end
+                    if reset then
+                      params:set(event_name, limit_min)
+                      break
+                    else
+                      for i = 1, value do
+                        if params:get(event_name) < limit_max then
+                          params:delta(event_name, 1)
+                        else
+                          break
+                        end
+                      end
+                    end
+                  
+                  -- negative delta
+                  elseif value < 0 then
+                    if params:get(event_name) <= limit_min then
+                      reset = true
+                    end
+                    if reset then
+                      params:set(event_name, limit_max)
+                      break
+                    else
+                      for i = value, -1 do
+                        if params:get(event_name) > limit_min then
+                          params:delta(event_name, -1)
+                        else
+                          break
+                        end
+                      end
+                    end            
+                  end
+                  
                 else
-                  params:set(event_name, params:get(event_name) + value)
-                end  
-              elseif operation == "Wander" then
-                if limit == "Clamp" then
-                  params:set(event_name, util.clamp(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-                elseif limit == "Wrap" then
-                  params:set(event_name, util.wrap(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-                else
-                  params:set(event_name, params:get(event_name) + cointoss_inverse(value))
-                end  
-              elseif operation == "Random" then
-                if limit == "On" then
-                  local rand = math.random(limit_min, limit_max)
-                  -- print("Event randomization (limited) value " .. event_name .. " to " .. rand)
-                  params:set(event_name, rand)
-                else
-                  -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                  local rand = math.random(event_range[1], event_range[2])
-                  -- print("Event randomization value " .. event_name .. " to " .. rand)                
-                  params:set(event_name, rand)
+                  params:delta(event_name, value) 
                 end
+                
+              elseif operation == "Random" then
+                local param = params:lookup_param(event_name)
+  
+                if param.t == 1 then -- number
+                  if limit == "Off" then
+                    limit_min = param.min
+                    limit_max = param.max
+                  end
+   
+                  local rand = math.random(limit_min, limit_max)
+                  params:set(event_name, rand)  
+                  
+                elseif param.t == 2 then -- options
+                  if limit == "Off" then
+                    limit_min = 1
+                    limit_max = param.count
+                  end
+                  
+                  local rand = math.random(limit_min, limit_max)
+                  params:set(event_name, rand)  
+                  
+                  -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. Not sure it's worth the trouble but what the heck.
+                elseif param.t == 3 then -- controlspec
+                  limit_min = param.controlspec:unmap(limit_min or param.controlspec.minval)
+                  limit_max = param.controlspec:unmap(limit_max or param.controlspec.maxval)
+  
+                  params:set(event_name, param.controlspec:map(quantize(random_float(limit_min, limit_max), param.controlspec.quantum)))
+  
+                elseif param.t == 5 then -- taper
+                  limit_min = param:unmap_value(limit_min or param.min)
+                  limit_max = param:unmap_value(limit_max or param.max)
+  
+                  params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
+                end
+              -- print("Event randomization value " .. event_name .. " to " .. params:string(event_name))
+  
               -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
               elseif operation == "Trigger" then
                 params:set(event_name, 1)
@@ -2378,9 +2653,7 @@ function do_events_pre(arranger_pos,chord_pos)
               --       _G[action](args)
               --     end                
               --   else
-              --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-              --     local value = math.random(event_range[1], event_range[2])
-              --     _G[event_name](value)
+              --     -- todo: make sure we pick up the latest range in case it has changed since event was saved (pset load)
                   
               --     -- currently not using actions other than param actions which will fire automatically.
               --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
@@ -2402,6 +2675,7 @@ function do_events_pre(arranger_pos,chord_pos)
               end
               
             end
+ 
           end
         end
       end
@@ -2425,7 +2699,7 @@ function do_events()
         if event_path ~= nil and math.random(1, 100) <= event_path.probability then
           local event_type = event_path.event_type
           local event_name = event_path.id
-          local value = event_path.value or ""
+          local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
           local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
           local limit_min = event_path.limit_min
           local limit_max = event_path.limit_max
@@ -2436,33 +2710,101 @@ function do_events()
           if event_type == "param" then
             if operation == "Set" then
               params:set(event_name, value)
-            elseif operation == "Increment" then
+            elseif operation == "Increment" or operation == "Wander" then
+              
               if limit == "Clamp" then
-                params:set(event_name, util.clamp(params:get(event_name) + value, limit_min, limit_max))
+                -- issue: ideally should use a variant of clone_param() used to preview delta (make sure to write to a different table than `preview`!), clamp within limits, then set once. This way the action doesn't fire repeatedly.
+                params:delta(event_name, value) 
+                if params:get(event_name) < limit_min then
+                  params:set(event_name, limit_min)
+                elseif params:get(event_name) > limit_max then
+                  params:set(event_name, limit_max)
+                end
+                
+              -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
+              -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
+              -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
+              -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
               elseif limit == "Wrap" then
-                params:set(event_name, util.wrap(params:get(event_name) + value, limit_min, limit_max))
+                local reset = false
+                
+                -- positive delta
+                if value > 0 then
+                  if params:get(event_name) >= limit_max then
+                    reset = true
+                  end
+                  if reset then
+                    params:set(event_name, limit_min)
+                    break
+                  else
+                    for i = 1, value do
+                      if params:get(event_name) < limit_max then
+                        params:delta(event_name, 1)
+                      else
+                        break
+                      end
+                    end
+                  end
+                
+                -- negative delta
+                elseif value < 0 then
+                  if params:get(event_name) <= limit_min then
+                    reset = true
+                  end
+                  if reset then
+                    params:set(event_name, limit_max)
+                    break
+                  else
+                    for i = value, -1 do
+                      if params:get(event_name) > limit_min then
+                        params:delta(event_name, -1)
+                      else
+                        break
+                      end
+                    end
+                  end            
+                end
+                
               else
-                params:set(event_name, params:get(event_name) + value)
-              end  
-            elseif operation == "Wander" then
-              if limit == "Clamp" then
-                params:set(event_name, util.clamp(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-              elseif limit == "Wrap" then
-                params:set(event_name, util.wrap(params:get(event_name) + cointoss_inverse(value), limit_min, limit_max))
-              else
-                params:set(event_name, params:get(event_name) + cointoss_inverse(value))
-              end  
-            elseif operation == "Random" then
-              if limit == "On" then
-                local rand = math.random(limit_min, limit_max)
-                -- print("Event randomization (limited) value " .. event_name .. " to " .. rand)
-                params:set(event_name, rand)
-              else
-                -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-                local rand = math.random(event_range[1], event_range[2])
-                -- print("Event randomization value " .. event_name .. " to " .. rand)                
-                params:set(event_name, rand)
+                params:delta(event_name, value) 
               end
+              
+            elseif operation == "Random" then
+              local param = params:lookup_param(event_name)
+
+              if param.t == 1 then -- number
+                if limit == "Off" then
+                  limit_min = param.min
+                  limit_max = param.max
+                end
+ 
+                local rand = math.random(limit_min, limit_max)
+                params:set(event_name, rand)  
+                
+              elseif param.t == 2 then -- options
+                if limit == "Off" then
+                  limit_min = 1
+                  limit_max = param.count
+                end
+                
+                local rand = math.random(limit_min, limit_max)
+                params:set(event_name, rand)  
+                
+                -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. Not sure it's worth the trouble but what the heck.
+              elseif param.t == 3 then -- controlspec
+                limit_min = param.controlspec:unmap(limit_min or param.controlspec.minval)
+                limit_max = param.controlspec:unmap(limit_max or param.controlspec.maxval)
+
+                params:set(event_name, param.controlspec:map(quantize(random_float(limit_min, limit_max), param.controlspec.quantum)))
+
+              elseif param.t == 5 then -- taper
+                limit_min = param:unmap_value(limit_min or param.min)
+                limit_max = param:unmap_value(limit_max or param.max)
+
+                params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
+              end
+            -- print("Event randomization value " .. event_name .. " to " .. params:string(event_name))
+
             -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
             elseif operation == "Trigger" then
               params:set(event_name, 1)
@@ -2481,9 +2823,7 @@ function do_events()
             --       _G[action](args)
             --     end                
             --   else
-            --     -- This makes sure we pick up the latest range in case it has changed since event was saved (pset load)
-            --     local value = math.random(event_range[1], event_range[2])
-            --     _G[event_name](value)
+            --     -- todo: make sure we pick up the latest range in case it has changed since event was saved (pset load)
                 
             --     -- currently not using actions other than param actions which will fire automatically.
             --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
@@ -3219,6 +3559,7 @@ function g.key(x,y,z)
             change_event()
             
             params:set("event_operation", param_option_to_index("event_operation", operation))
+            change_operation("g.key") -- 2024-03-28 added to update prev_operation in called function
             if operation == "Random" then
               params:set("event_op_limit_random", param_option_to_index("event_op_limit_random", limit))
             else
@@ -3593,11 +3934,9 @@ function key(n,z)
   -- KEY 1 just increments keys and key_count to bring up alt menu
     keys[n] = 1
     key_count = key_count + 1
-    if n == 1 then
-      -- Fn menu is displayed since keys[1] == 1
-      
+    -- if n == 1 then
     -- KEY 2  
-    elseif n == 2 then
+    if n == 2 then
       -- if keys[1] == 1 then
       -- Not used at the moment
         
@@ -4196,7 +4535,9 @@ function enc(n,d)
         
       elseif selected_events_menu == "event_value" then
         if params:string("event_operation") == "Set" then
-          delta_menu(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
+          -- alternate function to process via preview
+          delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
+
         elseif params:string("event_operation") == "Wander" then
           delta_menu(d, 1) -- nil max defaults to 9999
         else
@@ -4205,10 +4546,10 @@ function enc(n,d)
         end
       
       elseif selected_events_menu == "event_op_limit_min" then
-        delta_menu(d, event_range[1], params:get("event_op_limit_max"))
+        delta_menu_range(d, event_range[1], params:get("event_op_limit_max"))
 
       elseif selected_events_menu == "event_op_limit_max" then
-        delta_menu(d, params:get("event_op_limit_min"), event_range[2])
+        delta_menu_range(d, params:get("event_op_limit_min"), event_range[2])
   
       -- this should work for the remaining event menus that don't need to fire functions: probability, limit, limit_random
       else
@@ -4265,10 +4606,48 @@ function delta_menu(d, minimum, maximum)
 end
 
 
+-- alt of delta_menu used when selected_events_menu == "event_value" to handle preview
+function delta_menu_set(d, minimum, maximum)
+  local prev_value = params:get(selected_events_menu)
+  local minimum = minimum or params:get_range(selected_events_menu)[1]
+  local maximum = maximum or params:get_range(selected_events_menu)[2]
+  preview:delta(d)
+  local value = util.clamp(preview:get(), minimum, maximum)
+  if value ~= prev_value then
+    params:set(selected_events_menu, value)
+    edit_status_edited()
+    return(true)
+  else
+    return(false)
+  end
+end
+
+
+-- alt of delta_menu used when using preview to adjust op range min/max
+-- 1. store current preview value (or not... see alt)
+-- 2. set current preview value to min/max
+-- 3. use delta to adjust and return delta'd preview value as min/max
+-- 4. restore preview value from step 1 (or just clone_param())
+function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
+  local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
+  preview:set(prev_value) -- pass the min/max value to preview so we can delta it
+  preview:delta(d)
+  local value = util.clamp(preview:get(), minimum, maximum) -- prevernt min/max overlap
+  if value ~= prev_value then
+    params:set(selected_events_menu, value)
+
+    edit_status_edited()
+    return(true)
+  else
+    return(false)
+  end
+end
+
+
 ---------------------------------------
 -- CASCADING EVENTS EDITOR FUNCTIONS --
 ---------------------------------------
-debug_change_functions = false
+local debug_change_functions = false
 
 function change_category()
   local category = params:get("event_category")
@@ -4322,7 +4701,11 @@ function change_event() -- index
     params:set("event_operation", 1) -- no action so call on next line
     change_operation("change_event")  -- pass arg so we can tell change_operation to set values even if op hasn't changed
     params:set("event_probability", 100) -- Only reset probability when event changes
+    local event = events_lookup[params:get("event_name")]
+    if event.event_type == "param" then
+      clone_param(event.id)
     end
+  end
   prev_event = event
 end
 
@@ -4330,7 +4713,8 @@ end
 function change_operation(source)
   if debug_change_functions then print("4. change_operation called") end
   local operation = params:string("event_operation")
-  
+  if debug_change_functions then print("   operation = " .. operation) end
+
   -- We also need to set default value if the event changed!
   if source == "change_event" or operation ~= prev_operation then
     
@@ -4362,8 +4746,9 @@ function change_operation(source)
     -- else -- SKIP TRIGGER AND RANDOM!!!
     end
     gen_menu_events()
-  end  
+  end
   prev_operation = operation
+  if debug_change_functions then print("     debug setting prev_operation to " .. prev_operation) end
 end
 
 
@@ -4392,7 +4777,7 @@ end
 function edit_status_edited()
   if event_edit_status == "(Saved)" then
     event_edit_status = "(Edited)"
-    print("setting event_edit_status to " .. event_edit_status)
+    -- print("setting event_edit_status to " .. event_edit_status)
   end
 end
     
@@ -4496,7 +4881,7 @@ function s_to_min_sec(seconds)
 end
 
 
-function param_formatter(param)
+function param_formatter(param) -- todo lowercase all?
   if param == "source" then
     return("Clock:")
   -- elseif param == "midi out" then
@@ -4775,13 +5160,10 @@ function redraw()
         --------------------------
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
-        
-        local lookup = events_lookup[params:get("event_name")]
-        local formatter = _G[lookup.formatter] -- _G[events_lookup[params:get("event_name")].formatter]
-        local options = lookup.event_type == "param" and get_options(lookup.id) or nil
-
-        
+        local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
+        -- local options = lookup.event_type == "param" and get_options(lookup.id) or nil
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
+        -- local clone = params.params[params.lookup["formatter"]]
         line = 1
         for i = 1, #events_menus do
           local debug = false
@@ -4792,23 +5174,12 @@ function redraw()
           local menu_id = events_menus[i]
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
-        
-          if string.sub(menu_id, 1, 15) == "event_op_limit_" then -- format ranges (should just write to event_range?)
-            if formatter ~= nil then
-              event_val_string = formatter(event_val_string)
-            elseif options ~= nil then
-              event_val_string = options[event_val_string]
-            end
-          end
-
-
+          
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
           -- >> "Set" operation should do .options lookup where possible
           -- >> functions are raw
-          -- >> inc, random, wander are raw
-          -- >> todo p1: think about using formatter on increment and wander. Like how do we handle percentages and large frequencies?
-          -- might need an events_lookup[params:get("event_name")].event_type == param check
+          -- >> inc, random, wander are raw but ranges have been formatted above
           if menu_id == "event_value" then
             if debug then print("-------------------") end
             if debug then print("formatting event_value menu") end
@@ -4816,25 +5187,32 @@ function redraw()
             
             if operation == "Set" then
               if debug then print("Set operator") end
-              -- params with a formatter
-              if lookup.formatter ~= nil then -- this operates on functions too :(
-                if debug then print("Formatting") end
-                event_val_string = formatter(params:string("event_value"))
+              if lookup.event_type == "param" then  -- move above operation check?
                 
+                preview:set(event_val_string)
+                event_val_string = preview:string()
                 
-              elseif lookup.event_type == "param" 
-                -- params:t == 2 means it's an add_options type param                
-              and params:t(lookup.id) == 2 then
-                if debug then print("Setting string val from options") end
+              -- and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
+                -- if debug then print("Setting string val from options") end
                 -- print("value set options")
                 -- Uses event index to look up all the options for that param, then select using index
-                event_val_string = options[menu_index]
+                -- event_val_string = options[menu_index]
               end
               if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
               event_val_string = "\u{0b1}" .. event_val_string
             end
-          if debug then print("Value passed raw") end
+            if debug then print("Value passed raw") end
+          
+          -- hack to use preview to get formatting for min/max
+          -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
+          elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
+            -- print("DEBUG menu_id = " .. menu_id) 
+            -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
+            local actual_val = preview:get()
+            preview:set(event_val_string)
+            event_val_string = preview:string()
+            preview:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
           end -- end of event_value stuff
       
           ------------------------------------------------

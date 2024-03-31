@@ -1,3 +1,6 @@
+-- modified version of https://github.com/sixolet/nb/blob/main/lib/nb.lua
+-- add_player_params() generates a param lookup table for each voice in nb.indices
+
 local mydir = debug.getinfo(1).source:match("@?" .. _path.code .. "(.*/)")
 local player_lib = include(mydir .. "player")
 local nb = {}
@@ -189,12 +192,20 @@ local function pairsByKeys(t, f)
     return iter
 end
 
+
 function nb:add_player_params()
     if params.lookup['nb_sentinel_param'] then
         return
     end
+    nb.indices = {} -- table containing first and last param indices per voice
     for name, player in pairsByKeys(self:get_players()) do
+        local index = params.count
         player:add_params()
+        if params.count ~= index then
+            nb.indices[name] = {}
+            nb.indices[name].start_index = index + 1
+            nb.indices[name].end_index = params.count
+        end
     end
     params:add_binary('nb_sentinel_param', 'nb_sentinel_param')
     params:hide('nb_sentinel_param')
