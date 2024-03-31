@@ -3,13 +3,16 @@
 ### Changelog:
 
 2024-03-31
-- Fixed auto playback on .pset load
 
-- Event verification on .pset load (missing params for disabled NB voices will be deleted!)
+- Events now include NB voice parameters with categories for each voice. WARNING: if a pset is loaded that includes events for a disabled NB voice mod, those events will be deleted. 
+
+- Event verification on .pset load (will notify of missing params)
 
 - Event increment/wander ops will respect controlspec/taper mapping
 
 - Fixed issue with event not loading correctly in events menu after .pset load
+
+- Fixed lattice pulsing and on .pset load which could produce unwanted sounds
 
 
 2024-03-20
