@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240330 @modularbeat
+-- 240331 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24033001"
+  local version = "24033101"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -1186,6 +1186,7 @@ params:set_action("ts_numerator",
   end
 
 
+  -- Continually-running high-resolution sprocket to process note duration/note-off
   sprocket_notes = seq_lattice:new_sprocket{
     division = 1 / (seq_lattice.ppqn * 4),
     order = 1,  -- todo ensure 1st within order
@@ -1563,6 +1564,7 @@ params:set_action("ts_numerator",
   countdown_timer:start()
 
   -- start and reset lattice to get note durations working
+  disable_sprockets()
   seq_lattice:start()
   seq_lattice:stop()
   reset_lattice("init")
@@ -4540,14 +4542,11 @@ end
 
 -- alt of delta_menu used when selected_events_menu == "event_value" to handle preview
 function delta_menu_set(d, minimum, maximum)
-  -- local d = d > 0 and 1 or -1 -- revisit if we want this or not
   local prev_value = params:get(selected_events_menu)
   local minimum = minimum or params:get_range(selected_events_menu)[1]
   local maximum = maximum or params:get_range(selected_events_menu)[2]
-  
   preview:delta(d)
   local value = util.clamp(preview:get(), minimum, maximum)
-
   if value ~= prev_value then
     params:set(selected_events_menu, value)
     edit_status_edited()
@@ -4563,22 +4562,11 @@ end
 -- 2. set current preview value to min/max
 -- 3. use delta to adjust and return delta'd preview value as min/max
 -- 4. restore preview value from step 1 (or just clone_param())
-
 function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
-  -- local s = selected_events_menu -- can also pass as arg
-
-  -- local d = d > 0 and 1 or -1 -- revisit if we want this or not
   local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
   preview:set(prev_value) -- pass the min/max value to preview so we can delta it
-  -- local minimum = minimum or params:get_range(selected_events_menu)[1]
-  -- local maximum = maximum or params:get_range(selected_events_menu)[2]
-  
   preview:delta(d)
-  -- local value = util.clamp(preview:get(), minimum, maximum)
-  local value = preview:get() -- more accurate but displays without rounding
-  -- local value = tonumber(preview:string()) -- less accurate. Do errors accumulate? YES.
-  -- print("debug value = " .. value)
-
+  local value = util.clamp(preview:get(), minimum, maximum) -- prevernt min/max overlap
   if value ~= prev_value then
     params:set(selected_events_menu, value)
 
