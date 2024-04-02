@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240331 @modularbeat
+-- 240402 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -31,7 +31,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24033101"
+  local version = "24040201"
   -----------------------------
 
   -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
@@ -538,7 +538,7 @@ function init()
   params:add_number("crow_duration_index", "Duration", 0, 57, 10, function(param) return durations_string(param:get()) end)
   params:set_action("crow_duration_index", function(val) 
     if val == 0 then  -- if in "Step" mode
-      if crow_div ~= 0 then -- and not triggering via Crow IN 1
+      if crow_div ~= 0 then -- and not triggering via Crow IN 2
         crow_duration = crow_div  -- set duration to div
       end
     else -- not in "Step" mode so just apply the value
@@ -597,7 +597,7 @@ function init()
       -- can't rely on nb.players[string].conn.device.port since nbout doesn't set this :/
       local port = find_vport(vport_name)
       local voice = string.match(string, "(%d+)$")
-      local name = string.lower(vport_name)
+      local name = first_to_upper(string.lower(vport_name))
       if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
         name = string.upper(util.acronym(name))
       end
@@ -1522,7 +1522,7 @@ params:set_action("ts_numerator",
   function init_sprocket_cv_harm(div)
     sprocket_cv_harm = seq_lattice:new_sprocket{
       action = function(t) 
-        -- alternate mode for cv_harmonizer to ignore crow in 1 and trigger on schedule
+        -- alternate mode for cv_harmonizer to ignore crow in 2 and trigger on schedule
         -- todo feature: add delay here for external sequencer race condition
         
         -- for now, this sprocket always runs but not necessarily the action. 
@@ -1579,7 +1579,6 @@ end -- end of init
   
 
 function clone_param(id)
-  -- print("debug clone_param called")
   if params:lookup_param(id) ~= nil then
     preview = copy(params:lookup_param(id))
     preview.action = function() end -- kill off action
@@ -1587,7 +1586,8 @@ function clone_param(id)
 end
 
 
--- -- WIP thing to jump immediately to voice's param group when tapping K1. Needs bits to pass group id from new nb tables when page or voice is changed (enc)
+-- -- WIP thing to jump immediately to voice's param group when tapping K1. 
+-- -- Needs bits to pass group id from new nb tables when page or voice is changed (enc)
 -- -- todo handle based on whether group is true or false
 -- -- test in alternate menu mode (mapping)
 -- function hack()
@@ -1673,6 +1673,7 @@ function update_menus()
   menus[5] = {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index","cv_harm_swing", "crow_dynamics"}
 end
 
+
 -- -- takes offset (milliseconds) input and converts to a beat-based value suitable for clock.sync offset
 -- -- called by offset param action and clock.tempo_change_handler() callback
 -- function ms_to_beats(ms)
@@ -1721,7 +1722,7 @@ function gen_voice_lookups()
         -- can't rely on nb.players[option].conn.device.port since nbout doesn't set this :/
         local port = find_vport(vport_name)
         local voice = string.match(option, "(%d+)$")
-        local name = string.lower(vport_name)
+        local name = first_to_upper(string.lower(vport_name))
         if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
           name = string.upper(util.acronym(name))
         end
@@ -1738,17 +1739,17 @@ function gen_voice_lookups()
         
         if env == 0 then
           if params:string("crow_out_"..cv) == "CV" then
-            table.insert(voice_param_options, "crow "..cv)
+            table.insert(voice_param_options, "Crow "..cv)
             table.insert(voice_param_index, i)
           end
         elseif params:string("crow_out_"..cv) == "CV" and params:string("crow_out_"..env) == "Env" then
-          table.insert(voice_param_options, "crow "..cv.."/"..env)
+          table.insert(voice_param_options, "Crow "..cv.."/"..env)
           table.insert(voice_param_index, i)            
         end
         
       -- other players pass through as-is
       else
-        table.insert(voice_param_options, trim_menu(option))
+        table.insert(voice_param_options, trim_menu(first_to_upper(option)))
         table.insert(voice_param_index, i)
       end
       
@@ -2033,7 +2034,7 @@ end
 
 
 function crow_trigger_string(index)
-  return(index == 0 and "Crow IN 1" or division_names[index][2])
+  return(index == 0 and "Crow IN 2" or division_names[index][2])
 end
 
 
@@ -3931,9 +3932,9 @@ end
 ----------------------
 function key(n,z)
   if z == 1 then
-  -- KEY 1 just increments keys and key_count to bring up alt menu
     keys[n] = 1
     key_count = key_count + 1
+    -- KEY 1 just increments keys and key_count for alt functions
     -- if n == 1 then
     -- KEY 2  
     if n == 2 then
@@ -4792,7 +4793,6 @@ function set_event_indices()
     print("  Set event_subcategory_index_min to " .. event_subcategory_index_min) 
     print("  Set event_subcategory_index_max to " .. event_subcategory_index_max) 
   end
-  
 end
 
 
@@ -5161,10 +5161,8 @@ function redraw()
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
         local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
-        -- local options = lookup.event_type == "param" and get_options(lookup.id) or nil
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
-        -- local clone = params.params[params.lookup["formatter"]]
-        line = 1
+        local line = 1
         for i = 1, #events_menus do
           local debug = false
           
@@ -5230,7 +5228,7 @@ function redraw()
             local single = menu_index == range[1] and (range[1] == range[2]) or false
             local menu_value_pre = single and ">" or menu_index == range[2] and "<" or " "
             local menu_value_suf = single and "<" or menu_index == range[1] and ">" or ""
-            local events_menu_txt = first_to_upper(param_formatter(param_id_to_name(menu_id))) .. menu_value_pre .. string.sub(event_val_string, 1, events_menu_trunc) .. menu_value_suf
+            local events_menu_txt = first_to_upper(param_formatter(param_id_to_name(menu_id))) .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
 
             if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
             if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
@@ -5241,7 +5239,7 @@ function redraw()
             if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
             if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
             
-            screen.text(first_to_upper(param_formatter(param_id_to_name(menu_id))) .. " " .. string.sub(event_val_string, 1, events_menu_trunc))
+            screen.text(first_to_upper(param_formatter(param_id_to_name(menu_id))) .. " " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
           end
 
           line = line + 1
