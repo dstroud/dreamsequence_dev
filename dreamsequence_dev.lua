@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240402 @modularbeat
+-- 240405 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -28,13 +28,31 @@ clock.link.stop() -- transport won't start if external link clock is already run
 -- locals
 local latest_strum_coroutine = coroutine.running()
 
+  
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "24040201"
+  local version = "24040501"
   -----------------------------
 
-  -- nb.voice_count = 1  -- allows nb mods (only nb_midi AFAIK) to load multiple instances/voices
+  function read_prefs()  
+    prefs = {}
+    local filepath = norns.state.data
+    if util.file_exists(filepath) then
+      if util.file_exists(filepath.."prefs.data") then
+        prefs = tab.load(filepath.."prefs.data")
+        print("table >> read: " .. filepath.."prefs.data")
+        else
+          print("table >> missing: " .. filepath.."prefs.data")
+      end
+    end
+  end
+  read_prefs()
+
+  if prefs ~= nil then
+    nb.voice_count = prefs.voice_instances or 1
+    print("nb.voice_count set to " .. nb.voice_count)
+  end
   nb:init()
   -- suppress some nb_crow and nb_jf mod players-- they come back on next nb init
   nb.players["crow 1/2"] = nil
@@ -196,18 +214,6 @@ function init()
   -------------
   -- Read prefs
   -------------
-  function read_prefs()  
-    prefs = {}
-    local filepath = norns.state.data
-    if util.file_exists(filepath) then
-      if util.file_exists(filepath.."prefs.data") then
-        prefs = tab.load(filepath.."prefs.data")
-        print("table >> read: " .. filepath.."prefs.data")
-        else
-          print("table >> missing: " .. filepath.."prefs.data")
-      end
-    end
-  end
   read_prefs()
   
   init_generator()
@@ -232,7 +238,7 @@ function init()
     -- key = event_id, value = index
     events_lookup_index = tab.invert(events_lookup_ids)
     
-    -- Used to derive the min and max indices for the selected event category (Global, Chord, Seq, etc...)
+    -- Used to derive the min and max indices for the selected event category (Song, Chord, Seq, etc...)
     -- local event_categories = {}
     event_categories = {}
     for i = 1, #events_lookup do
@@ -266,7 +272,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 4 + 16)
+  params:add_group("preferences", "PREFERENCES", 5 + 16)
 
   params:add_option("default_pset", "Load pset", {"Off", "Last"}, 1)
   params:set_save("default_pset", false)
@@ -283,6 +289,11 @@ function init()
   params:set("crow_pullup", param_option_to_index("crow_pullup", prefs.crow_pullup) or 2)
   params:set_action("crow_pullup", function(val) crow_pullup(val); save_prefs() end)
   
+  params:add_number("voice_instances", "Voice instances", 1, 4, 4)
+  params:set_save("voice_instances", false)
+  params:set("voice_instances", (prefs.voice_instances or 1))
+  params:set_action("voice_instances", function() save_prefs() end)
+
   params:add_separator ("MIDI CLOCK OUT") -- todo hide if no MIDI devices
     for i = 1, 16 do 
     local id = "midi_continue_" .. i
@@ -310,9 +321,9 @@ function init()
   
     
   ------------------
-  -- GLOBAL PARAMS --
+  -- SONG PARAMS --
   ------------------
-  params:add_group("global", "GLOBAL", 13)
+  params:add_group("song", "SONG", 13)
   
   params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
 
@@ -661,7 +672,7 @@ function init()
   
   -- options will be dynamically swapped out based on the current event_global param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
-  params:add_option("event_subcategory", "Subcategory", event_subcategories["Global"], 1)
+  params:add_option("event_subcategory", "Subcategory", event_subcategories["Song"], 1)
   params:hide("event_subcategory")
  
   params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
@@ -755,7 +766,7 @@ function init()
   grid_view_name = grid_views[2]
   math.randomseed(os.time()) -- doesn't seem like this is needed but not sure why
   fast_blinky = 1
-  pages = {"GLOBAL>", "CHORD", "SEQ", "MIDI HARMONIZER", "<CV HARMONIZER"}
+  pages = {"SONG>", "CHORD", "SEQ", "MIDI HARMONIZER", "<CV HARMONIZER"}
   page_index = 1
   page_name = pages[page_index]
   menus = {}
@@ -1055,6 +1066,7 @@ function init()
     prefs.chord_readout = params:string("chord_readout")
     prefs.default_pset = params:string("default_pset")
     prefs.crow_pullup = params:string("crow_pullup")
+    prefs.voice_instances = params:get("voice_instances")
     for i = 1, 16 do
       local id = "midi_continue_" .. i
       prefs[id] = params:string(id)
@@ -1657,7 +1669,7 @@ end
 
 
 function update_menus()
-  -- GLOBAL MENU 
+  -- SONG MENU 
   menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"}
   
   -- CHORD MENU
@@ -4881,17 +4893,6 @@ function s_to_min_sec(seconds)
 end
 
 
-function param_formatter(param) -- todo lowercase all?
-  if param == "source" then
-    return("Clock:")
-  -- elseif param == "midi out" then
-  --   return("Out:")
-  else 
-    return(param .. ":")
-  end
-end
-
-
 -- generates truncated flat tables at the chord step level for the arranger mini dashboard
 -- runs any time the arranger changes (generator, events, pattern changes, length changes, key pset load, arranger/pattern reset, event edits)
 function gen_dash(source)
@@ -5228,7 +5229,7 @@ function redraw()
             local single = menu_index == range[1] and (range[1] == range[2]) or false
             local menu_value_pre = single and ">" or menu_index == range[2] and "<" or " "
             local menu_value_suf = single and "<" or menu_index == range[1] and ">" or ""
-            local events_menu_txt = first_to_upper(param_formatter(param_id_to_name(menu_id))) .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+            local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
 
             if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
             if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
@@ -5239,7 +5240,7 @@ function redraw()
             if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
             if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
             
-            screen.text(first_to_upper(param_formatter(param_id_to_name(menu_id))) .. " " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+            screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
           end
 
           line = line + 1
@@ -5305,10 +5306,10 @@ function redraw()
           local range = params:get_range(menus[page_index][i])
           local menu_value_suf = params:get(menus[page_index][i]) == range[1] and ">" or ""
           local menu_value_pre = params:get(menus[page_index][i]) == range[2] and "<" or " "
-          local session_menu_txt = first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. menu_value_pre .. params:string(menus[page_index][i]) .. menu_value_suf
+          local session_menu_txt = first_to_upper(param_id_to_name(menus[page_index][i])) .. ":" .. menu_value_pre .. params:string(menus[page_index][i]) .. menu_value_suf
           screen.text(session_menu_txt)
         else  
-          screen.text(first_to_upper(param_formatter(param_id_to_name(menus[page_index][i]))) .. " " .. params:string(menus[page_index][i]))
+          screen.text(first_to_upper(param_id_to_name(menus[page_index][i])) .. ": " .. params:string(menus[page_index][i]))
         end
         line = line + 1
       end
@@ -5393,7 +5394,7 @@ function redraw()
       for i = 1,4 do
         screen.level(1)
         screen.rect(dash_x + 3, arranger_dash_y + 12 + i * 3, 1, 2)
-      end  
+      end
       screen.pixel(dash_x + 3, arranger_dash_y + 27)
       screen.fill()
       
