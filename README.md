@@ -31,7 +31,7 @@
 - "Step" duration setting adjusts note duration to always match the step length (Chord and Seq) or Trigger division (CV harmonizer).
 - Pressing a Grid pattern key when transport is stopped will play that chord or note.
 - Chromatic mapping option added to `Notes` parameter.
-- The GLOBAL menu now has settings for configuring Crow's outputs which will result in various CV or CV/Env pair options appearing in Voice parameters. All outs can send CV, Env, and Events while out 4 can send also send a Clock pulse when transport is running.
+- The SONG menu now has settings for configuring Crow's outputs which will result in various CV or CV/Env pair options appearing in Voice parameters. All outs can send CV, Env, and Events while out 4 can send also send a Clock pulse when transport is running.
 - `Crow events` event category has been created with subcategories for outputs 1-4. There's also a new event "5v 8-steps" event for driving a sequential switch (i.e. Vice Virga) that maybe works with similar devices (0.31v, 0.94v, 1.56v, 2.19v, 2.81v, 3.44v, 4.06v, 4.69v).
 
 
@@ -49,7 +49,7 @@
     - New `MIDI CLOCK OUT` settings are available for each MIDI clock port via `K3>>PARAMETERS>>EDIT>>PREFERENCES` and determine behavior when continuing after pausing. 
       - The “song” option will send out MIDI Song Position Pointer (SPP) and ‘continue’ messages which should work well for things like DAWs.
       - The “pattern” setting will cause Dreamsequence to continue playback and then send a ’start’ message at the beginning of the next measure. This works well for devices that don’t support SPP: drum machines, loopers, Ableton live’s “Session” view, etc…
-      - In order for pattern mode to work as expected, you must set a time signature via GLOBAL>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires a stop and restart, I think.
+      - In order for pattern mode to work as expected, you must set a time signature via SONG>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires a stop and restart, I think.
 	
 	
   - Link clock source (limited support)
@@ -128,7 +128,7 @@
 
 - Persistent preferences can be set for the following parameters via K1>>PARAMETERS>>EDIT>>PREFERENCES
 	- Default pset: Automatically load the last-saved pset (and data) on script launch. 
-	- Chords as: Global menu option selects between displaying chords names (Gmaj) or as chord degrees (VII). DS 1.1 temporarily has a missing half dim chord symbol, see “ISSUES” section for more info.
+	- Chords as: Displaying chords names (Gmaj) or as chord degrees (VII). DS 1.1 temporarily has a missing half dim chord symbol, see “ISSUES” section for more info.
 	- Crow pullup: On (default) or Off.
 
 - Version checks at system load for Norns and Crow. Crow v4 is cleared for flight and Dreamsequence will reconfigure itself depending on which version is installed.
@@ -438,7 +438,7 @@ The Events view is used to manage the scheduling of parameter changes and functi
    	- When using Internal clock source, K3 continues after pausing. Settings are available for each MIDI clock port via K3>>PARAMETERS>>EDIT>>PREFERENCES:
    		- The “song” option will send out MIDI Song Position Pointer (SPP) and ‘continue’ messages which should work well for things like DAWs.
 		- The “pattern” setting will cause Dreamsequence to continue playback and then send a ’start’ message at the beginning of the next measure. This works well for devices that don’t support SPP: drum machines, loopers, Ableton live’s “Session” view, etc…
-		- In order for ‘pattern’ mode to work as expected, you must set a time signature via GLOBAL>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires restarting playback.
+		- In order for ‘pattern’ mode to work as expected, you must set a time signature via SONG>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires restarting playback.
 
 	- Under certain conditions, alternate functions are enabled and will be shown in the footer section at the bottom of the Norns screen:
 		- While holding down an Arranger Timeline key: enter Event view.
@@ -464,7 +464,7 @@ The Events view is used to manage the scheduling of parameter changes and functi
 
 ![dreamsequence](doc/dreamsequence.png)
 
-Most of your work on Norns will be done through 5 main menus that look like the example above. Scrolling to the top menu (GLOBAL in the example above) with E2 will allow you to browse using E3. Before taking a closer look at the contents of these menus, let's take a look at the mini dashboards on the right side of the screen.
+Most of your work on Norns will be done through 5 main menus that look like the example above. Scrolling to the top menu (SONG in the example above) with E2 will allow you to browse using E3. Before taking a closer look at the contents of these menus, let's take a look at the mini dashboards on the right side of the screen.
 
 ----------------------------------------------------------------------------------------------------------------------
  
@@ -500,18 +500,18 @@ Most of your work on Norns will be done through 5 main menus that look like the 
 ----------------------------------------------------------------------------------------------------------------------
 
 ### Menus
-![dreamsequence](doc/global_menu.png)
+![dreamsequence](doc/song_menu.png)
 
 The left portion of the Norns screen displays one of the following "pages" and associated menu items:
-  - GLOBAL <> CHORD <> SEQ <> MIDI HARMONIZER <> CV HARMONIZER
+  - SONG <> CHORD <> SEQ <> MIDI HARMONIZER <> CV HARMONIZER
  
 To navigate between pages, use E2 to scroll to the top of the list of menu items until the page name is highlighted, then use E3 to change the page. To change a menu item, simply scroll down the list using E2 and change its value using E3. < and > symbols will appear when you are at the end of the range of possible values. Descriptions of each page and menu options follow.
 
-#### GLOBAL menu
+#### SONG menu
 
 - Mode: 9 modes: Major, Natural Minor, Harmonic Minor, Melodic Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian.
 
-- Key: Global transposition of +/- 12 semitones.
+- Key: Song transposition of +/- 12 semitones.
 
 - Tempo: sets Norns system clock tempo in BPM.
 
@@ -624,8 +624,8 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 - Notes: Five ways of mapping incoming MIDI notes to output notes are available. This works just like the Seq but instead of choosing a column on Grid, we use the incoming note value starting from C1.
     - Triad: notes C1-D1 map to notes 1-3 from the active chord interpreted as a triad. Notes D#1-F1 play the same notes one octave up, etc..
 	  - 7th: columns C1-D#1 map to notes 1-4 from the active chord interpreted as a 7th chord. Columns E1-G1 play the same notes one octave up, etc..
-	  - Mode+transp.: beginning with note C1, incoming notes are mapped to the mode configured in GLOBAL>>Mode, then a diatonic transposition based on the active chord degree is applied.
-	  - Mode: beginning with note C1, incoming notes are mapped to the mode configured in GLOBAL>>Mode.
+	  - Mode+transp.: beginning with note C1, incoming notes are mapped to the mode configured in SONG>>Mode, then a diatonic transposition based on the active chord degree is applied.
+	  - Mode: beginning with note C1, incoming notes are mapped to the mode configured in SONG>>Mode.
        	  - Chromatic: beginning with note C1, incoming notes are mapped to chromatic semitones.
    
 - Octave: Shifts output from -4 to +4 octaves.
@@ -641,8 +641,8 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 - Notes: Five ways of mapping voltage send to Crow input 1 to notes are available. This works just like the Seq but instead of choosing a column on Grid, we use the incoming voltage which is then quantized to 1v/oct or 1 semitone increments.
     - Triad: voltage of 0v, 1/12v, 2/12v map to notes 1-3 from the active chord interpreted as a triad. Voltage of 3/12v, 4/12v, 5/12v play the same notes one octave up, etc..
 	  - 7th: columns voltage of 0v, 1/12v, 2/12v, 3/12v map to notes 1-4 from the active chord interpreted as a 7th chord. Voltage of 4/12v, 5/12v, 6/12v play the same notes one octave up, etc..
-	  - Mode+transp.: beginning with note 0v and increasing with each 1/12v increment, incoming voltage is mapped to the mode configured in GLOBAL>>Mode, then a diatonic transposition based on the active chord degree is applied.
-	  - Mode: beginning with note 0v and increasing with each 1/12v increment, incoming voltage is mapped to the mode configured in GLOBAL>>Mode.
+	  - Mode+transp.: beginning with note 0v and increasing with each 1/12v increment, incoming voltage is mapped to the mode configured in SONG>>Mode, then a diatonic transposition based on the active chord degree is applied.
+	  - Mode: beginning with note 0v and increasing with each 1/12v increment, incoming voltage is mapped to the mode configured in SONG>>Mode.
     	  - Chromatic: beginning with note 0v and increasing with each 1/12v increment, incoming voltage is mapped to chromatic semitones.
   
 - Auto-rest: When true, this option will suppress the same note when it is repeated consecutively within one chord step, resulting in a rest. This can be a useful way of adding rest functionality into analog sequencers that don't support such a feature.
@@ -660,21 +660,21 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 # Preferences
 - Persistent preferences can be set for the following parameters via K1>>PARAMETERS>>EDIT>>PREFERENCES
 	- Default pset: Automatically load the last-saved pset (and data) on script launch. 
-	- Chords as: Global menu option selects between displaying chords names (Gmaj) or as chord degrees (VII).
+	- Chords as: displays chords names (Gmaj) or chord degrees (VII).
 	- Crow pullup: i2c pullup resistors can be set On (default) or Off.
  	- MIDI Clock Out: Determines behavior of synced MIDI devices when pausing/continuing:
    		- The “song” option will send out MIDI Song Position Pointer (SPP) and ‘continue’ messages which should work well for things like DAWs.
 		- The “pattern” setting will cause Dreamsequence to continue playback and then send a ’start’ message at the beginning of the next measure. This works well for devices that don’t support SPP: drum machines, loopers, Ableton live’s “Session” view, etc…
-		- In order for ‘pattern’ mode to work as expected, you must set a time signature via GLOBAL>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires restarting playback. 
+		- In order for ‘pattern’ mode to work as expected, you must set a time signature via SONG>>Beats per bar/Beat length (time signature numerator and denominator). Changing the time signature requires restarting playback. 
  
 ---
 
 # Crow Patching
 
-Dreamsequence supports using Crow to send and receive CV and triggers. Outputs are configurable via Global>> Crow out x, defaulting to the following:
+Dreamsequence supports using Crow to send and receive CV and triggers. Outputs are configurable via Song>> Crow out x, defaulting to the following:
 - Crow IN 1: CV used to determine note pitch of the CV Harmonizer. Can be unquantized or quantized. Attenuation recommended.
 - Crow IN 2: Trigger in (rising past 2 volts) will sample the CV on Crow IN 1 and send a note from the CV Harmonizer
 - Crow OUT 1: Default "Crow" output V/oct out
 - Crow OUT 2: Default "Crow" output trigger or 10v attack/decay envelope out
 - Crow OUT 3: Default used by [Arranger Events](https://github.com/dstroud/dreamsequence/blob/main/README.md#events-view).
-- Crow OUT 4: Default clock out (beat-division or PPQN) set in "Global:Crow clock" menu item
+- Crow OUT 4: Default clock out (beat-division or PPQN) set in "Song:Crow clk" menu item
