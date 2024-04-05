@@ -260,9 +260,9 @@ Required: Monome Norns (**240221 or later**) and Grid (16x8 or 16x16)
 
 Optional: Supports MIDI and Crow by default. Installation of additional [NB voices](https://llllllll.co/t/n-b-et-al-v0-1/60374) is highly recommended!
 
-[![Watch the video](https://img.youtube.com/vi/Z6plHOHKwdg/0.jpg)](https://youtu.be/Z6plHOHKwdg)
+[![Watch the video](https://img.youtube.com/vi/MztashV-zaI/0.jpg)](https://youtu.be/MztashV-zaI)
 
-[Dreamsequence demo and basics on YouTube](https://youtu.be/Z6plHOHKwdg)
+[Dreamsequence demo and basics on YouTube](https://youtu.be/MztashV-zaI)
 
 ---
 
@@ -473,9 +473,9 @@ Most of your work on Norns will be done through 5 main menus that look like the 
 ![dreamsequence](doc/pattern_dash.png)
 
 - This dashboard gives us a summary of transport status, the current chord pattern (A-D) and active chord.
-- The numbers in the top left of the dash provide information about the current pattern in the format 'PATTERN'.'CURRENT STEP'/'PATTERN LENGTH'. Example: “A.3/4” means pattern A, step 3 of 4 total. ‘RST’ appears when pattern has been reset.
-- Play/pause/stop symbols in the upper right will flash when a status change is pending, such as when waiting for Link sync to start or waiting for the current chord step to complete before pausing. Pressing pause/start can cancel pending changes.
-- In the center of the dash, the active chord will be displayed. Holding down a chord sequence key on the Chord Grid view will temporarily overwrite this to indicate the chord that corresponds to the held key. The chord readout can be changed from chord name to chord degree using K1>>PARAMETERS>>EDIT>>PREFERENCES>>"Chords as"
+- The values in the top left of the dash provide information about the current pattern in the format 'PATTERN'.'CURRENT STEP'. Example: “A.3” means pattern A, step 3. ‘RST’ appears when pattern has been reset.
+- Play/pause/stop symbols in the upper right convey the current transport state.
+- In the center of the dash, the active chord will be displayed. Holding down a chord sequence key on the Chord Grid view will temporarily overwrite this to indicate the chord that corresponds to the held key. The chord readout can be changed from chord name to chord degree using K1>>PARAMETERS>>EDIT>>PREFERENCES>>"Chords as".
 
 > **_TIP:_** Active chord reflects the CHORD>>"Chord type" menu option (Triad or 7th) but each sequencer/harmonizer can override this with the similar "Notes" menu.
 > 
@@ -500,7 +500,7 @@ Most of your work on Norns will be done through 5 main menus that look like the 
 ----------------------------------------------------------------------------------------------------------------------
 
 ### Menus
-![dreamsequence](doc/song_menu.png)
+![dreamsequence](doc/menu.png)
 
 The left portion of the Norns screen displays one of the following "pages" and associated menu items:
   - SONG <> CHORD <> SEQ <> MIDI HARMONIZER <> CV HARMONIZER
