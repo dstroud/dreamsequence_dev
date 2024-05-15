@@ -3,25 +3,27 @@
 --------------------------------------------
 
 -- Rotate looping portion of pattern
-function rotate_pattern(view, direction)
+function rotate_pattern(view, offset)
   if view == "Chord" then
-    local length = chord_pattern_length[active_chord_pattern]
-    local temp_chord_pattern = {}
-    for i = 1, length do
-      temp_chord_pattern[i] = chord_pattern[active_chord_pattern][i]
-    end
-    for i = 1, length do
-      chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - direction,1,length)]
-    end
+    -- local length = chord_pattern_length[active_chord_pattern]
+    -- local temp_chord_pattern = {}
+    -- for i = 1, length do
+      -- temp_chord_pattern[i] = chord_pattern[active_chord_pattern][i]
+    -- end
+    -- for i = 1, length do
+      -- chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - offset,1,length)]
+    -- end
+    chord_pattern[active_chord_pattern] = rotate_tab_values(chord_pattern[active_chord_pattern], offset)
   elseif view == "Seq" then
-    local length = seq_pattern_length[active_seq_pattern]
-    local temp_seq_pattern = {}
-    for i = 1, length do
-      temp_seq_pattern[i] = seq_pattern[active_seq_pattern][i]
-    end
-    for i = 1, length do
-      seq_pattern[active_seq_pattern][i] = temp_seq_pattern[util.wrap(i - direction,1,length)]
-    end
+    -- local length = seq_pattern_length[active_seq_pattern]
+    -- local temp_seq_pattern = {}
+    -- for i = 1, length do
+    --   temp_seq_pattern[i] = seq_pattern[active_seq_pattern][i]
+    -- end
+    -- for i = 1, length do
+    --   seq_pattern[active_seq_pattern][i] = temp_seq_pattern[util.wrap(i - offset,1,length)]
+    -- end
+    seq_pattern[active_seq_pattern] = rotate_tab_values(seq_pattern[active_seq_pattern], offset)
   end
 end
 
@@ -32,8 +34,8 @@ end
 -- init functions
 
 function gen_event_tables()
-event_subcategories = {}
-event_indices = {}
+  event_subcategories = {}
+  event_indices = {}
 
   for i, entry in ipairs(events_lookup) do
     local category = entry.category
@@ -103,102 +105,71 @@ end
 
 -- Variation on the standard generators that will just run the algos and reset seq (but not chord pattern seq position or arranger)
 function event_gen()
-generator()
-seq_pattern_position = 0
+  generator()
+  seq_pattern_position = 0
 end    
 
 
 function event_chord_gen()
-chord_generator_lite()
-seq_pattern_position = 0
+  chord_generator_lite()
+  seq_pattern_position = 0
 end   
 
 
 function event_seq_gen()
-seq_generator("run")
-seq_pattern_position = 0
+  seq_generator("run")
+  seq_pattern_position = 0
 end    
 
 
-function shuffle_seq_1()
-local shuffled_seq_pattern = shuffle(seq_pattern[active_seq_pattern])
-seq_pattern[active_seq_pattern] = shuffled_seq_pattern
+function shuffle_seq(seq)
+  local shuffled_seq_pattern = shuffle(seq_pattern[seq])
+  seq_pattern[seq] = shuffled_seq_pattern
 end
     
         
 -- Event Crow trigger out
 function crow_trigger(out)
-  local out = tonumber(out)
-  if params:get("crow_out_"..out) == 4 then
-    crow.output[out].action = "pulse(.01,10,1)" -- (time,level,polarity)
-    crow.output[out]()
-  end
+  crow.output[out].action = "pulse(.01,10,1)" -- (time,level,polarity)
+  crow.output[out]()
 end
 
 
--- Event crow_5v_8_steps
--- 5 volts evenly spaced over 8 steps (including buffer on ends)
-function crow_5v_8_steps_1(step)
-  local out = 1
-  local volts = 5
-  local steps = 8
-  if params:get("crow_out_"..out) == 4 then
-    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
-  end
+-- n volts evenly spaced over n steps (including buffer on ends)
+function crow_v_stepped(out, volts, steps, index)
+  crow.output[out].volts = (volts/steps)*index-(volts/steps/2)
 end
 
 
--- Event crow_5v_8_steps
--- 5 volts evenly spaced over 8 steps (including buffer on ends)
-function crow_5v_8_steps_2(step)
-  local out = 2
-  local volts = 5
-  local steps = 8
-  if params:get("crow_out_"..out) == 4 then
-    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
-  end
-end
-
-
--- Event crow_5v_8_steps
--- 5 volts evenly spaced over 8 steps (including buffer on ends)
-function crow_5v_8_steps_3(step)
-  local out = 3
-  local volts = 5
-  local steps = 8
-  if params:get("crow_out_"..out) == 4 then
-    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
-  end
-end
-
-
--- Event crow_5v_8_steps
--- 5 volts evenly spaced over 8 steps (including buffer on ends)
-function crow_5v_8_steps_4(step)
-  local out = 4
-  local volts = 5
-  local steps = 8
-  if params:get("crow_out_"..out) == 4 then
-    crow.output[out].volts = (volts/steps)*step-(volts/steps/2)
-  end
+-- Event crow_v_n, -5 to 10 volts with variable quantum
+function crow_v(out, volts)
+  crow.output[out].volts = volts
 end
 
 
 -- "Transposes" pattern if you can call it that
-function transpose_pattern(view, direction)
-if view == "Chord" then
-  for y = 1, max_chord_pattern_length do
-    if chord_pattern[active_chord_pattern][y] ~= 0 then
-      chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + direction, 1, 14)
+function transpose_pattern(view, offset)
+  if view == "Chord" then
+    for y = 1, max_chord_pattern_length do
+      if chord_pattern[active_chord_pattern][y] ~= 0 then
+        chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + offset, 1, 14)
+      end
     end
-  end
-elseif view == "Seq" then
-  for y = 1, max_seq_pattern_length do
-    if seq_pattern[active_seq_pattern][y] ~= 0 then
-      seq_pattern[active_seq_pattern][y] = util.wrap(seq_pattern[active_seq_pattern][y] + direction, 1, 14)
+  elseif view == "Seq" then
+    --shared with pattern_shift_abs fwiw
+    if params:get("seq_note_priority_"..active_seq_pattern) == 1 then -- mono seq
+      for y = 1, max_seq_pattern_length do
+        if seq_pattern[active_seq_pattern][y] ~= 0 then
+          seq_pattern[active_seq_pattern][y] = util.wrap(seq_pattern[active_seq_pattern][y] + offset, 1, 14)
+        end
+      end
+    else -- poly seq
+      for y = 1, max_seq_pattern_length do
+        seq_pattern[active_seq_pattern][y] = rotate_tab_values(seq_pattern[active_seq_pattern][y], offset)
+      end
     end
-  end
-end  
+
+  end  
 end   
 
 -- END OF EVENT-SPECIFIC FUNCTIONS ------------------------------------------------------
@@ -249,51 +220,51 @@ end
 
 -- equal probability of returning the inverse of arg
 function cointoss_inverse(val)
-return(val * (math.random(2) == 1 and -1 or 1))
+  return(val * (math.random(2) == 1 and -1 or 1))
 end
 
 
 -- function to swap options table on an existing param and reset count
 function swap_param_options(param, table)
-params:lookup_param(param).options = table
--- print("setting " .. param .. " options to :")
--- tab.print(table)
-params:lookup_param(param).count = #table   -- existing index may exceed this so it needs to be set afterwards by whatever called (not every time)
+  params:lookup_param(param).options = table
+  -- print("setting " .. param .. " options to :")
+  -- tab.print(table)
+  params:lookup_param(param).count = #table   -- existing index may exceed this so it needs to be set afterwards by whatever called (not every time)
 end
 
 
 -- converts the string value of an "add_options" param into a value index # suitable for params:set
 -- args: param id and string value         eg "event_category", "Seq" == 3
 function param_option_to_index(param, str)
-return(tab.key(params.params[params.lookup[param]].options, str))
+  return(tab.key(params.params[params.lookup[param]].options, str))
 end
 
 
 -- passed string arg will be looked up in param"s .options and set using index
 function set_param_string(param, str)
-params:set(param, param_option_to_index(param, str))
+  params:set(param, param_option_to_index(param, str))
 end  
 
 
 function spaces_to_underscores(str)
-local replacedStr = string.gsub(str, " ", "_")
-return replacedStr
+  local replacedStr = string.gsub(str, " ", "_")
+  return replacedStr
 end
 
 
 -- text_extents sucks so I gotta make some adjustments
 -- spaces should count as 3 and </> count as 3
 function text_width(str)
-local extents = screen.text_extents(str) -- raw count that ain't great
-
--- local symbols = "<>" -- seems to be working now so I guess something was fixed!!
--- local pattern = "[" .. symbols:gsub("[<>]", "%%%0") .. "]" -- character class to identify < and >
--- local extents = extents - (select(2, string.gsub(str, pattern, ""))) -- subtract 1 for each < and >
-
--- local count = select(2, string.gsub(str, pattern, ""))
-local extents = extents + (string.len(string.gsub(str, "[^%s]", "")) * 3) -- spaces count as 3 pixels
-
-return extents
+  local extents = screen.text_extents(str) -- raw count that ain't great
+  
+  -- local symbols = "<>" -- seems to be working now so I guess something was fixed!!
+  -- local pattern = "[" .. symbols:gsub("[<>]", "%%%0") .. "]" -- character class to identify < and >
+  -- local extents = extents - (select(2, string.gsub(str, pattern, ""))) -- subtract 1 for each < and >
+  
+  -- local count = select(2, string.gsub(str, pattern, ""))
+  local extents = extents + (string.len(string.gsub(str, "[^%s]", "")) * 3) -- spaces count as 3 pixels
+  
+  return extents
 end
 
 
@@ -328,33 +299,33 @@ end
     
     
 function scrollbar(index, total, in_view, locked_row, screen_height)
-local bar_size = in_view / total * screen_height
-local increment = (screen_height - bar_size) / (total - locked_row)
-index = math.max(index - locked_row, 0)
-local offset = 12 + (index * increment)
-return(offset)
+  local bar_size = in_view / total * screen_height
+  local increment = (screen_height - bar_size) / (total - locked_row)
+  index = math.max(index - locked_row, 0)
+  local offset = 12 + (index * increment)
+  return(offset)
 end
     
     
 function delete_all_events_segment()
-key_counter = 4
-
-while event_k2 == true do
-  key_counter = key_counter - 1
-  redraw()
-  if key_counter == 0 then
-    print("Deleting all events in segment " .. event_edit_segment)
-    for step = 1, max_chord_pattern_length do
-      events[event_edit_segment][step] = {}
+  key_counter = 4
+  
+  while event_k2 == true do
+    key_counter = key_counter - 1
+    redraw()
+    if key_counter == 0 then
+      print("Deleting all events in segment " .. event_edit_segment)
+      for step = 1, max_chord_pattern_length do
+        events[event_edit_segment][step] = {}
+      end
+      events[event_edit_segment].populated = 0
+      grid_redraw()
+      key_counter = 4
+      break
     end
-    events[event_edit_segment].populated = 0
-    grid_redraw()
-    key_counter = 4
-    break
+    clock.sleep(.2)
   end
-  clock.sleep(.2)
-end
-key_counter = 4
---todo p3 should probably have a "Deleted message appear until key up"
-redraw()
+  key_counter = 4
+  --todo p3 should probably have a "Deleted message appear until key up"
+  redraw()
 end
