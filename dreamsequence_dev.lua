@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240519 @modularbeat
+-- 240520 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -780,6 +780,7 @@ function init()
   grid_view_name = grid_views[2]
   math.randomseed(os.time()) -- doesn't seem like this is needed but not sure why
   fast_blinky = 1
+  screen_view_name = "Session"
   pages = {"SONG►", "CHORD", "SEQ 1", "SEQ 2", "MIDI HARMONIZER", "◀CV HARMONIZER"}
   page_index = 1
   page_name = pages[page_index]
