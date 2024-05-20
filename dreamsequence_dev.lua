@@ -1,17 +1,18 @@
 -- Dreamsequence
--- 240518 @modularbeat
+-- 240519 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
 -- arpeggiator, and harmonizer 
 -- for Monome Norns+Grid
 -- 
--- KEY 2: Pause/Stop(2x)
--- KEY 3: Play
+-- K1: Cue edits (hold)
+-- K2: Pause/Stop(2x)
+-- K3: Play
 --
--- ENC 1: Scroll (16x8 Grid)
--- ENC 2: Select
--- ENC 3: Edit
+-- E1: Scroll (16x8 Grid)
+-- E2: Select
+-- E3: Edit (hold K1 to cue)
 --
 -- Crow IN 1: CV in
 -- Crow IN 2: Trigger in
@@ -306,7 +307,18 @@ function init()
   ------------------
   params:add_group("song", "SONG", 13)
   
-  params:add_number("mode", "Mode", 1, 9, 1, function(param) return mode_index_to_name(param:get()) end) -- post-bang action
+  local modes = {
+    "Major", -- "Ionian", 
+    "Natural minor", -- "Aeolian", 
+    "Harmonic min.", 
+    "Melodic minor", 
+    "Dorian", 
+    "Phrygian", 
+    "Lydian", 
+    "Mixolydian", 
+    "Locrian"
+  }
+  params:add_number("mode", "Mode", 1, 9, 1, function(param) return modes[param:get()] end) -- post-bang action
 
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
@@ -402,7 +414,7 @@ function init()
 
   for seq_no = 1, max_seqs do
 
-    params:add_group("seq"..seq_no, "SEQ "..seq_no, 21)
+    params:add_group("seq"..seq_no, "SEQ "..seq_no, 23)
 
     params:add_option("seq_note_map_"..seq_no, "Notes", note_map, 1)
     
@@ -436,7 +448,7 @@ function init()
     
     params:add_option("seq_start_on_"..seq_no, "Play", {"in a loop", "every step", "on chord steps", "on blank steps", "on cue/event"}, 1)
 
-    params:add_option("seq_reset_on_"..seq_no, "Rst.", {"every step", "on chord steps", "on blank steps", "on stop/event"}, 4)
+    params:add_option("seq_reset_on_"..seq_no, "⏎", {"every step", "on chord steps", "on blank steps", "on stop/event"}, 4)
     
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start", "trigger")
@@ -598,13 +610,14 @@ function init()
       local port = find_vport(vport_name)
       local voice = string.match(string, "(%d+)$")
       local name = first_to_upper(string.lower(vport_name))
-      if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
-        name = string.upper(util.acronym(name))
+      if screen.text_extents(name) > 35 then -- longest we can go and still append " 16.16" and "-"" (port.voice)
+        name = util.trim_string_to_width(string.upper(util.acronym(name)), 35)
       end
-      string = name .. " " .. port .. "." .. voice
+      string = port .. "." .. voice .. " " .. name
     end
     return util.trim_string_to_width(string, 81) -- different length for event vs standard menus
   end
+  
 
   -- Function to sort table keys alphabetically. Might move to lib/functions
   local function sort_keys(tbl)
@@ -760,9 +773,6 @@ function init()
   arranger_active = false
   chord_pattern_retrig = true
   play_seq = {false, false}
-  screen_views = {"Session","Events"}
-  screen_view_index = 1
-  screen_view_name = screen_views[screen_view_index]
   grid_dirty = true
   -- grid "views" are decoupled from screen "pages"  
   grid_views = {"Arranger","Chord","Seq"}
@@ -777,6 +787,9 @@ function init()
   gen_menu()
   menu_index = 0
   selected_menu = menus[page_index][menu_index]
+  -- preview_param_queue = {}
+  preview_param_q_get = {}
+  preview_param_q_string = {}
   transport_active = false
   chord_pattern_length = {4,4,4,4}
   set_chord_pattern(1)
@@ -797,6 +810,7 @@ function init()
   gen_arranger_padded()
   d_cuml = 0
   interaction = nil
+  norns_interaction = nil
   events = {}
   for segment = 1, max_arranger_length do
     events[segment] = {}
@@ -817,6 +831,7 @@ function init()
   event_edit_segment = 0 --todo p1 rename to event_edit_segment
   event_edit_step = 0
   event_edit_lane = 0
+
   steps_remaining_in_arrangement = 0
   elapsed = 0
   percent_step_elapsed = 0
@@ -825,7 +840,7 @@ function init()
   pattern_keys = {}
   arranger_pattern_key_first = nil -- simpler way to identify the first key held down so we can handle this as a "copy" action and know when to act on it or ignore it. don't need a whole table.
   arranger_loop_key_count = 0 -- rename arranger_events_strip_key_count?
-  key_counter = 4
+  key_countdown = 4
   pattern_key_count = 0
   chord_key_count = 0
   view_key_count = 0
@@ -916,7 +931,6 @@ function init()
     local filepath = norns.state.data..number.."/"
     if util.file_exists(filepath) then
       -- Close the event editor if it's currently open so pending edits aren't made to the new arranger unintentionally
-      screen_view_index = 1
       screen_view_name = "Session"
       misc = {}
       voice = {}
@@ -1615,13 +1629,15 @@ end -- end of init
 -----------------------------------------------
   
 
+-- returns a dummy version of param with action stripped out 
+-- used to delta events, get min/max, and cue param changes with K1 held down
 function clone_param(id)
   if params:lookup_param(id) ~= nil then
-    preview = copy(params:lookup_param(id))
+    local preview = copy(params:lookup_param(id))
     preview.action = function() end -- kill off action
+    return(preview)
   end
 end
-
 
 -- -- WIP thing to jump immediately to voice's param group when tapping K1. 
 -- -- Needs bits to pass group id from new nb tables when page or voice is changed (enc)
@@ -1740,7 +1756,7 @@ function gen_voice_lookups()
   end  
   
   local function trim_menu(string)
-    return util.trim_string_to_width(string, 63)
+    return util.trim_string_to_width(string, 55)--63)
   end
   
   for i = 1, params:lookup_param("chord_voice_raw").count do
@@ -1762,11 +1778,13 @@ function gen_voice_lookups()
         local port = find_vport(vport_name)
         local voice = string.match(option, "(%d+)$")
         local name = first_to_upper(string.lower(vport_name))
-        if screen.text_extents(name) > 41 then  -- longest we can go and still append " 16.16" (port.voice)
-          name = string.upper(util.acronym(name))
+
+        if screen.text_extents(name) > 35 then -- longest we can go and still append " 16.16" and "-"" (port.voice)
+          name = util.trim_string_to_width(string.upper(util.acronym(name)), 35)
         end
-        
-        local option = name .. " " .. port .. "." .. voice
+                
+        local option = port .. "." .. voice .. " " .. name
+
         table.insert(voice_param_options, trim_menu(option))
         table.insert(voice_param_index, i)
         
@@ -2130,9 +2148,9 @@ function param_id_to_name(id)
 end
 
 
-function mode_index_to_name(index)
-  return(musicutil.SCALES[index].name)
-end
+-- function mode_index_to_name(index)
+--   return(musicutil.SCALES[index].name)
+-- end
   
   
 function round(num, numDecimalPlaces)
@@ -4123,10 +4141,20 @@ function key(n,z)
   if z == 1 then
     -- keys[n] = 1
     key_count = key_count + 1
-    -- KEY 1 just increments keys and key_count for alt functions
-    -- if n == 1 then
-    -- KEY 2  
-    if n == 2 then
+
+
+    if n == 1 then -- Key 1 is used to preview param changes before applying them on release
+      if view_key_count == 0 and screen_view_name ~= "Events" then
+        local param_id = menus[page_index][menu_index]
+        norns_interaction = "preview_param"
+        if menu_index ~= 0 then
+          preview_param = clone_param(menus[page_index][menu_index])
+        end
+        redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
+      end
+
+      -- KEY 2  
+    elseif n == 2 then
       if view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -4358,7 +4386,7 @@ function key(n,z)
         -- Event Editor --
         -- K3 with Event Timeline key held down enters Event editor / function key event editor
         ---------------------------------------------------------------------------        
-      if arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
+      if arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -4657,7 +4685,18 @@ function key(n,z)
   elseif z == 0 then
     -- keys[n] = nil
     key_count = key_count - 1
-    if n == 2 then
+    if n == 1 then
+      if norns_interaction == "preview_param" then
+        for k, v in pairs(preview_param_q_get) do
+          params:set(k, v)
+        end
+        preview_param = nil
+        preview_param_q_get = {}
+        preview_param_q_string = {}
+        norns_interaction = nil
+      end
+    
+    elseif n == 2 then
       -- reset this for event segment delete countdown
       event_k2 = false
     end
@@ -4672,7 +4711,6 @@ end
 function enc(n,d)
   -- Scrolling/extending Arranger, Chord, Seq patterns
   if n == 1 then
-    local d = util.clamp(d, -1, 1)
     -- ------- SCROLL ARRANGER GRID VIEW--------
     -- should do this but need to make sure copy+paste, etc... work
     -- if grid_view_name == "Arranger" then
@@ -4705,10 +4743,14 @@ function enc(n,d)
     else
       menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
       selected_menu = menus[page_index][menu_index]
+
+      if norns_interaction == "preview_param" and menu_index ~= 0 then
+        preview_param = clone_param(selected_menu)
+      end
+
     end
     
-  -- n == ENC 3 -------------------------------------------------------------  
-  else
+  else -- n == ENC 3 -------------------------------------------------------------  
   
     if view_key_count > 0 then
       local d = util.clamp(d, -1, 1)
@@ -4785,7 +4827,11 @@ function enc(n,d)
         menu_index = 0
         page_index = util.clamp(page_index + d, 1, #pages)
         page_name = pages[page_index]
-        selected_menu = menus[page_index][menu_index]
+        selected_menu = menus[page_index][menu_index] -- redundant?
+      elseif norns_interaction == "preview_param" then
+        preview_param:delta(d)
+        preview_param_q_get[preview_param.id] = preview_param:get()
+        preview_param_q_string[preview_param.id] = preview_param:string()
       else
         params:delta(selected_menu, d)
       end
@@ -4821,8 +4867,8 @@ function delta_menu_set(d, minimum, maximum)
   local prev_value = params:get(selected_events_menu)
   local minimum = minimum or params:get_range(selected_events_menu)[1]
   local maximum = maximum or params:get_range(selected_events_menu)[2]
-  preview:delta(d)
-  local value = util.clamp(preview:get(), minimum, maximum)
+  preview_event:delta(d)
+  local value = util.clamp(preview_event:get(), minimum, maximum)
   if value ~= prev_value then
     params:set(selected_events_menu, value)
     edit_status_edited()
@@ -4840,9 +4886,9 @@ end
 -- 4. restore preview value from step 1 (or just clone_param())
 function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
   local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
-  preview:set(prev_value) -- pass the min/max value to preview so we can delta it
-  preview:delta(d)
-  local value = util.clamp(preview:get(), minimum, maximum) -- prevent min/max overlap
+  preview_event:set(prev_value) -- pass the min/max value to preview so we can delta it
+  preview_event:delta(d)
+  local value = util.clamp(preview_event:get(), minimum, maximum) -- prevent min/max overlap
   if value ~= prev_value then
     params:set(selected_events_menu, value)
 
@@ -4913,7 +4959,7 @@ function change_event() -- index
     params:set("event_probability", 100) -- Only reset probability when event changes
     local event = events_lookup[params:get("event_name")]
     if event.event_type == "param" then
-      clone_param(event.id)
+      preview_event = clone_param(event.id)
     end
   end
   prev_event = event
@@ -5329,7 +5375,7 @@ function redraw()
       screen.level(15)
       screen.move(2,8)
       if event_edit_active == false then
-        if key_counter == 4 then
+        if key_countdown == 4 then
           screen.text("ARRANGER SEGMENT " .. event_edit_segment .. " EVENTS")
           screen.level(15)
           screen.move(2,23)
@@ -5350,7 +5396,7 @@ function redraw()
         else
           screen.level(15)      
           screen.move(36,33)
-          screen.text("DELETING IN " .. key_counter)
+          screen.text("DELETING IN " .. key_countdown)
         end
       else
    
@@ -5381,14 +5427,14 @@ function redraw()
           if menu_id == "event_value" then
             if debug then print("-------------------") end
             if debug then print("formatting event_value menu") end
-            operation = params:string("event_operation")
+            local operation = params:string("event_operation")
             
             if operation == "Set" then
               if debug then print("Set operator") end
               if lookup.event_type == "param" then  -- move above operation check?
                 
-                preview:set(event_val_string)
-                event_val_string = preview:string()
+                preview_event:set(event_val_string)
+                event_val_string = preview_event:string()
                 
               -- and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
                 -- if debug then print("Setting string val from options") end
@@ -5407,10 +5453,10 @@ function redraw()
           elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
             -- print("DEBUG menu_id = " .. menu_id) 
             -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
-            local actual_val = preview:get()
-            preview:set(event_val_string)
-            event_val_string = preview:string()
-            preview:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
+            local actual_val = preview_event:get()
+            preview_event:set(event_val_string)
+            event_val_string = preview_event:string()
+            preview_event:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
           end -- end of event_value stuff
       
           ------------------------------------------------
@@ -5495,20 +5541,31 @@ function redraw()
       --------------------------------------------
       -- todo p1 move calcs out of redraw
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
-      line = 1
-      for i = 1,#menus[page_index] do
+      local line = 1
+      for i = 1, #menus[page_index] do
+        local param_id = menus[page_index][i]
+        local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
+        local param_get = preview_param_q_get[param_id] or params:get(param_id)
+        -- local param_string = (preview_param_q_string[param_id] and preview_param_q_string[param_id].."*") or params:string(param_id)
+        local param_string = preview_param_q_string[param_id] or params:string(param_id)
+
         screen.move(2, line * 10 + 8 - menu_offset)
         screen.level(menu_index == i and 15 or 3)
         
-        -- Generate menu and draw <> indicators for scroll range
+        -- Generate menu and draw ▶◀ indicators for scroll range
         if menu_index == i then
-          local range = params:get_range(menus[page_index][i])
-          local menu_value_suf = params:get(menus[page_index][i]) == range[1] and "\u{25ba}" or ""
-          local menu_value_pre = params:get(menus[page_index][i]) == range[2] and "\u{25c0}" or " "
-          local session_menu_txt = first_to_upper(param_id_to_name(menus[page_index][i])) .. ":" .. menu_value_pre .. params:string(menus[page_index][i]) .. menu_value_suf
+          if norns_interaction then q = "-" end
+          local range = params:get_range(param_id)
+          local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
+          local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
+
+          local session_menu_txt = q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf
+
+
+          -- local session_menu_txt = first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. params:string(param_id) .. menu_value_suf
           screen.text(session_menu_txt)
         else  
-          screen.text(first_to_upper(param_id_to_name(menus[page_index][i])) .. ": " .. params:string(menus[page_index][i]))
+          screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
         end
         line = line + 1
       end
@@ -5534,9 +5591,7 @@ function redraw()
       screen.level(0)
       screen.text(page_name)
       screen.fill()
-
-
-
+ 
 
       --------------------------------------------
       -- Transport state, pattern, chord readout
