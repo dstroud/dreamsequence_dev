@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240520 @modularbeat
+-- 240521 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -21,7 +21,7 @@
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
-norns.version.required = 240221
+norns.version.required = 231114 -- rolling back for fates but 240221 required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
@@ -358,14 +358,14 @@ function init()
   ------------------
   -- CHORD PARAMS --
   ------------------
-  params:add_group("chord", "CHORD", 17)
+  params:add_group("chord", "CHORD", 18)
 
-  params:add_number("chord_div_index", "Step length", 6, 57, 15, function(param) return divisions_string(param:get()) end)
-  -- action required here for pset loading. Will then be redefined post-bang with action for lattice
-  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
+  -- params:add_number("chord_div_index", "Step length", 5, 57, 15, function(param) return divisions_string(param:get()) end)
+  -- -- action required here for pset loading. Will then be redefined post-bang with action for lattice
+  -- params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
 
-  -- chord_div needs to be set *before* the bang happens
-  chord_div = division_names[params:get("chord_div_index")][1]
+  -- -- chord_div needs to be set *before* the bang happens
+  -- chord_div = division_names[params:get("chord_div_index")][1]
 
   nb:add_param("chord_voice_raw", "Voice raw")
   params:hide("chord_voice_raw")
@@ -374,8 +374,7 @@ function init()
   params:add_option("chord_voice", "Voice", voice_param_options, 1)
   params:set_action("chord_voice", function(index) params:set("chord_voice_raw", voice_param_index[index]) end)
 
-  params:add_number("chord_duration_index", "Duration", 0, 57, 0, function(param) return durations_string(param:get()) end)
-  params:set_action("chord_duration_index",function(val) chord_duration = val == 0 and chord_div or division_names[val][1] end)
+  params:add_option("chord_mute", "Play/mute", {"Play", "Mute"}, 1)
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
   
@@ -392,6 +391,16 @@ function init()
   params:add_number("chord_strum_length", "Strum length", 1, 15, 15, function(param) return strum_length_string(param:get()) end)
   
   params:add_number("chord_timing_curve", "Strum curve", -100, 100, 0, function(param) return percent(param:get()) end)
+
+  params:add_number("chord_div_index", "Step length", 5, 57, 15, function(param) return divisions_string(param:get()) end)
+  -- action required here for pset loading. Will then be redefined post-bang with action for lattice
+  params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
+
+  -- chord_div needs to be set *before* the bang happens
+  chord_div = division_names[params:get("chord_div_index")][1]
+  
+  params:add_number("chord_duration_index", "Duration", 0, 57, 0, function(param) return durations_string(param:get()) end)
+  params:set_action("chord_duration_index",function(val) chord_duration = val == 0 and chord_div or division_names[val][1] end)
 
   params:add_number("chord_swing", "Swing", 50, 99, 50, function(param) return percent(param:get()) end)
 
@@ -779,7 +788,9 @@ function init()
   grid_view_keys = {}
   grid_view_name = grid_views[2]
   math.randomseed(os.time()) -- doesn't seem like this is needed but not sure why
-  fast_blinky = 1
+  cycle_1_16 = 16
+  slow_pulse_0_3 = 1
+  fast_blinky = 0
   screen_view_name = "Session"
   pages = {"SONG►", "CHORD", "SEQ 1", "SEQ 2", "MIDI HARMONIZER", "◀CV HARMONIZER"}
   page_index = 1
@@ -838,7 +849,7 @@ function init()
   percent_step_elapsed = 0
   seconds_remaining = 0
   chord_no = 0
-  pattern_keys = {}
+  pattern_keys = {} -- indicates if pattern key is held down or queued pattern
   arranger_pattern_key_first = nil -- simpler way to identify the first key held down so we can handle this as a "copy" action and know when to act on it or ignore it. don't need a whole table.
   arranger_loop_key_count = 0 -- rename arranger_events_strip_key_count?
   key_countdown = 4
@@ -1201,6 +1212,7 @@ params:set_action("ts_numerator",
   end
 
   -- keep track of playing notes and decrement each pulse of lattice (whether enabled or disabled!)
+  -- also called by modded lattice.lua
   function process_notes()
     -- todo: spin up tables for active voices so new notes only check against history for the matching voice
     -- Assumes PPQN == global_clock_div. Lookup tables will need adjustments if PPQN ~= 48
@@ -2306,7 +2318,17 @@ end
 -- 1/10s timer used to calculate arranger countdown timer and do transport/grid blinkies
 function countdown()
   calc_seconds_remaining()
+  cycle_1_16 = util.wrap(cycle_1_16 + 1, 1, 16)
+  local rise_fall_1_8 = cycle_1_16 > 8 and (17 - cycle_1_16) or cycle_1_16
+  -- 3x pause at top
+  local slow_pulse_0_3_tab = {3,2,1,0,0,0,1,2}
+  slow_pulse_0_3 = slow_pulse_0_3_tab[util.wrap(cycle_1_16, 1, 8)]
+  
   fast_blinky = fast_blinky ~ 1
+  -- if fast_blinky == 0 then
+  --   slow_blinky = slow_blinky ~ 1
+  -- end
+
   grid_dirty = true -- for fast_blinky scrolling pattern indicator.
 end
 
@@ -2546,7 +2568,7 @@ function advance_chord_pattern()
     local x = chord_pattern[active_chord_pattern][chord_pattern_position]
 
     -- Play the chord
-    if x > 0 then
+    if x > 0 and params:get("chord_mute") == 1 then
       update_chord(x)
       play_chord()
 
@@ -3072,8 +3094,8 @@ function to_player(player, note, dynamics, duration)
   -- also need to keep a list of players to run countdown functions on
   
   local note_on_time = util.time()
-  player_play_note = true
-  note_history_insert = true
+  local player_play_note = true
+  local note_history_insert = true
   
   for i = 1, #note_history do
     -- Check for duplicate notes and process according to dedupe_threshold setting
@@ -3444,34 +3466,65 @@ end
 
 
 function grid_redraw()
+  local fast_blinky = fast_blinky
+  local slow_pulse_0_3 = slow_pulse_0_3
+  
   g:all(0)
   
-  -- Events supercedes other views
+  -- EVENT EDITOR
   if screen_view_name == "Events" then
 
   -- Draw grid with 16 event lanes (columns) for each step in the selected pattern
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
     for x = 1, 16 do -- event lanes
       for y = 1, rows do -- pattern steps
-        local led = events[event_edit_segment][y + pattern_grid_offset][x] ~= nil and 7 or (y + pattern_grid_offset > length and 0 or 2)
+        local y_offset = y + pattern_grid_offset
+        local length_led = 2
+        local pattern_led = y_offset > length and 0 or length_led -- start out dimly highlighting in-range steps
 
-        if length > rows - pattern_grid_offset 
-        and length - pattern_grid_offset > rows 
-        and y == rows then
-          g:led(x, y, led + (fast_blinky))
-        elseif pattern_grid_offset > 0 and y == 1 then 
-          g:led(x, y, led + (fast_blinky))
-        elseif y + pattern_grid_offset == event_edit_step and x == event_edit_lane then
-          g:led(x, y, 15)
-        else
-          g:led(x, y, led)
+        -- set pattern levels, -2 from what we want shown due to layering
+        if y_offset == event_edit_step and x == event_edit_lane then
+          -- selected step pulses if not saved, otherwise, solid
+          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (15 - length_led - (slow_pulse_0_3 * 2)) or (15 - length_led))
+        elseif events[event_edit_segment][y_offset][x] ~= nil then
+          -- populated steps are medium brighness
+          pattern_led = pattern_led + 7 - length_led
         end
-        
+
+        -- blink the last row if pattern extends below grid view
+        if y == rows and length - pattern_grid_offset > rows then
+          pattern_led = pattern_led - fast_blinky
+
+        -- blink the first row if we've scrolled down  
+        elseif y == 1 and pattern_grid_offset > 0 then
+
+          -- not so fast! what about when pattern_led is already 0?
+          -- gonna cheat a little by setting it to 1 so we get a faint flicker
+          if pattern_led == 0 then
+            pattern_led = 1 - fast_blinky
+          else
+            pattern_led = pattern_led - fast_blinky
+          end
+        end
+
+        -- playhead might work two ways
+        -- a: show any time the edited arranger segment matches the chord pattern (A-D)
+        -- b: show only when this exact arranger segment is being played
+        if arranger_padded[event_edit_segment] == active_chord_pattern then
+          -- option a:
+          if y_offset == chord_pattern_position then
+            pattern_led = math.min(pattern_led + 2, 15)
+          end
+        end
+
+        g:led(x, y, pattern_led)
+
       end
     end    
-  else
+  else -- ARRANGER, GRID, SEQ views
+    -- draw dim keys for arranger/grid/seq selector
     for i = 6, 8 do
-      g:led(16, i + extra_rows, 4)
+      g:led(16, i + extra_rows, 3)
     end
     
     for i = 1, #grid_view_keys do
@@ -3487,7 +3540,7 @@ function grid_redraw()
       -- Arranger shifting rework here
       ----------------------------------------------------------------------------
       if arranger_loop_key_count > 0 then
-        x_draw_shift = 0
+        -- x_draw_shift = 0
         local in_bounds = event_edit_segment <= arranger_length -- some weird stuff needs to be handled if user is shifting events past the end of the pattern length
         if d_cuml >= 0 then -- Shifting arranger pattern to the right and opening up this many segments between event_edit_segment and event_edit_segment + d_cuml
    
@@ -3503,7 +3556,7 @@ function grid_redraw()
 
             for y = 1,4 do
               g:led(x, y, x_offset == arranger_position and 6                                               -- playhead
-                or x_offset == arranger_queue and 4                                                             -- queued
+                or x_offset == arranger_queue and 4                                                          -- queued
                 or x_offset <= (arranger_length + (in_bounds and d_cuml or 0)) and 2                       -- seq length
                 or 0)
             end
@@ -3593,62 +3646,65 @@ function grid_redraw()
         end
       end
   
-
+      -- enable Arranger, change playback mode
       g:led(1, 8 + extra_rows, params:get("arranger") == 2 and 15 or 4)
       g:led(2, 8 + extra_rows, params:get("playback") == 2 and 15 or 4)
         
-      -- More sophisticated pagination with scroll indicator for arranger grid view
-      -- for i = 0,3 do
-      --   local target = i * 16
-      --   g:led(i + 7, 8 , math.max(10 + util.round((math.min(target, arranger_grid_offset) - math.max(target, arranger_grid_offset))/2), 2) + 2)
-      -- end
-      for i = 7, 10 do
-        g:led(i, 8 + extra_rows, 4)
+      -- pagination with scroll indicator for arranger grid view
+      for i = 0,3 do
+        local target = i * 16
+        local led = math.max(10 + util.round((math.min(target, arranger_grid_offset) - math.max(target, arranger_grid_offset))/2), 1) + 2
+        g:led(i + 7, 8 , led)
+      end
+
+      -- visual detent on divisions matching pagination jumps
+      if arranger_grid_offset % 16 == 0 then
+        g:led(7 + (arranger_grid_offset / 16), 8 + extra_rows, 15)
       end
       
-      if arranger_grid_offset == 0 then g:led(7, 8 + extra_rows, 15)
-      elseif arranger_grid_offset == 16 then g:led(8, 8 + extra_rows, 15)    
-      elseif arranger_grid_offset == 32 then g:led(9, 8 + extra_rows, 15)
-      elseif arranger_grid_offset == 48 then g:led(10, 8 + extra_rows, 15)
-      end  
-      
-      
-    -- CHORD GRID REDRAW  
-    elseif grid_view_name == "Chord" then
+    elseif grid_view_name == "Chord" then   -- CHORD GRID REDRAW
+      local next_pattern_indicator = nil
       if params:string("arranger") == "On" and arranger_one_shot_last_pattern == false then
         next_pattern_indicator = arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)]
       else
         next_pattern_indicator = pattern_queue or active_chord_pattern
       end
-      
+
       -- chord pattern selector leds
+      local mute = params:get("chord_mute") == 2 
+      local level_high = mute and (15 - (slow_pulse_0_3 * 2)) or 15
+      local level_med = mute and (7 - slow_pulse_0_3 ) or 7
+      local level_low = mute and (3 - slow_pulse_0_3) or 3
+      local level_next = (chord_pattern_position < chord_pattern_length[active_chord_pattern]) and level_med or (7 - (fast_blinky * 2))
+
       for i = 1, 4 do
-        g:led(16, i, i == next_pattern_indicator and 7 or pattern_keys[i] and 7 or 3) 
         if i == active_chord_pattern then
-          g:led(16, i, 15)
+          g:led(16, i, level_high)
+        elseif i == next_pattern_indicator then
+          g:led(16, i, level_next)
+        else
+          g:led(16, i, pattern_keys[i] and level_med or level_low)
         end
       end
-      
+
       g:led(16, 7 + extra_rows, 15) -- grid view selector
       
       -- chord playhead
-      local chord_pattern_position_offset = chord_pattern_position - pattern_grid_offset
-      -- fix for Midigrid which was breaking when drawing out-of-bounds. should no longer be strictly necessary AFAIK
-      -- if chord_pattern_position_offset > 0 and chord_pattern_position_offset <= rows then
-        for i = 1, 14 do                                                               
-          g:led(i, chord_pattern_position - pattern_grid_offset, 3)
-        end
-      -- end
+      -- local chord_pattern_position_offset = chord_pattern_position - pattern_grid_offset
+
+      for i = 1, 14 do                                                               
+        g:led(i, chord_pattern_position - pattern_grid_offset, 3)
+      end
       
       local length = chord_pattern_length[active_chord_pattern]
       for y = 1, rows do
-      -- pattern_length LEDs
+      -- chord pattern_length LEDs
         if length - pattern_grid_offset > rows and y == rows then
-          g:led(15, y, (length < (y + pattern_grid_offset) and 4 or 15 - (fast_blinky * 4)))
+          g:led(15, y, 15 - (fast_blinky * 4))
         elseif pattern_grid_offset > 0 and y == 1 then 
-          g:led(15, y, (length < (y + pattern_grid_offset) and (4 + (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
+          g:led(15, y, (length < (y + pattern_grid_offset) and (3 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
         else  
-          g:led(15, y, length < (y + pattern_grid_offset) and 4 or 15)
+          g:led(15, y, length < (y + pattern_grid_offset) and 3 or 15)
         end
         
         -- sequence pattern LEDs off/on
@@ -3676,20 +3732,18 @@ function grid_redraw()
       
       local length = seq_pattern_length[active_seq_pattern]
       for y = 1, rows do
-        
-        -- pattern_length LEDs
-        if length - pattern_grid_offset > rows and y == rows then 
-          g:led(15, y, (length < (y + pattern_grid_offset) and 4 or 15 - (fast_blinky * 4)))
+
+        -- SEQ pattern_length LEDs
+        if length - pattern_grid_offset > rows and y == rows then
+          g:led(15, y, 15 - (fast_blinky * 4))
         elseif pattern_grid_offset > 0 and y == 1 then 
-          g:led(15, y, (length < (y + pattern_grid_offset) and (4 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
+          g:led(15, y, (length < (y + pattern_grid_offset) and (3 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
         else  
-          g:led(15, y, length < (y + pattern_grid_offset) and 4 or 15)
+          g:led(15, y, length < (y + pattern_grid_offset) and 3 or 15)
         end
           
         -- sequence pattern LEDs off/on
         if params:string("seq_note_priority_"..active_seq_pattern) == "Mono" then 
-        -- could also just check the table contents I guess...
-        -- if type(seq_pattern[active_seq_pattern][y + pattern_grid_offset]) ~= "table" then
           if seq_pattern[active_seq_pattern][y + pattern_grid_offset] > 0 then
             g:led(seq_pattern[active_seq_pattern][y + pattern_grid_offset], y, 15)
           end
@@ -3705,10 +3759,10 @@ function grid_redraw()
 
       -- active seq selector
       for y = 1, 2 do
-        if params:get("seq_mute_"..y) == 2 then -- muted, blinkies
-          g:led(16, y, active_seq_pattern == y and (15 - fast_blinky * 4) or (4 - fast_blinky * 2))
+        if params:get("seq_mute_"..y) == 2 then -- muted, pulses
+          g:led(16, y, active_seq_pattern == y and (15 - (slow_pulse_0_3 * 2)) or (3 - slow_pulse_0_3) or 3)
         else
-          g:led(16, y, active_seq_pattern == y and 15 or 4)
+          g:led(16, y, active_seq_pattern == y and 15 or 3)
         end
       end
 
@@ -3828,6 +3882,7 @@ function g.key(x,y,z)
         elseif view_key_count > 1 and (grid_view_keys[1] == 7 and grid_view_keys[2] == 8) or (grid_view_keys[1] == 8 and grid_view_keys[2] == 7) then
           screen_view_name = "Chord+seq"
         end
+        cycle_1_16 = 16 -- reset slow pulse for immediate visual indication of mute status
       end
       
     --ARRANGER KEY DOWN-------------------------------------------------------
@@ -3929,23 +3984,33 @@ function g.key(x,y,z)
       
 
       elseif x == 16 and y <5 then  --Key DOWN events for pattern switcher.
-        interaction = "chord_pattern_copy"
-        pattern_key_count = pattern_key_count + 1
-        pattern_keys[y] = 1
-        if pattern_key_count == 1 then
-          pattern_copy_source = y
-        elseif pattern_key_count > 1 then
-          print("Copying pattern " .. pattern_copy_source .. " to pattern " .. y)
-          pattern_copy_performed = true
-          for i = 1, max_chord_pattern_length do
-            chord_pattern[y][i] = chord_pattern[pattern_copy_source][i]
-          end
-          -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param + table.
-          if y == active_chord_pattern then
-            params:set("chord_pattern_length", chord_pattern_length[pattern_copy_source])
-          -- Otherwise just update the table.
-          else
-            chord_pattern_length[y] = chord_pattern_length[pattern_copy_source]
+      
+        if grid_view_keys[1] == 7 then -- mute/unmute
+          interaction = "mute"
+          params:set("chord_mute", 3 - params:get("chord_mute"))
+          -- to sync phase of slow_pulse on keypress
+          -- this might cause other issues depending on where else slow_pulse is used
+          cycle_1_16 = 16
+        else
+
+          interaction = "chord_pattern_copy"
+          pattern_key_count = pattern_key_count + 1
+          pattern_keys[y] = 1
+          if pattern_key_count == 1 then
+            pattern_copy_source = y
+          elseif pattern_key_count > 1 then
+            print("Copying pattern " .. pattern_copy_source .. " to pattern " .. y)
+            pattern_copy_performed = true
+            for i = 1, max_chord_pattern_length do
+              chord_pattern[y][i] = chord_pattern[pattern_copy_source][i]
+            end
+            -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param + table.
+            if y == active_chord_pattern then
+              params:set("chord_pattern_length", chord_pattern_length[pattern_copy_source])
+            -- Otherwise just update the table.
+            else
+              chord_pattern_length[y] = chord_pattern_length[pattern_copy_source]
+            end
           end
         end
       end
@@ -4022,43 +4087,45 @@ function g.key(x,y,z)
     elseif grid_view_name == "Chord" then
       if x == 16 then
         if y <5 then
-          pattern_key_count = math.max(pattern_key_count - 1,0)
-          pattern_keys[y] = nil
-          if pattern_key_count == 0 and pattern_copy_performed == false then
-            
-            -- Resets current active_chord_pattern immediately if transport is stopped
-            if y == active_chord_pattern and transport_active == false then
-              print("Manual reset of current pattern; disabling arranger")
-              params:set("arranger", 1)
-              pattern_queue = false
-              -- seq_pattern_position = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
-              chord_pattern_position = 0
-              reset_external_clock()
-              reset_pattern()
-              -- tells dash to show RST rather than 1.0
-              if arranger_position == 1 and chord_pattern_position == 0 then
-                reset_arrangement()
-              end
+          if interaction ~= "mute" then
+            pattern_key_count = math.max(pattern_key_count - 1,0)
+            pattern_keys[y] = nil
+            if pattern_key_count == 0 and pattern_copy_performed == false then
               
-            -- Manual jump to queued pattern  
-            elseif y == pattern_queue and transport_active == false then
-              print("Manual jump to queued pattern")
-              
-              pattern_queue = false
-              set_chord_pattern(y)
-              for seq_no = 1, 2 do
-                seq_pattern_position[seq_no] = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
-              end
-              chord_pattern_position = 0
-              reset_external_clock()
-              reset_pattern() -- todo needs to calculate new transport- not just reset pattern!
-  
-            -- Cue up a new pattern        
-            else 
-              print("New pattern queued; disabling arranger")
-              if pattern_copy_performed == false then
-                pattern_queue = y
+              -- Resets current active_chord_pattern immediately if transport is stopped
+              if y == active_chord_pattern and transport_active == false then
+                print("Manual reset of current pattern; disabling arranger")
                 params:set("arranger", 1)
+                pattern_queue = false
+                -- seq_pattern_position = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
+                chord_pattern_position = 0
+                reset_external_clock()
+                reset_pattern()
+                -- tells dash to show RST rather than 1.0
+                if arranger_position == 1 and chord_pattern_position == 0 then
+                  reset_arrangement()
+                end
+                
+              -- Manual jump to queued pattern  
+              elseif y == pattern_queue and transport_active == false then
+                print("Manual jump to queued pattern")
+                
+                pattern_queue = false
+                set_chord_pattern(y)
+                for seq_no = 1, 2 do
+                  seq_pattern_position[seq_no] = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
+                end
+                chord_pattern_position = 0
+                reset_external_clock()
+                reset_pattern() -- todo needs to calculate new transport- not just reset pattern!
+    
+              -- Cue up a new pattern        
+              else 
+                print("New pattern queued; disabling arranger")
+                if pattern_copy_performed == false then
+                  pattern_queue = y
+                  params:set("arranger", 1)
+                end
               end
             end
           end
@@ -4145,17 +4212,6 @@ function key(n,z)
 
 
     if n == 1 then -- Key 1 is used to preview param changes before applying them on release
-      if view_key_count == 0 and screen_view_name ~= "Events" then
-        local param_id = menus[page_index][menu_index]
-        norns_interaction = "preview_param"
-        if menu_index ~= 0 then
-          preview_param = clone_param(menus[page_index][menu_index])
-        end
-        redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
-      end
-
-      -- KEY 2  
-    elseif n == 2 then
       if view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -4174,16 +4230,53 @@ function key(n,z)
             end
           end
      
-        elseif grid_view_name == "Chord" then       
+        elseif grid_view_name == "Chord" then      
           chord_generator_lite()
           -- gen_dash("chord_generator_lite") -- will run when called from event but not from keys
         elseif grid_view_name == "Seq" then       
           seq_generator("run")
         end
         grid_dirty = true
+      -- if view_key_count == 0 and screen_view_name ~= "Events" then
+      elseif screen_view_name ~= "Events" then
+        local param_id = menus[page_index][menu_index]
+        norns_interaction = "preview_param"
+        if menu_index ~= 0 then
+          preview_param = clone_param(menus[page_index][menu_index])
+        end
+        redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
+      end
+
+      -- KEY 2  
+    elseif n == 2 then
+      -- if view_key_count > 0 then -- Grid view key held down
+      --   if screen_view_name == "Chord+seq" then
+        
+      --     -- When Chord+Seq Grid View keys are held down, K3 runs Generator (and resets pattern+seq on internal clock)
+      --     generator()
+
+      --     -- This reset patterns and resyncs seq, but only for internal clock. todo p1 think on this. Not great and might be weird with new seq reset logic
+      --     if params:string("clock_source") == "internal" then
+      --       local prev_transport_state = transport_state
+      --       reset_external_clock()
+      --       -- don't reset arranger it's confusing if we generate on, say, pattern 3 and then Arranger is reset and we're now on pattern 1.
+      --       reset_pattern()
+      --       if transport_state ~= prev_transport_state then
+      --         transport_state = prev_transport_state
+      --         print(transport_state)
+      --       end
+      --     end
+     
+      --   elseif grid_view_name == "Chord" then      
+      --     chord_generator_lite()
+      --     -- gen_dash("chord_generator_lite") -- will run when called from event but not from keys
+      --   elseif grid_view_name == "Seq" then       
+      --     seq_generator("run")
+      --   end
+      --   grid_dirty = true
       
       -- Arranger Events strip held down
-      elseif arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
+      if arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
         arranger_queue = event_edit_segment
         -- jumping arranger queue cancels pattern change on key up
         if arranger_queue <= arranger_length then arranger_one_shot_last_pattern = false end -- instantly de-blink glyph
@@ -4712,20 +4805,16 @@ end
 function enc(n,d)
   -- Scrolling/extending Arranger, Chord, Seq patterns
   if n == 1 then
-    -- ------- SCROLL ARRANGER GRID VIEW--------
-    -- should do this but need to make sure copy+paste, etc... work
-    -- if grid_view_name == "Arranger" then
-    --   arranger_grid_offset = util.clamp(arranger_grid_offset + d, 0, max_arranger_length -  16)
-    -- end
-    --------- SCROLL PATTERN VIEWS -----------
+    ------- SCROLL ARRANGER/PATTERN GRID VIEWS--------
     if grid_view_name == "Chord" or screen_view_name == "Events" then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_chord_pattern_length -  rows)
-      grid_dirty = true
     elseif grid_view_name == "Seq" then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_seq_pattern_length -  rows)
-      grid_dirty = true
+    elseif grid_view_name == "Arranger" then
+      arranger_grid_offset = util.clamp(arranger_grid_offset + d, 0, max_arranger_length -  16)
     end
-  
+    grid_dirty = true
+
   -- n == ENC 2 ------------------------------------------------
   elseif n == 2 then
     if view_key_count > 0 then
@@ -4887,8 +4976,20 @@ end
 -- 4. restore preview value from step 1 (or just clone_param())
 function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
   local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
-  preview_event:set(prev_value) -- pass the min/max value to preview so we can delta it
+
+  local wrap = preview_event.wrap
+  if wrap then  -- temporarily disable parameter wrapping which messes with min/max logic
+    preview_event.wrap = false
+  end
+  
+  preview_event:set(prev_value) -- pass the prev_value to preview so we can delta it
+
   preview_event:delta(d)
+
+  if wrap then -- re-enable wrap which we might want for Set operations
+    preview_event.wrap = true
+  end
+
   local value = util.clamp(preview_event:get(), minimum, maximum) -- prevent min/max overlap
   if value ~= prev_value then
     params:set(selected_events_menu, value)
@@ -5229,16 +5330,16 @@ function redraw()
       screen.move(2,8)
       screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
       screen.move(2,28)
-      screen.text("ENC 2: rotate ↑↓")
+      screen.text("E2: rotate ↑↓")
       screen.move(2,38)
-      screen.text("ENC 3: transpose ←→")
+      screen.text("E3: transpose ←→")
       screen.level(4)
       screen.move(1,54)
       screen.line(128,54)
       screen.stroke()
       screen.level(3)      
       screen.move(2,62)
-      screen.text("(K2) GEN. CHORDS+SEQ")  
+      screen.text("(K1) NEW PATTERNS")  
       -- screen.move(128,62)
       -- screen.text_right("(K3) GEN. CHORDS+SEQ")      
 
@@ -5249,9 +5350,9 @@ function redraw()
       -- screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
       screen.text(string.upper(grid_view_name) .. " GRID")
       -- screen.move(2,28)
-      -- screen.text("ENC 2: Rotate ↑↓")
+      -- screen.text("E2: Rotate ↑↓")
       -- screen.move(2,38)
-      -- screen.text("ENC 3: Transpose ←→")
+      -- screen.text("E3: Transpose ←→")
       screen.level(4)
       screen.move(1,54)
       screen.line(128,54)
@@ -5263,16 +5364,18 @@ function redraw()
       screen.move(2,8)
       screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
       screen.move(2,28)
-      screen.text("ENC 2: rotate ↑↓")
+      screen.text("E2: rotate ↑↓")
       screen.move(2,38)
-      screen.text("ENC 3: transpose ←→")
+      screen.text("E3: transpose ←→")
+      screen.move(2,48)
+      screen.text("Tap pattern A-D: mute")
       screen.level(4)
       screen.move(1,54)
       screen.line(128,54)
       screen.stroke()
       screen.level(3)      
       screen.move(2,62)
-      screen.text("(K2) GEN. CHORDS")    
+      screen.text("(K1) NEW PATTERN")    
       -- screen.move(128,62)
       -- screen.text_right("(K3) GEN. CHORDS")     
         
@@ -5282,13 +5385,13 @@ function redraw()
       screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
       
       screen.move(2,28)
-      screen.text("ENC 2: rotate ↑↓")
+      screen.text("E2: rotate ↑↓")
       
       screen.move(2,38)
-      screen.text("ENC 3: transpose ←→")
+      screen.text("E3: transpose ←→")
 
       screen.move(2,48)
-      screen.text("Tap pattern to (un)mute")
+      screen.text("Tap SEQ 1-2: mute")
       
       screen.level(4)  
       screen.move(1,54)
@@ -5296,7 +5399,7 @@ function redraw()
       screen.stroke()
       screen.level(3)      
       screen.move(2,62)
-      screen.text("(K2) GEN. SEQ")  
+      screen.text("(K1) NEW PATTERN")  
       -- screen.move(128,62)
       -- screen.text_right("(K3) GEN. SEQ")  
       end
@@ -5308,7 +5411,7 @@ function redraw()
     screen.text("ARRANGER SEGMENT " .. event_edit_segment)
     -- todo: might be cool to add a scrollable (K2) list of events in this segment here
     screen.move(2,38)
-    screen.text("ENC 3: shift segments ←→")
+    screen.text("E3: shift segments ←→")
     screen.level(4)
     screen.move(1,54)
     screen.line(128,54)
@@ -5324,7 +5427,7 @@ function redraw()
     screen.move(2,28)
     screen.text("Hold+tap: paste events")
     screen.move(2,38)
-    screen.text("ENC 3: shift segments ←→")
+    screen.text("E3: shift segments ←→")
     screen.level(4)
     screen.move(1,54)
     screen.line(128,54)
@@ -5334,16 +5437,6 @@ function redraw()
     screen.text("(K2) CUE SEG.")    
     screen.move(82,62)
     screen.text("(K3) EVENTS")
-
-  -- Chord patterns held down
-  -- --        elseif x == 16 and y <5 then  --Key DOWN events for pattern switcher. Key UP events farther down in function.
-  --       pattern_key_count = pattern_key_count + 1
-  --       pattern_keys[y] = 1
-  --       if pattern_key_count == 1 then
-  --         pattern_copy_source = y
-  --       elseif pattern_key_count > 1 then
-  --         print("Copying pattern " .. pattern_copy_source .. " to pattern " .. y)
-  --         pattern_copy_performed = true
           
   -- tooltips for interacting with chord patterns      
   elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this
@@ -5559,11 +5652,8 @@ function redraw()
           local range = params:get_range(param_id)
           local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
           local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
-
           local session_menu_txt = q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf
-
-
-          -- local session_menu_txt = first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. params:string(param_id) .. menu_value_suf
+          
           screen.text(session_menu_txt)
         else  
           screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
