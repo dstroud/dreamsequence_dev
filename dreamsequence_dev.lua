@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240521 @modularbeat
+-- 240523 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -788,8 +788,8 @@ function init()
   grid_view_keys = {}
   grid_view_name = grid_views[2]
   math.randomseed(os.time()) -- doesn't seem like this is needed but not sure why
-  cycle_1_16 = 16
-  slow_pulse_0_3 = 1
+  cycle_1_16 = 1
+  led_pulse = 0
   fast_blinky = 0
   screen_view_name = "Session"
   pages = {"SONG►", "CHORD", "SEQ 1", "SEQ 2", "MIDI HARMONIZER", "◀CV HARMONIZER"}
@@ -1003,7 +1003,7 @@ function init()
       end
       arranger_queue = nil
       arranger_one_shot_last_pattern = false -- Added to prevent 1-pattern arrangements from auto stopping.
-      pattern_queue = false
+      set_pattern_queue(false)
       for seq_no = 1, 2 do
         seq_pattern_position[seq_no] = 0
         play_seq[seq_no] = false
@@ -2319,16 +2319,9 @@ end
 function countdown()
   calc_seconds_remaining()
   cycle_1_16 = util.wrap(cycle_1_16 + 1, 1, 16)
-  local rise_fall_1_8 = cycle_1_16 > 8 and (17 - cycle_1_16) or cycle_1_16
-  -- 3x pause at top
-  local slow_pulse_0_3_tab = {3,2,1,0,0,0,1,2}
-  slow_pulse_0_3 = slow_pulse_0_3_tab[util.wrap(cycle_1_16, 1, 8)]
-  
+  local led_pulse_tab = {0,0,0,1,2,3,2,1} -- 3x pause at top
+  led_pulse = led_pulse_tab[util.wrap(cycle_1_16, 1, 8)]
   fast_blinky = fast_blinky ~ 1
-  -- if fast_blinky == 0 then
-  --   slow_blinky = slow_blinky ~ 1
-  -- end
-
   grid_dirty = true -- for fast_blinky scrolling pattern indicator.
 end
 
@@ -2450,7 +2443,7 @@ end
 function reset_pattern() -- todo: Also have the chord readout updated (move from advance_chord_pattern to a function)
   transport_state = "stopped"
   print(transport_state)
-  pattern_queue = false
+  set_pattern_queue(false)
   for seq_no = 1, 2 do
     seq_pattern_position[seq_no] = 0
   end
@@ -2489,13 +2482,14 @@ end
 
 
 function advance_chord_pattern()
-  local debug = true
+  local debug = false
 
   chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
   local arrangement_reset = false
+  local arranger_param = params:string("arranger") == "On"
 
   -- Advance arranger sequence if enabled
-  if params:string("arranger") == "On" then
+  if arranger_param then
 
     -- arranger_ending() moved to pre-action so this can be used for events, too
     
@@ -2537,6 +2531,7 @@ function advance_chord_pattern()
         -- changed from wrap to a check if incremented arranger_position exceeds seq_pattern_length
         arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
         set_chord_pattern(arranger_padded[arranger_position])
+        update_pattern_queue()
         arranger_queue = nil
       end
       
@@ -2550,13 +2545,13 @@ function advance_chord_pattern()
   -- If arrangement was not just reset, update chord position. 
   if arrangement_reset == false then
     if chord_pattern_position >= chord_pattern_length[active_chord_pattern] or arranger_retrig then
-      if pattern_queue then
+      if arranger_param == false and pattern_queue then -- make arranger into local bool check (used above)
         set_chord_pattern(pattern_queue)
-        pattern_queue = false
+        set_pattern_queue(false)
       end
       chord_pattern_position = 1
       arranger_retrig = false
-    else  
+    else
       chord_pattern_position = util.wrap(chord_pattern_position + 1, 1, chord_pattern_length[active_chord_pattern])
     end
 
@@ -2564,10 +2559,9 @@ function advance_chord_pattern()
       do_events()
       gen_dash("advance_chord_pattern")
     end
-    
-    local x = chord_pattern[active_chord_pattern][chord_pattern_position]
 
     -- Play the chord
+    local x = chord_pattern[active_chord_pattern][chord_pattern_position]
     if x > 0 and params:get("chord_mute") == 1 then
       update_chord(x)
       play_chord()
@@ -2616,14 +2610,17 @@ function arranger_ending()
 end
 
 
--- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false. arranger_active will be false until Arranger is re-synched/resumed.
--- Also sets pattern_queue to false to clear anything previously set
+-- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false
+-- arranger_active will be false until Arranger is re-synched/resumed
+-- Also updates pattern_queue
 function update_arranger_active()
-  if params:string("arranger") == "Off" then 
+  if params:string("arranger") == "Off" then
     arranger_active = false
+    set_pattern_queue(false)
+
   elseif params:string("arranger") == "On" then
     if chord_pattern_position == 0 then arranger_active = true end
-    pattern_queue = false
+    update_pattern_queue()
   end
   gen_dash("update_arranger_active")
 end  
@@ -3467,7 +3464,7 @@ end
 
 function grid_redraw()
   local fast_blinky = fast_blinky
-  local slow_pulse_0_3 = slow_pulse_0_3
+  local led_pulse = led_pulse
   
   g:all(0)
   
@@ -3485,7 +3482,7 @@ function grid_redraw()
         -- set pattern levels, -2 from what we want shown due to layering
         if y_offset == event_edit_step and x == event_edit_lane then
           -- selected step pulses if not saved, otherwise, solid
-          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (15 - length_led - (slow_pulse_0_3 * 2)) or (15 - length_led))
+          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (15 - length_led - (led_pulse * 2)) or (15 - length_led))
         elseif events[event_edit_segment][y_offset][x] ~= nil then
           -- populated steps are medium brighness
           pattern_led = pattern_led + 7 - length_led
@@ -3535,13 +3532,44 @@ function grid_redraw()
     if grid_view_name == "Arranger" then
       g:led(16, 6 + extra_rows, 15)
       
-      
-      ----------------------------------------------------------------------------
-      -- Arranger shifting rework here
-      ----------------------------------------------------------------------------
+      ----------------------
+      -- Arranger shifting 
+      ------------------------
       if arranger_loop_key_count > 0 then
-        -- x_draw_shift = 0
+
         local in_bounds = event_edit_segment <= arranger_length -- some weird stuff needs to be handled if user is shifting events past the end of the pattern length
+
+        -- 3 functions for needed for each logic section
+        -- todo see if these can be used for shift in other direction
+        local function get_patterns(x_offset, y)
+          local arranger_led = nil
+          if y == arranger[x_offset] then 
+            arranger_led = 15    -- regular segments
+          elseif in_bounds and y == arranger_padded[x_offset] then 
+            arranger_led = 3   -- dim padded segments
+          end
+          return(arranger_led)
+        end
+        
+        -- needs to be passed x_offset which can be modified by each section 
+        local function draw_patterns_playheads(x, y, x_offset, arranger_led)
+          if x_offset == arranger_position and arranger_led ~= 15 then
+            arranger_led = (arranger_led or 0) + 3
+          elseif x_offset == arranger_queue then
+            arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+          end
+
+          if arranger_led then
+            g:led(x, y, arranger_led)
+          end
+        end
+
+        local function draw_events(x, x_offset)
+          g:led(x, 5, (events[x_offset] ~= nil 
+          and events[x_offset].populated or 0) > 0 
+          and 15 or x_offset > arranger_length and 3 or 7)
+        end
+                
         if d_cuml >= 0 then -- Shifting arranger pattern to the right and opening up this many segments between event_edit_segment and event_edit_segment + d_cuml
    
         ------------------------------------------------
@@ -3553,47 +3581,45 @@ function grid_redraw()
         --  Remaining are in the "gap" and we need to grab the previous pattern and repeat it
           for x = 16, 1, -1 do -- draw from right to left
             local x_offset = x + arranger_grid_offset -- Grid x + the offset for whatever page or E1 shift is happening
-
-            for y = 1,4 do
-              g:led(x, y, x_offset == arranger_position and 6                                               -- playhead
-                or x_offset == arranger_queue and 4                                                          -- queued
-                or x_offset <= (arranger_length + (in_bounds and d_cuml or 0)) and 2                       -- seq length
-                or 0)
-            end
             
             -- group 1.
             if x_offset >= event_edit_segment + d_cuml then
               local x_offset = x_offset - d_cuml
-              for y = 1,4 do -- patterns
-                if in_bounds then
-                  if y == arranger_padded[x_offset] then g:led(x, y, x_offset == arranger_position and 9 or 7) end -- dim padded segments
-                end
-                if y == arranger[x_offset] then g:led(x, y, 15) end -- regular segments
+              
+              for y = 1, 4 do -- patterns
+                arranger_led = get_patterns(x_offset, y)
+                local x_offset = x + arranger_grid_offset -- revert x_offset
+                draw_patterns_playheads(x, y, x_offset, arranger_led)
               end
-              g:led(x, 5, (events[x_offset] ~= nil and events[x_offset].populated or 0) > 0 and 15 or x_offset > arranger_length and 3 or 7) -- events
+
+              draw_events(x, x_offset)
               
             elseif x_offset < event_edit_segment then
-              for y = 1,4 do -- patterns
-                if y == arranger_padded[x_offset] then g:led(x, y, x_offset == arranger_position and 9 or 7) end -- dim padded segments
-                if y == arranger[x_offset] then g:led(x, y, 15) end -- regular segments
-              end
-              -- if x == 3 then print("2") end
-              g:led(x, 5, (events[x_offset] ~= nil and events[x_offset].populated or 0) > 0 and 15 or x_offset > arranger_length and 3 or 7) -- events
               
+              for y = 1, 4 do -- patterns
+                arranger_led = get_patterns(x_offset, y)
+                draw_patterns_playheads(x, y, x_offset, arranger_led)
+              end
+              
+              draw_events(x, x_offset)
+
             else
               -- no need to do anything with patterns if extending beyond arranger_length
-              -- can still move around events beyond
+              -- can still move around events beyond extent of arranger, though
               if in_bounds then
                 local pattern_padded = arranger_padded[math.max(event_edit_segment - 1, 1)]
-                for y = 1,4 do -- patterns
-                  if y == pattern_padded then g:led(x, y, x_offset == arranger_position and 9 or 7) end
+
+                for y = 1, 4 do -- patterns
+                  arranger_led = y == pattern_padded and 3 or nil
+                  draw_patterns_playheads(x, y, x_offset, arranger_led)
                 end
-                g:led(x, 5, 7)
+
+                g:led(x, 5, 7)  -- arranger length indicator
               else
-                g:led(x, 5, 3)
+                g:led(x, 5, 3)  -- always draw the event strip
               end
             end
-          end  
+          end
             
         
         ------------------------------------------------
@@ -3605,31 +3631,17 @@ function grid_redraw()
         else
           for x = 1, 16 do
             local x_offset = x + arranger_grid_offset -- Grid x + the offset for whatever page or E1 shift is happening
-            
-            -- draw playhead, arranger_queue, adjusted sequence length, blanks
-            if in_bounds then
-              for y = 1,4 do 
-                g:led(x, y, x_offset == arranger_position and 6                                             -- playhead
-                  or x_offset == arranger_queue and 4                                                           -- queued
-                  or x_offset <= (arranger_length + d_cuml) and 2                                           -- seq length
-                  or 0)                                    
-              end
-            else
-              for y = 1,4 do
-                g:led(x, y, x_offset == arranger_position and 6                                             -- playhead
-                  or x_offset == arranger_queue and 4                                                           -- queued
-                  or x_offset <= arranger_length and x_offset < (d_cuml + event_edit_segment) and 2         -- seq length
-                  or 0)
-              end              
-            end  
-
             -- Redefine x_offset only for group #1: patterns that need to be shifted left. Group 2 will be handled as usual
             local x_offset = (x_offset >= event_edit_segment + d_cuml) and (x_offset - d_cuml) or x_offset
-            for y = 1,4 do -- patterns
-              if y == arranger_padded[x_offset] then g:led(x, y, x_offset == arranger_position and 9 or 7) end -- dim padded segments
-              if y == arranger[x_offset] then g:led(x, y, 15) end -- regular segments
+
+            for y = 1, 4 do
+              arranger_led = get_patterns(x_offset, y)
+              local x_offset = x + arranger_grid_offset -- revert x_offset
+              draw_patterns_playheads(x, y, x_offset, arranger_led)
             end
-            g:led(x, 5, (events[x_offset] ~= nil and events[x_offset].populated or 0) > 0 and 15 or x_offset > arranger_length and 3 or 7) -- events
+
+            draw_events(x, x_offset)
+
           end -- of drawing for negative d_cuml shift              
         end
       
@@ -3637,15 +3649,41 @@ function grid_redraw()
         for x = 1, 16 do
           local x_offset = x + arranger_grid_offset
           for y = 1,4 do
-            g:led(x,y, x_offset == arranger_position and 6 or x_offset == arranger_queue and 4 or x_offset <= arranger_length and 2 or 0)
-            if y == arranger_padded[x_offset] then g:led(x, y, x_offset == arranger_position and 9 or 7) end
-            if y == arranger[x_offset] then g:led(x, y, 15) end
+            local arranger_led = nil
+
+            arranger_led = y == arranger[x_offset] and 15 or (y == arranger_padded[x_offset] and 3) -- actual/padded segments
+          
+            if x_offset == arranger_position and arranger_led ~= 15 then  -- playhead and queued position pulses
+              arranger_led = (arranger_led or 0) + 3
+            elseif x_offset == arranger_queue then
+              arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+            end
+
+            if arranger_led then
+              g:led(x, y, arranger_led)
+            end
+
           end
+
           -- Events strip
-          g:led(x, 5, (events[x_offset] ~= nil and events[x_offset].populated or 0) > 0 and 15 or x_offset > arranger_length and 3 or 7)
+          local strip_led = (events[x_offset] ~= nil and events[x_offset].populated or 0) > 0 and 15 or x_offset > arranger_length and 3 or 7
+
+          if arranger_grid_offset > 0 then
+            if x == 1 then
+              local dim = strip_led == 15 and 4 or strip_led == 7 and 2 or 1 -- amount to dim when flickering
+              strip_led = strip_led - (fast_blinky * dim)
+            end
+          end
+
+          if (arranger_length - arranger_grid_offset) > 16 and (x == 16) then
+            local dim = strip_led == 15 and 4 or 2 -- simplified here as only 2 possibilities exist
+            strip_led = strip_led - (fast_blinky * dim)
+          end
+
+          g:led(x, 5, strip_led)
         end
       end
-  
+
       -- enable Arranger, change playback mode
       g:led(1, 8 + extra_rows, params:get("arranger") == 2 and 15 or 4)
       g:led(2, 8 + extra_rows, params:get("playback") == 2 and 15 or 4)
@@ -3663,24 +3701,17 @@ function grid_redraw()
       end
       
     elseif grid_view_name == "Chord" then   -- CHORD GRID REDRAW
-      local next_pattern_indicator = nil
-      if params:string("arranger") == "On" and arranger_one_shot_last_pattern == false then
-        next_pattern_indicator = arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)]
-      else
-        next_pattern_indicator = pattern_queue or active_chord_pattern
-      end
 
-      -- chord pattern selector leds
-      local mute = params:get("chord_mute") == 2 
-      local level_high = mute and (15 - (slow_pulse_0_3 * 2)) or 15
-      local level_med = mute and (7 - slow_pulse_0_3 ) or 7
-      local level_low = mute and (3 - slow_pulse_0_3) or 3
-      local level_next = (chord_pattern_position < chord_pattern_length[active_chord_pattern]) and level_med or (7 - (fast_blinky * 2))
+      local mute = params:get("chord_mute") == 2
+      local level_high = mute and (15 - (fast_blinky * 4)) or 15
+      local level_next = 7 - led_pulse
+      local level_med = 7
+      local level_low = 3
 
       for i = 1, 4 do
         if i == active_chord_pattern then
           g:led(16, i, level_high)
-        elseif i == next_pattern_indicator then
+        elseif i == pattern_queue then
           g:led(16, i, level_next)
         else
           g:led(16, i, pattern_keys[i] and level_med or level_low)
@@ -3690,8 +3721,6 @@ function grid_redraw()
       g:led(16, 7 + extra_rows, 15) -- grid view selector
       
       -- chord playhead
-      -- local chord_pattern_position_offset = chord_pattern_position - pattern_grid_offset
-
       for i = 1, 14 do                                                               
         g:led(i, chord_pattern_position - pattern_grid_offset, 3)
       end
@@ -3757,10 +3786,11 @@ function grid_redraw()
         
       end
 
+
       -- active seq selector
       for y = 1, 2 do
         if params:get("seq_mute_"..y) == 2 then -- muted, pulses
-          g:led(16, y, active_seq_pattern == y and (15 - (slow_pulse_0_3 * 2)) or (3 - slow_pulse_0_3) or 3)
+          g:led(16, y, active_seq_pattern == y and (15 - (fast_blinky * 4)) or (3 - fast_blinky) or 3)
         else
           g:led(16, y, active_seq_pattern == y and 15 or 3)
         end
@@ -3771,6 +3801,34 @@ function grid_redraw()
   g:refresh()
 end
 
+
+function set_grid_view(new_view)
+  local current_view = grid_view_name
+  grid_view_name = new_view
+  if current_view ~= new_view then -- actions to take if view changed
+    if new_view == "Chord" then
+      cycle_1_16 = 1 -- restart pulse cycle so upcoming pattern is immediately visible
+      led_pulse = 0
+      grid_dirty = true
+    end
+  end
+end
+
+
+function set_pattern_queue(new_pattern)
+  local current_pattern = pattern_queue
+  pattern_queue = new_pattern
+  if current_pattern ~= new_pattern then -- actions to take if pattern q changed
+    cycle_1_16 = 1 -- restart pulse cycle for immediate feedback
+    led_pulse = 0
+    grid_dirty = true
+  end
+end
+
+
+function update_pattern_queue() -- run after changes are made to arranger or arranger pos (arranger_shift, keys, etc...)
+  set_pattern_queue(arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)])
+end
 
 -- GRID KEYS
 -- todo p1 put in some top level checks so we can break this up into functions or something navigatable
@@ -3878,11 +3936,10 @@ function g.key(x,y,z)
         
         table.insert(grid_view_keys, y - extra_rows)
         if view_key_count == 1 then
-          grid_view_name = grid_views[y - extra_rows - 5]
+          set_grid_view(grid_views[y - extra_rows - 5])
         elseif view_key_count > 1 and (grid_view_keys[1] == 7 and grid_view_keys[2] == 8) or (grid_view_keys[1] == 8 and grid_view_keys[2] == 7) then
           screen_view_name = "Chord+seq"
         end
-        cycle_1_16 = 16 -- reset slow pulse for immediate visual indication of mute status
       end
       
     --ARRANGER KEY DOWN-------------------------------------------------------
@@ -3914,12 +3971,9 @@ function g.key(x,y,z)
       
       -- ARRANGER SEGMENT CHORD PATTERNS
       elseif y < 5 and interaction ~= "arranger_shift" then
-        if y == arranger[x_offset] then
-          arranger[x_offset] = 0
-        else
-          arranger[x_offset] = y
-        end
+        arranger[x_offset] = y == arranger[x_offset] and 0 or y  -- change arranger segment
         gen_arranger_padded()
+        update_pattern_queue()
         
         -- allow pasting of events while setting patterns (but not the other way around)
         if interaction == "event_copy" then
@@ -3957,20 +4011,11 @@ function g.key(x,y,z)
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = 0
         else
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
-          
-          -- -- option A:
-          -- -- plays Chord when pressing on a blank Grid key
-          -- if transport_state == "stopped" or transport_state == "paused" then
-          --   update_chord(x)
-          --   play_chord()
-          -- end
-
         end
 
         chord_no = util.wrap(x, 1, 7) + ((params:get("chord_type") + 2) == 4 and 7 or 0) -- or 0
         gen_chord_readout()
 
-        -- -- option B:
         -- plays Chord when pressing on any Grid key (even turning chord off)
         if transport_state == "stopped" or transport_state == "paused" then
           update_chord(x)
@@ -3990,7 +4035,6 @@ function g.key(x,y,z)
           params:set("chord_mute", 3 - params:get("chord_mute"))
           -- to sync phase of slow_pulse on keypress
           -- this might cause other issues depending on where else slow_pulse is used
-          cycle_1_16 = 16
         else
 
           interaction = "chord_pattern_copy"
@@ -4072,7 +4116,7 @@ function g.key(x,y,z)
       view_key_count = math.max(view_key_count - 1, 0)
       table.remove(grid_view_keys, tab.key(grid_view_keys, y))
       if view_key_count > 0 then
-        grid_view_name = grid_views[grid_view_keys[1] - 5]
+        set_grid_view(grid_views[grid_view_keys[1] - 5])
         
         if view_key_count > 1 and (grid_view_keys[1] == 7 and grid_view_keys[2] == 8) or (grid_view_keys[1] == 8 and grid_view_keys[2] == 7) then
           screen_view_name = "Chord+seq"
@@ -4096,8 +4140,6 @@ function g.key(x,y,z)
               if y == active_chord_pattern and transport_active == false then
                 print("Manual reset of current pattern; disabling arranger")
                 params:set("arranger", 1)
-                pattern_queue = false
-                -- seq_pattern_position = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
                 chord_pattern_position = 0
                 reset_external_clock()
                 reset_pattern()
@@ -4110,7 +4152,6 @@ function g.key(x,y,z)
               elseif y == pattern_queue and transport_active == false then
                 print("Manual jump to queued pattern")
                 
-                pattern_queue = false
                 set_chord_pattern(y)
                 for seq_no = 1, 2 do
                   seq_pattern_position[seq_no] = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
@@ -4120,11 +4161,11 @@ function g.key(x,y,z)
                 reset_pattern() -- todo needs to calculate new transport- not just reset pattern!
     
               -- Cue up a new pattern        
-              else 
+              else
                 print("New pattern queued; disabling arranger")
                 if pattern_copy_performed == false then
-                  pattern_queue = y
                   params:set("arranger", 1)
+                  set_pattern_queue(y)
                 end
               end
             end
@@ -4158,6 +4199,7 @@ function g.key(x,y,z)
         if arranger_loop_key_count == 0 then
           if interaction == "arranger_shift" then
             apply_arranger_shift()
+            update_pattern_queue()
           end
           interaction = nil
         end
@@ -4251,34 +4293,23 @@ function key(n,z)
     elseif n == 2 then
       -- if view_key_count > 0 then -- Grid view key held down
       --   if screen_view_name == "Chord+seq" then
-        
-      --     -- When Chord+Seq Grid View keys are held down, K3 runs Generator (and resets pattern+seq on internal clock)
-      --     generator()
-
-      --     -- This reset patterns and resyncs seq, but only for internal clock. todo p1 think on this. Not great and might be weird with new seq reset logic
-      --     if params:string("clock_source") == "internal" then
-      --       local prev_transport_state = transport_state
-      --       reset_external_clock()
-      --       -- don't reset arranger it's confusing if we generate on, say, pattern 3 and then Arranger is reset and we're now on pattern 1.
-      --       reset_pattern()
-      --       if transport_state ~= prev_transport_state then
-      --         transport_state = prev_transport_state
-      --         print(transport_state)
-      --       end
-      --     end
-     
       --   elseif grid_view_name == "Chord" then      
-      --     chord_generator_lite()
-      --     -- gen_dash("chord_generator_lite") -- will run when called from event but not from keys
       --   elseif grid_view_name == "Seq" then       
-      --     seq_generator("run")
       --   end
       --   grid_dirty = true
       
       -- Arranger Events strip held down
       if arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
+        local current_arranger_queue = arranger_queue
+        
         arranger_queue = event_edit_segment
-        -- jumping arranger queue cancels pattern change on key up
+        if current_arranger_queue ~= arranger_queue then
+          cycle_1_16 = 1 -- restart pulse cycle for immediate LED feedback
+          led_pulse = 0
+          grid_dirty = true
+        end
+
+        -- jumping arranger queue interrupts existing pattern change on key up
         if arranger_queue <= arranger_length then arranger_one_shot_last_pattern = false end -- instantly de-blink glyph
         grid_dirty = true
       
@@ -4444,36 +4475,11 @@ function key(n,z)
       -----------------------
     elseif n == 3 then
       -- if keys[1] == 1 then
-      -- if init_message ~= nil then
-      --   init_message = nil
-      
-      -- else
-        
       -- rework to enter chord/scale editor, maybe
       -- if view_key_count > 0 then -- Grid view key held down
       --   if screen_view_name == "Chord+seq" then
-        
-      --     -- When Chord+Seq Grid View keys are held down, K3 runs Generator (and resets pattern+seq on internal clock)
-      --     generator()
-
-      --     -- This reset patterns and resyncs seq, but only for internal clock. todo p1 think on this. Not great and might be weird with new seq reset logic
-      --     if params:string("clock_source") == "internal" then
-      --       local prev_transport_state = transport_state
-      --       reset_external_clock()
-      --       -- don't reset arranger it's confusing if we generate on, say, pattern 3 and then Arranger is reset and we're now on pattern 1.
-      --       reset_pattern()
-      --       if transport_state ~= prev_transport_state then
-      --         transport_state = prev_transport_state
-      --         print(transport_state)
-      --       end
-      --     end
-     
       --   elseif grid_view_name == "Chord" then       
-      --     chord_generator_lite()
-      --     -- gen_dash("chord_generator_lite") -- will run when called from event but not from keys
       --   elseif grid_view_name == "Seq" then       
-      --     seq_generator("run")
-      --   end
       --   grid_dirty = true
       
         ---------------------------------------------------------------------------
@@ -5812,11 +5818,12 @@ function redraw()
       screen.level(0)
       screen.move(dash_x + 2,arranger_dash_y + 9)
 
+      local steps = math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0)
       if arranger_position == 0 then
         if arranger_queue == nil then
           screen.text("RST")
         elseif arranger_active == false then
-          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0))
+          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
         else
           screen.text(arranger_queue .. ".0")
         end
@@ -5825,12 +5832,12 @@ function redraw()
           screen.text(arranger_position .. ".0")
         elseif arranger_position == arranger_length then
           if params:string("playback") == "Loop" then
-            screen.text("LP." .. math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0))
+            screen.text("LP." .. steps)  -- todo font enhancement: use loop glyph
           else
-            screen.text("EN." .. math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0))
+            screen.text("EN." .. steps)  -- todo font enhancement: use loop glyph
           end
         else
-          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0))
+          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
         end
       else
         screen.text(arranger_position .. "." .. chord_pattern_position)
