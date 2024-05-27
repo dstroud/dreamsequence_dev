@@ -22,7 +22,7 @@ end
 -- Implement to do midi-style note-on. If you only implement play_note,
 -- you should implement a trivial note_on to call it.
 -- "properties" is an optional table of note mod properties. It should
--- contain only keys that the vocie says it can modulate in note_mod_targets
+-- contain only keys that the voice says it can modulate in note_mod_targets
 -- in the description.
 -- The note should be interepereted as pitch mod 128. High-value notes may be sent
 -- in the case two note-ons happen for the same note; this is possible in MPE situations.
@@ -75,7 +75,7 @@ function player:describe()
         supports_slew = false,
         modulate_description = "unsupported",
         note_mod_targets = {},
-        voice_mod_tarets = {},
+        voice_mod_targets = {}
     }
 end
 

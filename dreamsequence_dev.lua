@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240523 @modularbeat
+-- 240525 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -25,6 +25,7 @@ norns.version.required = 231114 -- rolling back for fates but 240221 required fo
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
+max_seqs = 3
 
 -- locals
 local latest_strum_coroutine = coroutine.running()
@@ -154,6 +155,7 @@ function init()
   -- Reverts changes to crow and jf that might have been made by DS
   function cleanup()
     seq_lattice:destroy()
+    nb:stop_all()
     clock.link.stop()
     
     if preinit_jf_mode == 0 then
@@ -161,7 +163,7 @@ function init()
       print("Restoring jf.mode to " .. preinit_jf_mode)
     end
 
-    -- clear our weirdo crow players so they don't persist to other scripts
+    -- clear weirdo crow players so they don't persist to other scripts
     for i = 1, 4 do             -- cv
       for j = 0, 4 do           -- env
         if i ~= j then
@@ -417,7 +419,6 @@ function init()
   ------------------
   -- SEQ PARAMS --
   ------------------
-  max_seqs = 2
 
   local note_map = {"Triad", "7th", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Drums"} -- used by all but chord
 
@@ -767,8 +768,6 @@ function init()
 
   grid_size()
 
-  -- pre_sync_val = nil
-  debug_change_count = 0 -- todo remove
   start = false
   send_continue = false
   transport_state = "stopped"
@@ -787,12 +786,19 @@ function init()
   grid_views = {"Arranger","Chord","Seq"}
   grid_view_keys = {}
   grid_view_name = grid_views[2]
-  math.randomseed(os.time()) -- doesn't seem like this is needed but not sure why
   cycle_1_16 = 1
   led_pulse = 0
   fast_blinky = 0
   screen_view_name = "Session"
-  pages = {"SONG►", "CHORD", "SEQ 1", "SEQ 2", "MIDI HARMONIZER", "◀CV HARMONIZER"}
+
+  -- initialize pages
+  pages = {"SONG►", "CHORD"}
+  for i = 1, max_seqs do
+    table.insert(pages, "SEQ " .. i)
+  end
+  table.insert(pages, "MIDI HARMONIZER")
+  table.insert(pages, "◀CV HARMONIZER")
+
   page_index = 1
   page_name = pages[page_index]
   menus = {}
@@ -824,11 +830,14 @@ function init()
   interaction = nil
   norns_interaction = nil
   events = {}
+  events_length = {}
   for segment = 1, max_arranger_length do
     events[segment] = {}
     for step = 1, max_chord_pattern_length do
       events[segment][step] = {}
     end
+
+    events_length[segment] = max_chord_pattern_length
   end
   
   -- event menu init
@@ -866,9 +875,9 @@ function init()
       chord_pattern[p][i] = 0
     end
   end
-  for p = 1, 2 do
+  for seq_no = 1, max_seqs do
     for i = 1, max_seq_pattern_length do
-      seq_pattern[p][i] = 0
+      seq_pattern[seq_no][i] = 0
     end
   end  
   pattern_grid_offset = 0 -- grid view scroll offset
@@ -1004,7 +1013,7 @@ function init()
       arranger_queue = nil
       arranger_one_shot_last_pattern = false -- Added to prevent 1-pattern arrangements from auto stopping.
       set_pattern_queue(false)
-      for seq_no = 1, 2 do
+      for seq_no = 1, max_seqs do
         seq_pattern_position[seq_no] = 0
         play_seq[seq_no] = false
       end
@@ -1044,42 +1053,41 @@ function init()
       end
     end
   
-  grid_dirty = true
+    grid_dirty = true
 
-  local function verify_events()
-    local warning = false
-    for segment = 1, max_arranger_length do
-      for step = 1, max_chord_pattern_length do
-        if events[segment][step] ~= nil then
-          for slot = 1, 16 do
-            local event = events[segment][step][slot]
-            if event ~= nil then
-              if events_lookup_index[event.id] == nil then
-                warning = true
-                print("WARNING: unable to locate " .. event.event_type .. " " ..  event.id .. " on event ["..segment.."][" .. step .. "][" .. slot .. "]")
-                
-                events[segment][step][slot] = nil
-                events[segment][step].populated = events[segment][step].populated - 1
-                -- If the step's new populated count == 0, decrement count of populated event STEPS in the segment
-                if (events[segment][step].populated or 0) == 0 then
-                  events[segment].populated = (events[segment].populated or 0) - 1
+    local function verify_events()
+      local warning = false
+      for segment = 1, max_arranger_length do
+        for step = 1, max_chord_pattern_length do
+          if events[segment][step] ~= nil then
+            for slot = 1, 16 do
+              local event = events[segment][step][slot]
+              if event ~= nil then
+                if events_lookup_index[event.id] == nil then
+                  warning = true
+                  print("WARNING: unable to locate " .. event.event_type .. " " ..  event.id .. " on event ["..segment.."][" .. step .. "][" .. slot .. "]")
+                  
+                  events[segment][step][slot] = nil
+                  events[segment][step].populated = events[segment][step].populated - 1
+                  -- If the step's new populated count == 0, decrement count of populated event STEPS in the segment
+                  if (events[segment][step].populated or 0) == 0 then
+                    events[segment].populated = (events[segment].populated or 0) - 1
+                  end
                 end
               end
             end
           end
         end
       end
+      if warning then
+        print("Possible options:")
+        print("1. Enable appropriate NB voice mods and restart")
+        print("2. Remove or modify " .. filename)
+        print("3. Continue using this .pset with event(s) removed")
+        print("DO NOT SAVE .PSET UNLESS YOU WISH TO LOSE AFFECTED EVENT(S)")
+      end
     end
-    if warning then
-      print("Possible options:")
-      print("1. Enable appropriate NB voice mods and restart")
-      print("2. Remove or modify " .. filename)
-      print("3. Continue using this .pset with event(s) removed")
-      print("DO NOT SAVE .PSET UNLESS YOU WISH TO LOSE AFFECTED EVENT(S)")
-    end
-  end
-  verify_events()
-
+    verify_events()
   end
 
 
@@ -1166,7 +1174,7 @@ params:set_action("ts_numerator",
     end
   )
 
-  for seq_no = 1, 2 do
+  for seq_no = 1, max_seqs do
     params:set_action("seq_div_index_"..seq_no,
       function(val) 
         _G["sprocket_seq_"..seq_no]:set_division(division_names[val][1]/global_clock_div/4)
@@ -1231,7 +1239,7 @@ params:set_action("ts_numerator",
     sprocket_16th.enabled = false   -- should we let this sprocket's phase be advanced when pausing?
     sprocket_chord.enabled = false
     sprocket_crow_clock.enabled = false
-    for seq_no = 1, 2 do
+    for seq_no = 1, max_seqs do
       _G["sprocket_seq_"..seq_no].enabled = false
     end
     sprocket_cv_harm.enabled = false
@@ -1242,7 +1250,7 @@ params:set_action("ts_numerator",
     sprocket_16th.enabled = true
     sprocket_chord.enabled = true
     sprocket_crow_clock.enabled = true
-    for seq_no = 1, 2 do
+    for seq_no = 1, max_seqs do
       _G["sprocket_seq_"..seq_no].enabled = true
     end
     sprocket_cv_harm.enabled = true
@@ -1553,7 +1561,7 @@ params:set_action("ts_numerator",
   -- some weirdness around order in which param actions fire. So we do via a function the first time. 
   init_sprocket_crow_clock(crow_clock_lookup[params:get("crow_clock_index")][1]/global_clock_div/4)
   
-  for seq_no = 1, 2 do
+  for seq_no = 1, max_seqs do
     -- function init_sprocket_seq_1(div)
     _G["init_sprocket_seq_"..seq_no] = function(div)
       -- sprocket_seq_1 = seq_lattice:new_sprocket{
@@ -1723,22 +1731,22 @@ end
 
 
 function gen_menu()
-  -- SONG MENU 
-  menus[1] = {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"}
+  -- SONG MENU
+  table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
   
   -- CHORD MENU
-  menus[2] = {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"}
+  table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})
  
   -- SEQ MENUS
-  for seq_no = 1, 2 do
-
-    menus[seq_no + 2] = {"seq_voice_"..seq_no, "seq_note_map_"..seq_no, "seq_note_priority_"..seq_no, "seq_polyphony_"..seq_no, "seq_start_on_"..seq_no, "seq_reset_on_"..seq_no, "seq_octave_"..seq_no, "seq_rotate_"..seq_no, "seq_shift_"..seq_no, "seq_div_index_"..seq_no, "seq_duration_index_"..seq_no, "seq_swing_"..seq_no, "seq_accent_"..seq_no, "seq_dynamics_"..seq_no, "seq_probability_"..seq_no}
+  for seq_no = 1, max_seqs do
+    table.insert(menus, {"seq_voice_"..seq_no, "seq_note_map_"..seq_no, "seq_note_priority_"..seq_no, "seq_polyphony_"..seq_no, "seq_start_on_"..seq_no, "seq_reset_on_"..seq_no, "seq_octave_"..seq_no, "seq_rotate_"..seq_no, "seq_shift_"..seq_no, "seq_div_index_"..seq_no, "seq_duration_index_"..seq_no, "seq_swing_"..seq_no, "seq_accent_"..seq_no, "seq_dynamics_"..seq_no, "seq_probability_"..seq_no})
   end
+  
   -- MIDI HARMONIZER MENU
-  menus[5] = {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"}
+  table.insert(menus, {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"})
 
   -- CV HARMONIZER MENU
-  menus[6] = {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index","cv_harm_swing", "crow_dynamics"}
+  table.insert(menus, {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index","cv_harm_swing", "crow_dynamics"})
 end
 
 
@@ -1876,7 +1884,7 @@ function reset_sprockets(from)
   reset_sprocket_measure("reset_sprockets")  
   reset_sprocket_chord("reset_sprockets")
   reset_sprocket_crow_clock("reset_sprockets")
-  for seq_no = 1, 2 do
+  for seq_no = 1, max_seqs do
     _G["reset_sprocket_seq_"..seq_no]("reset_sprockets")
   end
   reset_sprocket_cv_harm("reset_sprockets")
@@ -1914,7 +1922,7 @@ function reset_sprocket_crow_clock(from)
 end
 
 
-for seq_no = 1, 2 do
+for seq_no = 1, max_seqs do
   _G["reset_sprocket_seq_"..seq_no] = function(from)
     -- print("reset_sprocket_seq_"..seq_no.."() called by " .. from)
     _G["sprocket_seq_"..seq_no].division = division_names[params:get("seq_div_index_"..seq_no)][1]/global_clock_div/4
@@ -2344,7 +2352,7 @@ function clock.transport.start(sync_value)
     reset_sprockets("transport start")
   end
   
-  for seq_no = 1, 2 do
+  for seq_no = 1, max_seqs do
     if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
       play_seq[seq_no] = true
     end
@@ -2444,7 +2452,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   transport_state = "stopped"
   print(transport_state)
   set_pattern_queue(false)
-  for seq_no = 1, 2 do
+  for seq_no = 1, max_seqs do
     seq_pattern_position[seq_no] = 0
   end
   chord_pattern_position = 0
@@ -2562,11 +2570,13 @@ function advance_chord_pattern()
 
     -- Play the chord
     local x = chord_pattern[active_chord_pattern][chord_pattern_position]
-    if x > 0 and params:get("chord_mute") == 1 then
+    if x > 0 then
       update_chord(x)
-      play_chord()
+      if params:get("chord_mute") == 1 then
+        play_chord()
+      end
 
-      for seq_no = 1, 2 do
+      for seq_no = 1, max_seqs do
         local start_on = params:get("seq_start_on_"..seq_no)
         local reset_on = params:get("seq_reset_on_"..seq_no)
 
@@ -2579,7 +2589,7 @@ function advance_chord_pattern()
         end
       end
     else -- no chord but we might need to start/reset seq
-      for seq_no = 1, 2 do
+      for seq_no = 1, max_seqs do
         local start_on = params:get("seq_start_on_"..seq_no)
         local reset_on = params:get("seq_reset_on_"..seq_no)   
 
@@ -3320,7 +3330,7 @@ function advance_seq_pattern(seq_no)
     local player = params:lookup_param("seq_voice_raw_"..seq_no):get_player()
     local dynamics = (params:get("seq_dynamics_"..seq_no) * .01)
     local dynamics = dynamics + (dynamics * (_G["sprocket_seq_"..seq_no].downbeat and (params:get("seq_accent_"..seq_no) * .01) or 0))
-    local sequence = params:get("seq_note_priority_"..seq_no)
+    local priority = params:get("seq_note_priority_"..seq_no)
     local polyphony = params:get("seq_polyphony_"..seq_no)
     local note_map = "map_note_" .. params:get("seq_note_map_"..seq_no)
     local octave = params:get("seq_octave_"..seq_no)
@@ -3328,7 +3338,7 @@ function advance_seq_pattern(seq_no)
     
     -- todo dynamic function set by seq_mono_poly action
     -- todo p1 should also look at an optimized table of only active notes rather than having to iterate through all 14!
-    if sequence == 1 then -- mono
+    if priority == 1 then -- mono
       local x = seq_pattern[seq_no][seq_pattern_position[seq_no]]
       if x > 0 then
         local note = _G[note_map](x, octave) + 36
@@ -3336,7 +3346,7 @@ function advance_seq_pattern(seq_no)
       end
     
       
-    elseif sequence == 2 then -- Poly L-R
+    elseif priority == 2 then -- Poly L-R
       local count = 0
       for x = 1, 14 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][x] == 1 then 
@@ -3349,7 +3359,7 @@ function advance_seq_pattern(seq_no)
         end
       end
         
-    elseif sequence == 3 then -- poly R-L
+    elseif priority == 3 then -- poly R-L
       local count = 0
       for x = 14, 1, -1 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][x] == 1 then 
@@ -3362,7 +3372,7 @@ function advance_seq_pattern(seq_no)
         end
       end
       
-    else-- if sequence == 4 then -- pool
+    else-- if priority == 4 then -- pool
 
       local pool = {}
       for i = 1, 14 do
@@ -3470,38 +3480,29 @@ function grid_redraw()
   
   -- EVENT EDITOR
   if screen_view_name == "Events" then
-
-  -- Draw grid with 16 event lanes (columns) for each step in the selected pattern
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
-    for x = 1, 16 do -- event lanes
+    local lanes = 14
+    local saved_led = 7
+    local editing_led = 15
+    local playhead_led = 2
+    local length_led = 2
+    
+    -- Temporarily, just fix the loop length to underlying pattern (g.key disabled, too)
+    events_length[event_edit_segment] = length
+
+    -- Draw grid with [lanes] (columns) for each step in the selected pattern    
+    for x = 1, lanes do -- event lanes
       for y = 1, rows do -- pattern steps
         local y_offset = y + pattern_grid_offset
-        local length_led = 2
         local pattern_led = y_offset > length and 0 or length_led -- start out dimly highlighting in-range steps
 
         -- set pattern levels, -2 from what we want shown due to layering
         if y_offset == event_edit_step and x == event_edit_lane then
           -- selected step pulses if not saved, otherwise, solid
-          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (15 - length_led - (led_pulse * 2)) or (15 - length_led))
+          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (editing_led - length_led - (fast_blinky * 4)) or (editing_led - length_led))-- - (led_pulse))
         elseif events[event_edit_segment][y_offset][x] ~= nil then
           -- populated steps are medium brighness
-          pattern_led = pattern_led + 7 - length_led
-        end
-
-        -- blink the last row if pattern extends below grid view
-        if y == rows and length - pattern_grid_offset > rows then
-          pattern_led = pattern_led - fast_blinky
-
-        -- blink the first row if we've scrolled down  
-        elseif y == 1 and pattern_grid_offset > 0 then
-
-          -- not so fast! what about when pattern_led is already 0?
-          -- gonna cheat a little by setting it to 1 so we get a faint flicker
-          if pattern_led == 0 then
-            pattern_led = 1 - fast_blinky
-          else
-            pattern_led = pattern_led - fast_blinky
-          end
+          pattern_led = pattern_led + saved_led - length_led
         end
 
         -- playhead might work two ways
@@ -3510,14 +3511,33 @@ function grid_redraw()
         if arranger_padded[event_edit_segment] == active_chord_pattern then
           -- option a:
           if y_offset == chord_pattern_position then
-            pattern_led = math.min(pattern_led + 2, 15)
+            pattern_led = math.min(pattern_led + playhead_led, 15)
           end
         end
 
         g:led(x, y, pattern_led)
 
       end
-    end    
+    end
+
+    -- loop indicator
+    local loop_length = events_length[event_edit_segment]
+    for y = 1, rows do
+      local y_offset = y + pattern_grid_offset
+      local loop_led = (y_offset <= (loop_length or 0) and 15 or 3)
+
+      -- blink the first row if we've scrolled down  
+      if y == 1 and pattern_grid_offset > 0 then
+        loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
+
+      -- blink the last row if min of underlying pattern or event loop length extends below grid view
+      elseif y == rows and (math.min(length, loop_length) - pattern_grid_offset) > rows then
+        loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
+      end
+
+      g:led(16, y, loop_led)
+    end
+
   else -- ARRANGER, GRID, SEQ views
     -- draw dim keys for arranger/grid/seq selector
     for i = 6, 8 do
@@ -3566,7 +3586,7 @@ function grid_redraw()
 
         local function draw_events(x, x_offset)
           g:led(x, 5, (events[x_offset] ~= nil 
-          and events[x_offset].populated or 0) > 0 
+          and events[x_offset].populated or 0) > 0
           and 15 or x_offset > arranger_length and 3 or 7)
         end
                 
@@ -3788,7 +3808,7 @@ function grid_redraw()
 
 
       -- active seq selector
-      for y = 1, 2 do
+      for y = 1, max_seqs do
         if params:get("seq_mute_"..y) == 2 then -- muted, pulses
           g:led(16, y, active_seq_pattern == y and (15 - (fast_blinky * 4)) or (3 - fast_blinky) or 3)
         else
@@ -3802,14 +3822,19 @@ function grid_redraw()
 end
 
 
+function reset_grid_led_phase()
+  cycle_1_16 = 1 -- restart pulse cycle so upcoming pattern is immediately visible
+  led_pulse = 0
+  grid_dirty = true
+end
+
+
 function set_grid_view(new_view)
   local current_view = grid_view_name
   grid_view_name = new_view
   if current_view ~= new_view then -- actions to take if view changed
     if new_view == "Chord" then
-      cycle_1_16 = 1 -- restart pulse cycle so upcoming pattern is immediately visible
-      led_pulse = 0
-      grid_dirty = true
+      reset_grid_led_phase()
     end
   end
 end
@@ -3819,9 +3844,7 @@ function set_pattern_queue(new_pattern)
   local current_pattern = pattern_queue
   pattern_queue = new_pattern
   if current_pattern ~= new_pattern then -- actions to take if pattern q changed
-    cycle_1_16 = 1 -- restart pulse cycle for immediate feedback
-    led_pulse = 0
-    grid_dirty = true
+    reset_grid_led_phase()
   end
 end
 
@@ -3837,8 +3860,12 @@ function g.key(x,y,z)
   if z == 1 then
 
     if screen_view_name == "Events" then
-      -- Setting of events past the pattern length is permitted
-      event_key_count = event_key_count + 1
+      if x == 16 then -- loop length
+        -- temporarily disabled as event loop length needs implementation
+        -- events_length[event_edit_segment] = y + pattern_grid_offset
+      else
+        -- Setting of events past the pattern length is permitted
+        event_key_count = event_key_count + 1
       
         -- function g.key events loading
         -- First touched event is the one we edit, effectively resetting on key_count = 0
@@ -3923,6 +3950,7 @@ function g.key(x,y,z)
           
           print("Copy+paste event from segment " .. event_edit_segment .. "." .. event_edit_step .. " lane " .. event_edit_lane  .. " to " .. event_edit_segment .. "." .. (y + pattern_grid_offset) .. " lane " .. x)
         end
+      end
 
     -- view_key buttons  
     elseif x == 16 and y > 5 + extra_rows then
@@ -4088,7 +4116,7 @@ function g.key(x,y,z)
         end
       elseif x == 15 then
         params:set("seq_pattern_length_" .. active_seq_pattern, y + pattern_grid_offset)
-      elseif y <= 2 then -- pattern selector
+      elseif y <= max_seqs then -- pattern selector
         if grid_view_keys[1] == 8 then -- mute/unmute
           params:set("seq_mute_"..y, 3 - params:get("seq_mute_"..y))
         else -- switch seq grid view
@@ -4153,7 +4181,7 @@ function g.key(x,y,z)
                 print("Manual jump to queued pattern")
                 
                 set_chord_pattern(y)
-                for seq_no = 1, 2 do
+                for seq_no = 1, max_seqs do
                   seq_pattern_position[seq_no] = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
                 end
                 chord_pattern_position = 0
@@ -4250,7 +4278,7 @@ end
 function key(n,z)
   if z == 1 then
     -- keys[n] = 1
-    key_count = key_count + 1
+    key_count = (key_count or 0) + 1
 
 
     if n == 1 then -- Key 1 is used to preview param changes before applying them on release
@@ -4304,9 +4332,7 @@ function key(n,z)
         
         arranger_queue = event_edit_segment
         if current_arranger_queue ~= arranger_queue then
-          cycle_1_16 = 1 -- restart pulse cycle for immediate LED feedback
-          led_pulse = 0
-          grid_dirty = true
+          reset_grid_led_phase()
         end
 
         -- jumping arranger queue interrupts existing pattern change on key up
