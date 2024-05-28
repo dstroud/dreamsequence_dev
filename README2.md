@@ -1,5 +1,7 @@
 # Dreamsequence
 
+Edit 1 while RM2
+
 Chord-based sequencer, arpeggiator, and harmonizer for Monome Norns+Grid
 
 Required: Monome Norns (**240221 or later**) and Grid (16x8 or 16x16)
