@@ -829,6 +829,7 @@ function init()
   d_cuml = 0
   interaction = nil
   norns_interaction = nil
+  event_lanes = {}
   events = {}
   events_length = {}
   for segment = 1, max_arranger_length do
@@ -4531,26 +4532,16 @@ function key(n,z)
         if event_edit_active then
 
           local event_index = params:get("event_name")
+          local id = events_lookup[event_index].id
           local order = tonumber(events_lookup[event_index].order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
-
-          -- function or param
-          local event_type = events_lookup[event_index].event_type
+          local event_type = events_lookup[event_index].event_type -- function or param
           local value = params:get("event_value")
-          
-          -- trigger, discreet, continuous
-          local value_type = events_lookup[event_index].value_type
-          
-          -- Set, Increment, Wander, Random
-          local operation = params:string("event_operation") -- changed to id which will need to be looked up and turned into an id
+          local value_type = events_lookup[event_index].value_type -- continuous, trigger
+          local operation = params:string("event_operation") -- Set, Increment, Wander, Random
           local action = events_lookup[event_index].action
-          -- local args = events_lookup[event_index].args
-          
           local limit = params:string(operation == "Random" and "event_op_limit_random" or "event_op_limit")
-          -- variant for "Random" op -- todo p1 make sure we can store here and get it loaded into the right param correctly
-          -- local limit_random = params:string("event_op_limit_random")
           local limit_min = params:get("event_op_limit_min")
           local limit_max = params:get("event_op_limit_max")
-
           local probability = params:get("event_probability") -- todo p1 convert to 0-1 float?
           
           -- Keep track of how many events are populated in this step so we don't have to iterate through them all later
@@ -4570,7 +4561,7 @@ function key(n,z)
           if value_type == "trigger" then
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = events_lookup[event_index].id, 
+                id = id, 
                 order = order,
                 event_type = event_type,
                 value_type = value_type,
@@ -4580,7 +4571,7 @@ function key(n,z)
               }
               
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")
-            print(">> id = " .. events_lookup[event_index].id)
+            print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
@@ -4590,7 +4581,7 @@ function key(n,z)
           elseif operation == "Set" then
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = events_lookup[event_index].id, 
+                id = id, 
                 order = order,
                 event_type = event_type, 
                 value_type = value_type,
@@ -4600,7 +4591,7 @@ function key(n,z)
               }
               
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")     
-            print(">> id = " .. events_lookup[event_index].id)
+            print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
@@ -4612,7 +4603,7 @@ function key(n,z)
             if limit == "Off" then -- so clunky yikes
               events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = events_lookup[event_index].id, 
+                id = id, 
                 order = order,
                 event_type = event_type, 
                 value_type = value_type,
@@ -4623,7 +4614,7 @@ function key(n,z)
               else
               events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = events_lookup[event_index].id, 
+                id = id, 
                 order = order,
                 event_type = event_type, 
                 value_type = value_type,
@@ -4636,7 +4627,7 @@ function key(n,z)
             end
             
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")       
-            print(">> id = " .. events_lookup[event_index].id)
+            print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
@@ -4653,7 +4644,7 @@ function key(n,z)
            if limit == "Off" then -- so clunky yikes
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = events_lookup[event_index].id, 
+                id = id, 
                 order = order,
                 event_type = event_type, 
                 value_type = value_type,
@@ -4665,7 +4656,7 @@ function key(n,z)
             else
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = events_lookup[event_index].id, 
+                id = id, 
                 order = order,
                 event_type = event_type, 
                 value_type = value_type,
@@ -4678,7 +4669,7 @@ function key(n,z)
               }
             end  
             print("Saving to events[" .. event_edit_segment .."][" .. event_edit_step .."][" .. event_edit_lane .. "]")       
-            print(">> id = " .. events_lookup[event_index].id)
+            print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
             print(">> value_type = " .. value_type)
