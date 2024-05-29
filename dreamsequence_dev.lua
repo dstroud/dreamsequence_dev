@@ -194,12 +194,12 @@ function init()
   function init_events()
     events_lookup_names = {}  -- locals defined outside of function
     events_lookup_ids = {}
+
     for i = 1, #events_lookup do
       events_lookup_names[i] = events_lookup[i].name
       events_lookup_ids[i] = events_lookup[i].id
     end
-    
-    -- key = event_id, value = index
+
     events_lookup_index = tab.invert(events_lookup_ids)
     
     -- Used to derive the min and max indices for the selected event category (Song, Chord, Seq, etc...)
@@ -686,6 +686,9 @@ function init()
   params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
   params:hide("event_name")
   
+  params:add_number("event_lane", "Lane", 1, 14, 1) -- Selected event lane in event editor
+  params:hide("event_lane")
+
   -- options will be dynamically swapped out based on the current event_name param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
   event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
@@ -832,12 +835,13 @@ function init()
   event_lanes = {}
   events = {}
   events_length = {}
+  
+  -- init events table and events_length table
   for segment = 1, max_arranger_length do
     events[segment] = {}
     for step = 1, max_chord_pattern_length do
       events[segment][step] = {}
     end
-
     events_length[segment] = max_chord_pattern_length
   end
   
@@ -909,7 +913,7 @@ function init()
   chord_raw = next_chord
 
   -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
+  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
   
   
   -----------------------------
@@ -929,7 +933,15 @@ function init()
     -- need to save and restore nb voices which can change based on what mods are enabled
     -- reworked for seq2 but haven't tested
     voice = {}
-    local sources = {"chord_voice", "seq_voice_1", "seq_voice_2", "crow_voice", "midi_voice"}
+
+    local sources = {}
+    table.insert(sources, "chord_voice")
+    for seq_no = 1, max_seqs do
+      table.insert(sources, "seq_voice_"..seq_no)
+    end
+    table.insert(sources, "crow_voice")
+    table.insert(sources, "midi_voice")
+
     for i = 1, #sources do
       -- local param_string = sources[i].."_voice"
       -- local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
@@ -969,7 +981,14 @@ function init()
       params:set("clock_tempo", misc.clock_tempo or params:get("clock_tempo"))
 
       -- restore nb voices based on string
-      local sources = {"chord_voice", "seq_voice_1", "seq_voice_2", "crow_voice", "midi_voice"}
+      local sources = {}
+      table.insert(sources, "chord_voice")
+      for seq_no = 1, max_seqs do
+        table.insert(sources, "seq_voice_"..seq_no)
+      end
+      table.insert(sources, "crow_voice")
+      table.insert(sources, "midi_voice")
+
       for i = 1, #sources do
         -- local param_string = sources[i].."_voice"
         -- local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
@@ -1651,6 +1670,14 @@ end -- end of init
 -----------------------------------------------
   
 
+-- function screen_msg("msg")
+--   -- if msg == "event_new_lane" then
+    
+--   -- end
+--   screen_msg = msg
+-- end
+
+
 -- returns a dummy version of param with action stripped out 
 -- used to delta events, get min/max, and cue param changes with K1 held down
 function clone_param(id)
@@ -1838,7 +1865,15 @@ end
 
 -- updates voice selector options and sets (or resets) new param index after custom crow_out param changes
 function update_voice_params()
-  local sources = {"chord_voice", "seq_voice_1", "seq_voice_2", "crow_voice", "midi_voice"}
+  
+  local sources = {}
+  table.insert(sources, "chord_voice")
+  for seq_no = 1, max_seqs do
+    table.insert(sources, "seq_voice_"..seq_no)
+  end
+  table.insert(sources, "crow_voice")
+  table.insert(sources, "midi_voice")
+
   for i = 1, #sources do
     local param_string = sources[i]
     local prev_param_name = params:string(param_string)
@@ -3864,7 +3899,7 @@ function g.key(x,y,z)
       if x == 16 then -- loop length
         -- temporarily disabled as event loop length needs implementation
         -- events_length[event_edit_segment] = y + pattern_grid_offset
-      else
+      elseif x <= 14 then
         -- Setting of events past the pattern length is permitted
         event_key_count = event_key_count + 1
       
@@ -3873,6 +3908,7 @@ function g.key(x,y,z)
         if event_key_count == 1 then
           event_edit_step = y + pattern_grid_offset
           event_edit_lane = x
+          event_edit_lane_id = event_lanes[x] -- local??
           event_saved = false
 
           local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
@@ -3884,9 +3920,8 @@ function g.key(x,y,z)
             -- print("setting event_edit_status to " .. event_edit_status)
           end
 
-          -- If the event is populated, Load the Event vars back to the displayed param. Otherwise keep the last touched event's settings so we can iterate quickly.
+          -- If the event is populated, Load the Event vars back to the displayed param.
           if events[event_edit_segment][y + pattern_grid_offset][x] ~= nil then
-            
             events_index = 1
             selected_events_menu = events_menus[events_index]
 
@@ -3918,6 +3953,11 @@ function g.key(x,y,z)
             end
             if value ~= nil then params:set("event_value", value) end -- triggers don't save
             params:set("event_probability", events_path.probability)
+          else -- prompt to configure new lane
+            -- Otherwise keep the last touched event's settings so we can iterate quickly.
+            -- or maybe prompt to configure new lane somehow:
+            -- screen_msg = "event_lane_configure" -- new function, needs to be fleshed out
+
           end
           gen_menu_events()
           event_edit_active = true
@@ -4530,7 +4570,6 @@ function key(n,z)
         -- K3 TO SAVE EVENT
         ---------------------------------------
         if event_edit_active then
-
           local event_index = params:get("event_name")
           local id = events_lookup[event_index].id
           local order = tonumber(events_lookup[event_index].order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
@@ -4544,6 +4583,9 @@ function key(n,z)
           local limit_max = params:get("event_op_limit_max")
           local probability = params:get("event_probability") -- todo p1 convert to 0-1 float?
           
+          -- Set the event lane if needed
+          event_lanes[event_edit_lane] = id
+
           -- Keep track of how many events are populated in this step so we don't have to iterate through them all later
           local step_event_count = events[event_edit_segment][event_edit_step].populated or 0
 
@@ -4841,26 +4883,30 @@ function enc(n,d)
   -- n == ENC 2 ------------------------------------------------
   elseif n == 2 then
     if view_key_count > 0 then
-      local d = util.clamp(d, -1, 1)
+      -- local d = util.clamp(d, -1, 1) -- pref setting now
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
         rotate_pattern(grid_view_name, d)
         grid_dirty = true            
       end
    
-    elseif screen_view_name == "Events" and event_saved == false then
-      -- Scroll through the Events menus (name, type, val)
-      events_index = util.clamp(events_index + d, 1, #events_menus)
-      
-      selected_events_menu = events_menus[events_index]
-      
-    else
-      menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
-      selected_menu = menus[page_index][menu_index]
+    elseif screen_view_name == "Events" then
+      if event_edit_active == false then
+        params:delta("event_lane", d) -- change focus on individual event lanes
+      elseif event_saved == false then
+        -- Scroll through the Events menus (name, type, val)
+        events_index = util.clamp(events_index + d, 1, #events_menus)
+        
+        selected_events_menu = events_menus[events_index]
+        
+      else
+        menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
+        selected_menu = menus[page_index][menu_index]
 
-      if norns_interaction == "preview_param" and menu_index ~= 0 then
-        preview_param = clone_param(selected_menu)
+        if norns_interaction == "preview_param" and menu_index ~= 0 then
+          preview_param = clone_param(selected_menu)
+        end
+
       end
-
     end
     
   else -- n == ENC 3 -------------------------------------------------------------  
@@ -5337,11 +5383,7 @@ end
 -------------------------
 -- todo p1: this can be improved quite a bit by just having these custom screens be generated at the key/g.key level. Should be a fun refactor.
 function redraw()
-  -- if transport_active then
-    -- redraw_count = redraw_count + 1
-    -- print("redraw_count = "..redraw_count)
-  -- end
-  
+  -- screen.font_face(tab.key(screen.font_face_names, "norns"))
   screen.clear()
   local dash_x = 94
       
@@ -5492,15 +5534,87 @@ function redraw()
       screen.level(15)
       screen.move(2,8)
       if event_edit_active == false then
-        if key_countdown == 4 then
-          screen.text("ARRANGER SEGMENT " .. event_edit_segment .. " EVENTS")
-          screen.level(15)
-          screen.move(2,23)
-          screen.text("Grid: select event slot")
-          screen.move(2,33)
-          screen.text("1↓16: chord pattern step")
-          screen.move(2,43)
-          screen.text("1→16: event order")
+        if key_countdown == 4 then --  not deleting
+          -- screen.text("ARRANGER SEGMENT " .. event_edit_segment .. " EVENTS")
+        
+          --------------------------
+          -- Event lanes preview
+          --------------------------
+          local lane = params:get("event_lane")
+          local lookup = events_lookup[events_lookup_index[event_lanes[lane]]]  -- todo global + change_event()
+
+          -- draw boxes representing lanes maybe?
+          for i = 1, 14 do
+            screen.level(lane == i and 15 or 3)
+            if event_lanes[i] ~= nil then
+              screen.rect(1 + ((i - 1) * 9), 0, 6, 6)
+              -- screen.rect(0 + ((i - 1) * 9), 0, 10, 10)
+              screen.fill()
+            else
+              screen.rect(2 + ((i - 1) * 9), 1, 5, 5)
+              -- screen.rect(1 + ((i - 1) * 9), 1, 9, 9)
+              screen.stroke()
+            end
+            -- screen.level(15)
+            -- screen.move(5 + ((i - 1) * 9), 7)
+            -- screen.text_center(i)
+          end
+
+          -- local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
+          -- local menu_offset = scroll_offset_locked(lane, 10, 2) -- index, height, locked_row
+          -- prevent from scrolling as we're doing chunks of 3 lines at a time
+          local menu_offset = scroll_offset_locked(1, 10, 2) -- index, height, locked_row
+
+
+          local line = 1
+          local event_fields = {"category", "subcategory", "name"}  -- truncated version
+
+          for i = 1, #event_fields do
+            local debug = false
+            local menu_id = event_fields[i]
+            local event_val_string = lookup ~= nil and lookup[menu_id] or "Empty" -- local prob
+            
+            screen.move(2, line * 10 + 8 - menu_offset)
+            screen.level(15)
+            
+            local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
+          --   if events_index == i then
+          --     local range =
+          --       (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
+          --       and params:get_range(menu_id)
+          --       or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
+          --       or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
+
+          --     local single = menu_index == range[1] and (range[1] == range[2]) or false
+          --     local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
+          --     local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
+          --     local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+
+          --     if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+          --     if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+
+          --     screen.text(events_menu_txt)
+          --   else
+              
+          --     if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+          --     if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+              
+          --     screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+          --   end
+
+            screen.text(first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+
+            line = line + 1
+          end
+          
+          -- TBD
+          -- -- scrollbar
+          -- screen.level(10)
+          -- local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
+          -- local bar_height = 4 / #events_menus * 40
+          -- screen.rect(127, offset, 1, bar_height)
+          -- screen.fill()          
+          
           screen.level(4)
           screen.move(1,54)
           screen.line(128,54)
@@ -5510,6 +5624,7 @@ function redraw()
           screen.text("(K1 HOLD) DEL.")
           screen.move(128,62)
           screen.text_right("(K3) ARRANGER")
+
         else
           screen.level(15)      
           screen.move(36,33)
@@ -5621,7 +5736,7 @@ function redraw()
         screen.fill()
         screen.move(2,8)
         screen.level(0)
-        screen.text("SEG " .. event_edit_segment .. "." .. event_edit_step .. ", EVENT " .. event_edit_lane .. "/16")
+        screen.text("SEG " .. event_edit_segment .. "." .. event_edit_step .. ", EVENT " .. event_edit_lane .. "/14")
         screen.move(126,8)
         screen.text_right(event_edit_status)           
       
