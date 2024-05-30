@@ -686,7 +686,7 @@ function init()
   params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
   params:hide("event_name")
   
-  params:add_number("event_lane", "Lane", 1, 14, 1) -- Selected event lane in event editor
+  params:add_number("event_lane", "Lane", 1, 15, 1) -- Selected event lane in event editor
   params:hide("event_lane")
 
   -- options will be dynamically swapped out based on the current event_name param
@@ -3517,28 +3517,30 @@ function grid_redraw()
   -- EVENT EDITOR
   if screen_view_name == "Events" then
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
-    local lanes = 14
-    local saved_led = 7
-    local editing_led = 15
-    local playhead_led = 2
-    local length_led = 2
-    
-    -- Temporarily, just fix the loop length to underlying pattern (g.key disabled, too)
-    events_length[event_edit_segment] = length
+    local lanes = 15
+    local saved_level = 7
+    local editing_level = 15
+    local playhead_level = 3
+    local lane_locked_led = 2
+
+    -- For now, just fixing the loop length to underlying pattern (g.key disabled, too)
+    -- events_length[event_edit_segment] = length
 
     -- Draw grid with [lanes] (columns) for each step in the selected pattern    
     for x = 1, lanes do -- event lanes
       for y = 1, rows do -- pattern steps
         local y_offset = y + pattern_grid_offset
-        local pattern_led = y_offset > length and 0 or length_led -- start out dimly highlighting in-range steps
+        local pattern_led = event_lanes[x] == nil and 0 or lane_locked_led
+        local editing_event = y_offset == event_edit_step and x == event_edit_lane -- TRUE if this is the exact event position we're editing
+        -- local pattern_led = y_offset > length and 0 or length_level
 
         -- set pattern levels, -2 from what we want shown due to layering
-        if y_offset == event_edit_step and x == event_edit_lane then
-          -- selected step pulses if not saved, otherwise, solid
-          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (editing_led - length_led - (fast_blinky * 4)) or (editing_led - length_led))-- - (led_pulse))
+        if editing_event then
+          -- selected step flickers if not saved, otherwise, pulses
+          pattern_led = (event_edit_status ~= "(Saved)" and (editing_level - (fast_blinky * 4)) or (editing_level - led_pulse))-- - (led_pulse))
         elseif events[event_edit_segment][y_offset][x] ~= nil then
           -- populated steps are medium brighness
-          pattern_led = pattern_led + saved_led - length_led
+          pattern_led = pattern_led + saved_level
         end
 
         -- playhead might work two ways
@@ -3547,32 +3549,48 @@ function grid_redraw()
         if arranger_padded[event_edit_segment] == active_chord_pattern then
           -- option a:
           if y_offset == chord_pattern_position then
-            pattern_led = math.min(pattern_led + playhead_led, 15)
+            -- pattern_led = pattern_led + playhead_level-- math.min(pattern_led + playhead_level, 15)
+            -- show playhead on all but selected event
+            if not editing_event then
+              pattern_led = pattern_led + playhead_level
+            end
           end
+        end
+
+        -- pulse active event_lane
+        if not event_edit_active and x == params:get("event_lane") then
+          pattern_led = pattern_led - led_pulse + 6 -- up to level 15 for locked lanes
         end
 
         g:led(x, y, pattern_led)
 
       end
+
+
     end
 
-    -- loop indicator
-    local loop_length = events_length[event_edit_segment]
+    -- pattern length indicator
+    -- loop_length is for sub-loop within even
+    -- local loop_length = events_length[event_edit_segment]
     for y = 1, rows do
       local y_offset = y + pattern_grid_offset
-      local loop_led = (y_offset <= (loop_length or 0) and 15 or 3)
+      -- local loop_led = (y_offset <= (loop_length or 0) and 15 or 3)
+      local loop_led = (y_offset <= (length or 0) and 15 or 3)
+      
 
       -- blink the first row if we've scrolled down  
       if y == 1 and pattern_grid_offset > 0 then
         loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
 
       -- blink the last row if min of underlying pattern or event loop length extends below grid view
-      elseif y == rows and (math.min(length, loop_length) - pattern_grid_offset) > rows then
-        loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
+      -- elseif y == rows and (math.min(length, loop_length) - pattern_grid_offset) > rows then
+    elseif y == rows and (length - pattern_grid_offset) > rows then
+      loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
       end
 
       g:led(16, y, loop_led)
     end
+    
 
   else -- ARRANGER, GRID, SEQ views
     -- draw dim keys for arranger/grid/seq selector
@@ -3899,29 +3917,24 @@ function g.key(x,y,z)
       if x == 16 then -- loop length
         -- temporarily disabled as event loop length needs implementation
         -- events_length[event_edit_segment] = y + pattern_grid_offset
-      elseif x <= 14 then
-        -- Setting of events past the pattern length is permitted
+      else
+        local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
+
+        -- Setting of events beyond the pattern length is permitted
         event_key_count = event_key_count + 1
       
         -- function g.key events loading
         -- First touched event is the one we edit, effectively resetting on key_count = 0
         if event_key_count == 1 then
           event_edit_step = y + pattern_grid_offset
+          params:set("event_lane", x) -- todo can this replace event_lane??
           event_edit_lane = x
-          event_edit_lane_id = event_lanes[x] -- local??
           event_saved = false
 
-          local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
-          if events[event_edit_segment][y + pattern_grid_offset][x] == nil then
-            event_edit_status = "(New)"
-            -- print("setting event_edit_status to " .. event_edit_status)
-          else
-            event_edit_status = "(Saved)"
-            -- print("setting event_edit_status to " .. event_edit_status)
-          end
+          local event_edit_lane_id = event_lanes[x] -- used to determine if lane is configured or not
 
           -- If the event is populated, Load the Event vars back to the displayed param.
-          if events[event_edit_segment][y + pattern_grid_offset][x] ~= nil then
+          if events_path ~= nil then
             events_index = 1
             selected_events_menu = events_menus[events_index]
 
@@ -3930,6 +3943,8 @@ function g.key(x,y,z)
             local value = events_path.value
             local operation = events_path.operation
             local limit = events_path.limit or "Off"
+
+            event_edit_status = "(Saved)"
 
             params:set("event_category", param_option_to_index("event_category", events_lookup[index].category))
             change_category()
@@ -3953,19 +3968,36 @@ function g.key(x,y,z)
             end
             if value ~= nil then params:set("event_value", value) end -- triggers don't save
             params:set("event_probability", events_path.probability)
-          else -- prompt to configure new lane
-            -- Otherwise keep the last touched event's settings so we can iterate quickly.
-            -- or maybe prompt to configure new lane somehow:
-            -- screen_msg = "event_lane_configure" -- new function, needs to be fleshed out
 
+
+          elseif event_edit_lane_id ~= nil then -- load default event for locked lane
+
+            events_index = 1
+            selected_events_menu = events_menus[1]
+
+            local index = events_lookup_index[event_edit_lane_id]
+            local event = events_lookup[index] -- with unconfigured lanes, use event instead of event_path
+
+            event_edit_status = "(New)"
+
+            params:set("event_category", param_option_to_index("event_category", event.category)) -- see if this change can be applied above, too
+            change_category()
+            
+            params:set("event_subcategory", param_option_to_index("event_subcategory", event.subcategory))
+            change_subcategory()
+            
+            params:set("event_name", index)
+            change_event()
+
+          else -- what to load for unconfigured lanes?
+            event_edit_status = "(New)"
           end
           gen_menu_events()
           event_edit_active = true
           
         else -- Subsequent keys down paste event
-          local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
           -- But first check if the events we're working with are populated
-          local og_event_populated = events[event_edit_segment][y + pattern_grid_offset][x] ~= nil
+          local og_event_populated = events_path ~= nil
           local copied_event_populated = events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil
 
           -- Then copy
@@ -4892,21 +4924,22 @@ function enc(n,d)
     elseif screen_view_name == "Events" then
       if event_edit_active == false then
         params:delta("event_lane", d) -- change focus on individual event lanes
+        grid_dirty = true
+
       elseif event_saved == false then
         -- Scroll through the Events menus (name, type, val)
         events_index = util.clamp(events_index + d, 1, #events_menus)
         
         selected_events_menu = events_menus[events_index]
-        
-      else
-        menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
-        selected_menu = menus[page_index][menu_index]
-
-        if norns_interaction == "preview_param" and menu_index ~= 0 then
-          preview_param = clone_param(selected_menu)
-        end
-
       end
+    else
+      menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
+      selected_menu = menus[page_index][menu_index]
+
+      if norns_interaction == "preview_param" and menu_index ~= 0 then
+        preview_param = clone_param(selected_menu)
+      end
+
     end
     
   else -- n == ENC 3 -------------------------------------------------------------  
@@ -4922,55 +4955,61 @@ function enc(n,d)
     -- Event editor menus
     ----------------------    
     -- Not using param actions on these since some use dynamic .options which don't reliably fire on changes. Also we want to fire edit_status_edited() on encoder changes but not when params are set elsewhere (loading events etc)
-    elseif screen_view_name == "Events" and event_saved == false then
+    elseif screen_view_name == "Events" then
+      if event_edit_active == false then
+        params:delta("event_lane", d) -- change focus on individual event lanes
+        grid_dirty = true
 
-      if selected_events_menu == "event_category" then
-        if delta_menu(d) then
-          change_category()
-        end
-        
-      elseif selected_events_menu == "event_subcategory" then
-        if delta_menu(d) then
-          change_subcategory()
-        end
-        
-      elseif selected_events_menu == "event_name" then
-        if delta_menu(d, event_subcategory_index_min, event_subcategory_index_max) then
-          change_event()
-        end
-        
-      elseif selected_events_menu == "event_operation" then
-        if delta_menu(d) then
-          change_operation()
-        end
-        
-      elseif selected_events_menu == "event_value" then
-        if params:string("event_operation") == "Set" then
-          -- alternate function to process via preview
-          delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
-
-        elseif params:string("event_operation") == "Wander" then
-          delta_menu(d, 1) -- nil max defaults to 9999
-        else
-          params:delta(selected_events_menu, d)
-          edit_status_edited()
-        end
+      elseif event_saved == false then
       
-      elseif selected_events_menu == "event_op_limit_min" then
-        delta_menu_range(d, event_range[1], params:get("event_op_limit_max"))
+        if selected_events_menu == "event_category" then
+          if delta_menu(d) then
+            change_category()
+          end
+          
+        elseif selected_events_menu == "event_subcategory" then
+          if delta_menu(d) then
+            change_subcategory()
+          end
+          
+        elseif selected_events_menu == "event_name" then
+          if delta_menu(d, event_subcategory_index_min, event_subcategory_index_max) then
+            change_event()
+          end
+          
+        elseif selected_events_menu == "event_operation" then
+          if delta_menu(d) then
+            change_operation()
+          end
+          
+        elseif selected_events_menu == "event_value" then
+          if params:string("event_operation") == "Set" then
+            -- alternate function to process via preview
+            delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
 
-      elseif selected_events_menu == "event_op_limit_max" then
-        delta_menu_range(d, params:get("event_op_limit_min"), event_range[2])
-  
-      -- this should work for the remaining event menus that don't need to fire functions: probability, limit, limit_random
-      else
-        delta_menu(d)
+          elseif params:string("event_operation") == "Wander" then
+            delta_menu(d, 1) -- nil max defaults to 9999
+          else
+            params:delta(selected_events_menu, d)
+            edit_status_edited()
+          end
         
+        elseif selected_events_menu == "event_op_limit_min" then
+          delta_menu_range(d, event_range[1], params:get("event_op_limit_max"))
+
+        elseif selected_events_menu == "event_op_limit_max" then
+          delta_menu_range(d, params:get("event_op_limit_min"), event_range[2])
+    
+        -- this should work for the remaining event menus that don't need to fire functions: probability, limit, limit_random
+        else
+          delta_menu(d)
+        end
+
       end
       
-    --------------------
-    -- Arranger shift --  
-    --------------------
+      --------------------
+      -- Arranger shift --  
+      --------------------
     elseif grid_view_name == "Arranger" and arranger_loop_key_count > 0 then
       local d = util.clamp(d, -1, 1)
       -- Arranger segment detail options are on-screen
@@ -5456,7 +5495,7 @@ function redraw()
       screen.text("E3: transpose ←→")
 
       screen.move(2,48)
-      screen.text("Tap SEQ 1-2: mute")
+      screen.text("Tap SEQ 1-" .. max_seqs .. ": mute")
       
       screen.level(4)  
       screen.move(1,54)
@@ -5528,7 +5567,7 @@ function redraw()
     ---------------------------
 
     ----------------
-    -- Events screen (function redraw events)
+    -- Events screen
     ----------------    
     if screen_view_name == "Events" then
       screen.level(15)
@@ -5544,14 +5583,14 @@ function redraw()
           local lookup = events_lookup[events_lookup_index[event_lanes[lane]]]  -- todo global + change_event()
 
           -- draw boxes representing lanes maybe?
-          for i = 1, 14 do
+          for i = 1, 15 do
             screen.level(lane == i and 15 or 3)
             if event_lanes[i] ~= nil then
-              screen.rect(1 + ((i - 1) * 9), 0, 6, 6)
+              screen.rect(1 + ((i - 1) * 8), 0, 6, 6)
               -- screen.rect(0 + ((i - 1) * 9), 0, 10, 10)
               screen.fill()
             else
-              screen.rect(2 + ((i - 1) * 9), 1, 5, 5)
+              screen.rect(2 + ((i - 1) * 8), 1, 5, 5)
               -- screen.rect(1 + ((i - 1) * 9), 1, 9, 9)
               screen.stroke()
             end
@@ -5734,14 +5773,27 @@ function redraw()
         screen.level(4)
         screen.rect(0,0,128,11)
         screen.fill()
-        screen.move(2,8)
+        
         screen.level(0)
-        screen.text("SEG " .. event_edit_segment .. "." .. event_edit_step .. ", EVENT " .. event_edit_lane .. "/14")
+        -- screen.text("SEG " .. event_edit_segment .. "." .. event_edit_step .. ", EVENT " .. event_edit_lane .. "/15")
+        if event_lanes[event_edit_lane] ~= nil then  -- or params:get("event_lane")
+
+          -- lock glyph
+          screen.circle(5, 4, 1.5)
+          screen.stroke()
+          screen.rect(2, 5, 6, 4)
+          screen.fill()
+
+          screen.move(12,8)
+          screen.text("LANE " .. event_edit_lane .. ", STEP " .. event_edit_step)
+        else
+          screen.move(2,8)
+          screen.text("LANE " .. event_edit_lane .. ", STEP " .. event_edit_step)
+        end
         screen.move(126,8)
         screen.text_right(event_edit_status)           
       
     -- Events editor footer
-        -- not needed if we use static events editor rather than scrolling
         screen.level(0)
         screen.rect(0,54,128,11)
         screen.fill()
