@@ -1,18 +1,18 @@
 -- Dreamsequence
--- 240525 @modularbeat
+-- 240531 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
 -- arpeggiator, and harmonizer 
 -- for Monome Norns+Grid
 -- 
--- K1: Cue edits (hold)
+-- K1: Fn
 -- K2: Pause/Stop(2x)
 -- K3: Play
 --
 -- E1: Scroll (16x8 Grid)
 -- E2: Select
--- E3: Edit (hold K1 to cue)
+-- E3: Edit (+K1 to defer)
 --
 -- Crow IN 1: CV in
 -- Crow IN 2: Trigger in
@@ -21,11 +21,11 @@
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
-norns.version.required = 231114 -- rolling back for fates but 240221 required for link support
+norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
-max_seqs = 3
+max_seqs = 2
 
 -- locals
 local latest_strum_coroutine = coroutine.running()
@@ -689,6 +689,9 @@ function init()
   params:add_number("event_lane", "Lane", 1, 15, 1) -- Selected event lane in event editor
   params:hide("event_lane")
 
+  params:add_option("event_lane_type", "Lane type", {"Single", "Multi"}, 1)
+  params:hide("event_lane_type")
+
   -- options will be dynamically swapped out based on the current event_name param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
   event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
@@ -833,6 +836,9 @@ function init()
   interaction = nil
   norns_interaction = nil
   event_lanes = {}
+  for i = 1, 15 do
+    event_lanes[i] = {} --{type = "single", id = nil}
+  end
   events = {}
   events_length = {}
   
@@ -3530,7 +3536,7 @@ function grid_redraw()
     for x = 1, lanes do -- event lanes
       for y = 1, rows do -- pattern steps
         local y_offset = y + pattern_grid_offset
-        local pattern_led = event_lanes[x] == nil and 0 or lane_locked_led
+        local pattern_led = event_lanes[x].id == nil and 0 or lane_locked_led
         local editing_event = y_offset == event_edit_step and x == event_edit_lane -- TRUE if this is the exact event position we're editing
         -- local pattern_led = y_offset > length and 0 or length_level
 
@@ -3931,7 +3937,7 @@ function g.key(x,y,z)
           event_edit_lane = x
           event_saved = false
 
-          local event_edit_lane_id = event_lanes[x] -- used to determine if lane is configured or not
+          local event_edit_lane_id = event_lanes[x].id -- used to determine if lane is configured or not
 
           -- If the event is populated, Load the Event vars back to the displayed param.
           if events_path ~= nil then
@@ -4616,7 +4622,14 @@ function key(n,z)
           local probability = params:get("event_probability") -- todo p1 convert to 0-1 float?
           
           -- Set the event lane if needed
-          event_lanes[event_edit_lane] = id
+          -- todo: use whatever the global event_lane_type pref
+          -- todo: check if it's necessary to set both of the following. 
+          if event_lanes[event_edit_lane].type == nil then
+            event_lanes[event_edit_lane].type = "Single"
+            params:set("event_lane_type", param_option_to_index("event_lane_type", "Single"))
+
+          end
+          event_lanes[event_edit_lane].id = id
 
           -- Keep track of how many events are populated in this step so we don't have to iterate through them all later
           local step_event_count = events[event_edit_segment][event_edit_step].populated or 0
@@ -4915,15 +4928,20 @@ function enc(n,d)
   -- n == ENC 2 ------------------------------------------------
   elseif n == 2 then
     if view_key_count > 0 then
-      -- local d = util.clamp(d, -1, 1) -- pref setting now
+      local d = util.clamp(d, -1, 1)
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
         rotate_pattern(grid_view_name, d)
         grid_dirty = true            
       end
    
     elseif screen_view_name == "Events" then
+
+      -- lane view
       if event_edit_active == false then
-        params:delta("event_lane", d) -- change focus on individual event lanes
+        params:delta("event_lane", d) -- change lane
+        if event_lanes[params:get("event_lane")].type ~= nil then
+          params:set("event_lane_type", param_option_to_index("event_lane_type", event_lanes[params:get("event_lane")].type))
+        end
         grid_dirty = true
 
       elseif event_saved == false then
@@ -4956,27 +4974,38 @@ function enc(n,d)
     ----------------------    
     -- Not using param actions on these since some use dynamic .options which don't reliably fire on changes. Also we want to fire edit_status_edited() on encoder changes but not when params are set elsewhere (loading events etc)
     elseif screen_view_name == "Events" then
-      if event_edit_active == false then
-        params:delta("event_lane", d) -- change focus on individual event lanes
-        grid_dirty = true
+      local lane = params:get("event_lane")
+      
+      if event_edit_active == false then -- event lane view
 
+        -- maybe issue... this can be used to set lane_type before it's populated. Might be handy?
+        params:delta("event_lane_type", d)
+        event_lanes[lane].type = params:string("event_lane_type")
+        
       elseif event_saved == false then
+        local locked = event_lanes[lane].type == "Single" and events_index <= 3 -- or param
       
         if selected_events_menu == "event_category" then
-          if delta_menu(d) then
-            change_category()
+          if not locked then 
+            if delta_menu(d) then
+              change_category()
+            end
           end
-          
+
         elseif selected_events_menu == "event_subcategory" then
-          if delta_menu(d) then
-            change_subcategory()
+          if not locked then 
+            if delta_menu(d) then
+              change_subcategory()
+            end
           end
           
         elseif selected_events_menu == "event_name" then
-          if delta_menu(d, event_subcategory_index_min, event_subcategory_index_max) then
-            change_event()
+          if not locked then 
+            if delta_menu(d, event_subcategory_index_min, event_subcategory_index_max) then
+              change_event()
+            end
           end
-          
+
         elseif selected_events_menu == "event_operation" then
           if delta_menu(d) then
             change_operation()
@@ -5570,89 +5599,78 @@ function redraw()
     -- Events screen
     ----------------    
     if screen_view_name == "Events" then
+      local lane = params:get("event_lane")
+      local lane_type = event_lanes[lane].type or "Unconfigured"
+      
       screen.level(15)
       screen.move(2,8)
-      if event_edit_active == false then
+
+      if event_edit_active == false then -- lane-level preview
+
         if key_countdown == 4 then --  not deleting
-          -- screen.text("ARRANGER SEGMENT " .. event_edit_segment .. " EVENTS")
         
           --------------------------
           -- Event lanes preview
           --------------------------
-          local lane = params:get("event_lane")
-          local lookup = events_lookup[events_lookup_index[event_lanes[lane]]]  -- todo global + change_event()
 
-          -- draw boxes representing lanes maybe?
+          local lane_type_str = event_lanes[lane].type and (params:string("event_lane_type")  .. "-event") or "Unconfigured"
+          local lane_id = event_lanes[lane].id
+          local event_def = events_lookup[events_lookup_index[lane_id]]
+          local events_menu_trunc = 22
+
+
+          -- glyphs representing lane types
+          -- todo make text with norns.ttf font drop
           for i = 1, 15 do
+            local type = event_lanes[i].type
             screen.level(lane == i and 15 or 3)
-            if event_lanes[i] ~= nil then
-              screen.rect(1 + ((i - 1) * 8), 0, 6, 6)
-              -- screen.rect(0 + ((i - 1) * 9), 0, 10, 10)
+            if type == "Single" then
+              screen.rect(-7 + (i * 8), 2, 5, 5)
               screen.fill()
-            else
-              screen.rect(2 + ((i - 1) * 8), 1, 5, 5)
-              -- screen.rect(1 + ((i - 1) * 9), 1, 9, 9)
+            elseif type == "Multi" then
+              screen.rect(-7 + (i * 8), 2, 5, 1)
+              screen.rect(-7 + (i * 8), 4, 5, 1)
+              screen.rect(-7 + (i * 8), 6, 5, 1)
+              screen.fill()
+            else -- nil
+              screen.rect(-6 + (i * 8), 3, 4, 4)
               screen.stroke()
             end
-            -- screen.level(15)
-            -- screen.move(5 + ((i - 1) * 9), 7)
-            -- screen.text_center(i)
-          end
+          end          
 
-          -- local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
-          -- local menu_offset = scroll_offset_locked(lane, 10, 2) -- index, height, locked_row
-          -- prevent from scrolling as we're doing chunks of 3 lines at a time
+          screen.move(2, 18)
+          screen.level(15)
+          screen.text("Lane " .. lane .. ": " .. lane_type_str)
+
+          -- todo: can drop the scrolling stuff, probably
           local menu_offset = scroll_offset_locked(1, 10, 2) -- index, height, locked_row
 
 
           local line = 1
-          local event_fields = {"category", "subcategory", "name"}  -- truncated version
+          local event_fields = {"category", "subcategory", "name"}  -- variant of what we store in events_menus (omits "event_")
 
-          for i = 1, #event_fields do
-            local debug = false
-            local menu_id = event_fields[i]
-            local event_val_string = lookup ~= nil and lookup[menu_id] or "Empty" -- local prob
-            
-            screen.move(2, line * 10 + 8 - menu_offset)
-            screen.level(15)
-            
-            local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
-          --   if events_index == i then
-          --     local range =
-          --       (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
-          --       and params:get_range(menu_id)
-          --       or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
-          --       or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
+          screen.level(3)
 
-          --     local single = menu_index == range[1] and (range[1] == range[2]) or false
-          --     local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
-          --     local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
-          --     local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
-
-          --     if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-          --     if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
-
-          --     screen.text(events_menu_txt)
-          --   else
-              
-          --     if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-          --     if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
-              
-          --     screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
-          --   end
-
-            screen.text(first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
-
-            line = line + 1
+          if lane_type == "Multi" then
+            screen.move(2, 28)
+            screen.text("⏎")--↺")
+          -- else
           end
-          
-          -- TBD
-          -- -- scrollbar
-          -- screen.level(10)
-          -- local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
-          -- local bar_height = 4 / #events_menus * 40
-          -- screen.rect(127, offset, 1, bar_height)
-          -- screen.fill()          
+
+          for i = 1, 3 do -- only do category, subcategory, event from event_fields
+            local menu_id = event_fields[i]
+
+            if event_def ~= nil then
+
+              -- WIP stuff
+              screen.move(10, (line + 1) * 10 + 8 - menu_offset)
+              -- screen.move(6 + (line * 4), (line + 1) * 10 + 8 - menu_offset) -- trying out stagger
+
+              screen.text(first_to_upper(param_id_to_name("event_" .. menu_id)) .. ": " .. first_to_upper(string.sub(event_def[menu_id], 1, events_menu_trunc)))
+              line = line + 1
+            end
+
+          end     
           
           screen.level(4)
           screen.move(1,54)
@@ -5677,19 +5695,28 @@ function redraw()
         --------------------------
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
-        local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
+
+        -- this is currently only used to look up whether it's a param. Could simplify
+        -- local event_def = events_lookup[params:get("event_name")]  -- todo global + change_event()
+        local event_type = events_lookup[params:get("event_name")].event_type
+
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
         local line = 1
         for i = 1, #events_menus do
           local debug = false
-          
-          screen.move(2, line * 10 + 8 - menu_offset)
-          screen.level(events_index == i and 15 or 3)
-
           local menu_id = events_menus[i]
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
-          
+
+          -- local indent = 2
+          -- if lane_type == "single" and events_index < 4 then
+          --   indent = 12 -- local lane = params:get("event_lane")
+          -- end
+
+          -- or use indent for x
+          screen.move(2, line * 10 + 8 - menu_offset)
+          screen.level(events_index == i and 15 or 3)
+
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
           -- >> "Set" operation should do .options lookup where possible
@@ -5702,16 +5729,10 @@ function redraw()
             
             if operation == "Set" then
               if debug then print("Set operator") end
-              if lookup.event_type == "param" then  -- move above operation check?
-                
+              -- if event_def.event_type == "param" then  -- move above operation check?
+              if event_type == "param" then  -- move above operation check?
                 preview_event:set(event_val_string)
                 event_val_string = preview_event:string()
-                
-              -- and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
-                -- if debug then print("Setting string val from options") end
-                -- print("value set options")
-                -- Uses event index to look up all the options for that param, then select using index
-                -- event_val_string = options[menu_index]
               end
               if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
@@ -5719,8 +5740,8 @@ function redraw()
             end
             if debug then print("Value passed raw") end
           
-          -- hack to use preview to get formatting for min/max
-          -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
+            -- hack to use preview to get formatting for min/max
+            -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
           elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
             -- print("DEBUG menu_id = " .. menu_id) 
             -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
@@ -5735,22 +5756,30 @@ function redraw()
           ------------------------------------------------
           -- Leaving in param formatter and some code for truncating string in case we want to eventually add system param events that require formatting.
           local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
+
           if events_index == i then
-            local range =
-              (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
-              and params:get_range(menu_id)
-              or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
-              or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
+            if lane_type == "Single" and events_index < 4 then
+              local events_menu_txt = "× " .. first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc))
+              screen.text(events_menu_txt)
 
-            local single = menu_index == range[1] and (range[1] == range[2]) or false
-            local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
-            local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
-            local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+            else
+              
+              local range =
+                (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
+                and params:get_range(menu_id)
+                or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
+                or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
 
-            if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-            if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+              local single = menu_index == range[1] and (range[1] == range[2]) or false
+              local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
+              local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
+              local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
 
-            screen.text(events_menu_txt)
+              if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+              if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+
+              screen.text(events_menu_txt)
+            end
           else
             
             if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
@@ -5769,14 +5798,14 @@ function redraw()
         screen.rect(127, offset, 1, bar_height)
         screen.fill()
       
-     -- Events editor sticky header
+        -- Events editor sticky header
         screen.level(4)
         screen.rect(0,0,128,11)
         screen.fill()
         
         screen.level(0)
         -- screen.text("SEG " .. event_edit_segment .. "." .. event_edit_step .. ", EVENT " .. event_edit_lane .. "/15")
-        if event_lanes[event_edit_lane] ~= nil then  -- or params:get("event_lane")
+        if event_lanes[event_edit_lane].id ~= nil then  -- or params:get("event_lane")
 
           -- lock glyph
           screen.circle(5, 4, 1.5)
@@ -5784,6 +5813,7 @@ function redraw()
           screen.rect(2, 5, 6, 4)
           screen.fill()
 
+          -- leave room for lock
           screen.move(12,8)
           screen.text("LANE " .. event_edit_lane .. ", STEP " .. event_edit_step)
         else
@@ -5793,7 +5823,7 @@ function redraw()
         screen.move(126,8)
         screen.text_right(event_edit_status)           
       
-    -- Events editor footer
+        -- Events editor footer
         screen.level(0)
         screen.rect(0,54,128,11)
         screen.fill()
