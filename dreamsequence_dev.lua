@@ -3590,54 +3590,54 @@ function grid_redraw()
   if screen_view_name == "Events" then
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
     local lanes = 15
-    local saved_level = 7
+    local saved_level = 6         -- can layer playhead + editing_lane_level + pulse (9 max)
     local editing_level = 15
     local playhead_level = 3
-    local lane_locked_led = 2
+    local lane_configured_led = 2 -- not layered and of secondary importance as screen is primary
+    local editing_lane_level = 3  -- always add 3 so we don't lose this when on unconfigured lanes
 
     -- For now, just fixing the loop length to underlying pattern (g.key disabled, too)
     -- events_length[event_edit_segment] = length
 
     -- Draw grid with [lanes] (columns) for each step in the selected pattern    
-    for x = 1, lanes do -- event lanes
+    for x = 1, lanes do  -- event lanes
       for y = 1, rows do -- pattern steps
         local y_offset = y + pattern_grid_offset
-        local pattern_led = event_lanes[x].id == nil and 0 or lane_locked_led
-        local editing_event = y_offset == event_edit_step and x == event_edit_lane -- TRUE if this is the exact event position we're editing
-        -- local pattern_led = y_offset > length and 0 or length_level
 
-        -- set pattern levels, -2 from what we want shown due to layering
-        if editing_event then
-          -- selected step flickers if not saved, otherwise, pulses
-          pattern_led = (event_edit_status ~= "(Saved)" and (editing_level - (fast_blinky * 4)) or (editing_level - led_pulse))-- - (led_pulse))
-        elseif events[event_edit_segment][y_offset][x] ~= nil then
-          -- populated steps are medium brighness
-          pattern_led = pattern_led + saved_level
+        -- saved events are medium brightness, configured lanes are low, otherwise 0
+        if events[event_edit_segment][y_offset][x] ~= nil then
+          pattern_led = saved_level
+        elseif event_lanes[x].id ~= nil then
+          pattern_led = lane_configured_led
+        else
+          pattern_led = 0
         end
 
-        -- playhead might work two ways
-        -- a: show any time the edited arranger segment matches the chord pattern (A-D)
-        -- b: show only when this exact arranger segment is being played
-        if arranger_padded[event_edit_segment] == active_chord_pattern then
-          -- option a:
-          if y_offset == chord_pattern_position then
-            -- pattern_led = pattern_led + playhead_level-- math.min(pattern_led + playhead_level, 15)
-            -- show playhead on all but selected event
-            if not editing_event then
-              pattern_led = pattern_led + playhead_level
-            end
-          end
+        -- playhead can work two ways. todo global pref?
+        --
+        -- OPTION A: show only when this exact arranger segment is being played
+        if arranger_position == event_edit_segment and y_offset == chord_pattern_position then
+          pattern_led = pattern_led + playhead_level
         end
+        -- OPTION B: show any time the edited arranger segment matches the chord pattern (A-D)
+        -- if arranger_padded[event_edit_segment] == active_chord_pattern and y_offset == chord_pattern_position then
+        --   pattern_led = pattern_led + playhead_level
+        -- end
 
-        -- pulse active event_lane
+        -- pulse selected event_lane when not editing event slot
         if not event_edit_active and x == params:get("event_lane") then
-          pattern_led = pattern_led - led_pulse + 6 -- up to level 15 for locked lanes
+          pattern_led = pattern_led + editing_lane_level + led_pulse
+        end
+
+        -- selected event supercedes all layers
+        -- saved pulses, unsaved/new flickers
+        if y_offset == event_edit_step and x == event_edit_lane then
+          pattern_led = (event_edit_status ~= "(Saved)" and (editing_level - (fast_blinky * 3)) or (editing_level - led_pulse))
         end
 
         g:led(x, y, pattern_led)
 
       end
-
 
     end
 
@@ -4840,6 +4840,7 @@ function key(n,z)
             print(">> action = " .. action)
           end
 
+          event_lanes[event_edit_lane].id = id -- always set last-saved event id as lane type
           update_lanes(event_edit_lane)
 
           -- Back to event overview
@@ -5004,10 +5005,6 @@ function enc(n,d)
       -- lane view
       if event_edit_active == false then
         params:delta("event_lane", d) -- change lane
-        -- todo change the lane_type global if we're planning on using this
-        -- if event_lanes[params:get("event_lane")].type ~= nil then
-          -- params:set("event_lane_type", param_option_to_index("event_lane_type", event_lanes[params:get("event_lane")].type))
-        -- end
         grid_dirty = true
 
       elseif event_saved == false then
@@ -5040,13 +5037,12 @@ function enc(n,d)
     ----------------------    
     -- Not using param actions on these since some use dynamic .options which don't reliably fire on changes. Also we want to fire edit_status_edited() on encoder changes but not when params are set elsewhere (loading events etc)
     elseif screen_view_name == "Events" then
-      -- local lane = params:get("event_lane")
       
       if event_edit_active == false then -- event lane view
         params:delta("event_lane", d) -- change lane
         grid_dirty = true
 
-      elseif event_saved == false then      
+      elseif event_saved == false then
         if selected_events_menu == "event_category" then
           if delta_menu(d) then
             change_category()
@@ -5660,21 +5656,17 @@ function redraw()
     if screen_view_name == "Events" then
       local lane = params:get("event_lane")
       local lane_id = event_lanes[lane].id
-      local lane_type = event_lanes[lane].type or "Unconfigured"
+      local lane_type = event_lanes[lane].type -- or "Empty"
       local lane_glyph = lane_type == "Single" and "☑" or lane_type == "Multi" and "☰" or "☐"
 
       screen.level(15)
       screen.move(2,8)
       if event_edit_active == false then -- lane-level preview
-        if key_countdown == 4 then --  not deleting
+        if key_countdown == 4 then --  not deleting via K2 hold
         
           --------------------------
           -- Event lanes preview
           --------------------------
-
-          -- local lane_type_str = event_lanes[lane].type and (params:string("event_lane_type")  .. "-event") or "Unconfigured"
-          local lane_type_str = event_lanes[lane].type and (event_lanes[lane].type  .. "-event") or "Unconfigured"
-          -- local lane_id = event_lanes[lane].id
           local event_def = events_lookup[events_lookup_index[lane_id]]
           local events_menu_trunc = 22
 
@@ -5690,7 +5682,7 @@ function redraw()
 
           screen.move(2, 18)
           screen.level(15)
-          screen.text("Lane " .. lane .. ": " .. lane_type_str)
+          screen.text("Lane " .. lane .. ": " .. (lane_type and (lane_type .. "-event") or "Empty"))
 
           -- todo: can drop the scrolling stuff, probably
           local menu_offset = scroll_offset_locked(1, 10, 2) -- index, height, locked_row
@@ -5702,7 +5694,6 @@ function redraw()
           if lane_type == "Multi" then
             screen.move(2, 28)
             screen.text("⏎")--↺")
-          -- else
           end
 
           for i = 1, 3 do -- only do category, subcategory, event from event_fields
