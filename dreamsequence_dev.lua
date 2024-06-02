@@ -686,11 +686,16 @@ function init()
   params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
   params:hide("event_name")
   
-  params:add_number("event_lane", "Lane", 1, 15, 1) -- Selected event lane in event editor
+  params:add_number("event_lane", "Lane", 1, 15, 1) -- Selected event lane in event editor. 16 == all
   params:hide("event_lane")
 
-  params:add_option("event_lane_type", "Lane type", {"Single", "Multi"}, 1)
-  params:hide("event_lane_type")
+  -- {"Copy", "Paste", "Delete", "Kill lane"} -- punting on copy+paste because it's needed for steps, too. 
+  -- "Copy →", "← Copy" -- apply forward
+  -- "Save A", "Save B", "Save C", "Save D" -- maybe auto load according to underlying chord pattern?
+  -- and adjusting event counts sounds awful :/
+  event_lane_actions = {"Action:", "Clr seg"}--"Clr events", "Kill lane"}
+  params:add_option("event_lane_actions", "Lane action", event_lane_actions, 1)
+  params:hide("event_lane_actions")
 
   -- options will be dynamically swapped out based on the current event_name param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
@@ -859,7 +864,7 @@ function init()
   change_subcategory()
   change_event()
   gen_menu_events()
-  
+  events_menus =  {"event_category", "event_subcategory", "event_name", "event_probability"}
   event_edit_segment = 0 --todo p1 rename to event_edit_segment
   event_edit_step = 0
   event_edit_lane = 0
@@ -1027,9 +1032,7 @@ function init()
       params:set("event_value", get_default_event_value())
       events_index = 1
       selected_events_menu = events_menus[events_index]
-      gen_menu_events()
-      event_edit_active = false
-  
+      gen_menu_events()  
       -- todo p2 loading pset while transport is active gets a little weird with Link and MIDI but I got other stuff to deal with
       if params:get("clock_source") == "internal" then 
         reset_lattice() -- reset_clock() -- untested
@@ -1674,6 +1677,19 @@ end -- end of init
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
+
+
+-- function dump_params()
+--   paramdump = {}
+--   for i = 1, #params.params do
+--     table.insert(paramdump, params.params[i].name)
+--   end
+
+--   local filepath = norns.state.data
+
+--   tab.save(paramdump, filepath .. "paramdump.data")
+--   print("table >> write: " .. filepath.."paramdump.data")
+-- end
 
 
 function count_keys(tbl)
@@ -4529,12 +4545,14 @@ function key(n,z)
           
           
         -------------------------------------------
-        -- K2 DELETE ALL EVENTS IN SEGMENT
+        -- K2 BACK TO ARRANGER VIEW
         -------------------------------------------
         else
-          event_k2 = true
-          clock.run(delete_all_events_segment)
-          update_lanes() -- no arg so checks all lanes. eep
+          screen_view_name = "Session"
+          event_key_count = 0
+          gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor        
+          params:set("event_lane_actions", 1) -- reset action menu
+          grid_dirty = true
         end
         
         gen_dash("K2 events editor closed") -- update events strip in dash after making changes in events editor
@@ -4857,10 +4875,12 @@ function key(n,z)
           grid_dirty = true
         
         else
-          screen_view_name = "Session"
-          event_key_count = 0
-          gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor
-          grid_dirty = true
+          -- WIP: fire event_lane_actions params
+          local action = params:string("event_lane_actions")
+          if action == "Clr seg" then
+            event_action_key_held = true
+            clock.run(delete_all_events_segment)
+          end
         end
 
         ----------------------------------
@@ -4967,9 +4987,9 @@ function key(n,z)
         norns_interaction = nil
       end
     
-    elseif n == 2 then
-      -- reset this for event segment delete countdown
-      event_k2 = false
+    elseif n == 3 then
+      -- reset this for event_lane_action countdown
+      event_action_key_held = false
     end
   end
   -- screen_dirty = true -- redraw()
@@ -5005,8 +5025,7 @@ function enc(n,d)
 
       -- lane view
       if event_edit_active == false then
-        params:delta("event_lane", d) -- change lane
-        grid_dirty = true
+        params:delta("event_lane_actions", d) -- change focus on event_lane_actions
 
       elseif event_saved == false then
         -- Scroll through the Events menus (name, type, val)
@@ -5528,7 +5547,7 @@ function redraw()
       screen.stroke()
       screen.level(3)      
       screen.move(2,62)
-      screen.text("(K1) NEW PATTERNS")  
+      screen.text("(K1) New patterns")  
       -- screen.move(128,62)
       -- screen.text_right("(K3) GEN. CHORDS+SEQ")      
 
@@ -5564,7 +5583,7 @@ function redraw()
       screen.stroke()
       screen.level(3)      
       screen.move(2,62)
-      screen.text("(K1) NEW PATTERN")    
+      screen.text("(K1) New pattern")    
       -- screen.move(128,62)
       -- screen.text_right("(K3) GEN. CHORDS")     
         
@@ -5588,9 +5607,7 @@ function redraw()
       screen.stroke()
       screen.level(3)      
       screen.move(2,62)
-      screen.text("(K1) NEW PATTERN")  
-      -- screen.move(128,62)
-      -- screen.text_right("(K3) GEN. SEQ")  
+      screen.text("(K1) New pattern")  
       end
       
   -- Arranger shift interaction
@@ -5623,9 +5640,9 @@ function redraw()
     screen.stroke()
     screen.level(3)
     screen.move(1,62)
-    screen.text("(K2) CUE SEG.")    
+    screen.text("(K2) Jump")    
     screen.move(82,62)
-    screen.text("(K3) EVENTS")
+    screen.text("(K3) Events")
           
   -- tooltips for interacting with chord patterns      
   elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this
@@ -5669,33 +5686,36 @@ function redraw()
           -- Event lanes preview
           --------------------------
           local event_def = events_lookup[events_lookup_index[lane_id]]
-          local events_menu_trunc = 22
 
-          -- glyphs representing lane types
+          -- LANE EDITOR HEADER
+          screen.level(4)
+          screen.rect(0,0,128,11)
+          screen.fill()
+
+          -- lane type glyphs
           for i = 1, 15 do
             local type = event_lanes[i].type
             local glyph = type == "Single" and "☑" or type == "Multi" and "☰" or "☐"
 
-            screen.level(lane == i and 15 or 3)
-            screen.move(-7 + (i * 8), 8)
+            screen.level(lane == i and 15 or 1)
+            screen.move(-6 + (i * 8), 8)
             screen.text(glyph)
           end
 
-          screen.move(2, 18)
-          screen.level(15)
+          -- -- todo update "event_lane" param for 1-16
+          -- screen.level(1)
+          -- screen.move(122, 8)
+          -- screen.text("A")
+
+
+          -- lane summary top
+          screen.level(3)
+          screen.move(2, 19)
+          -- screen.level(15) -- todo if we're selecting squares, maybe highlight this, too
           screen.text("Lane " .. lane .. ": " .. (lane_type and (lane_type .. "-event") or "Empty"))
 
-          -- todo: can drop the scrolling stuff, probably
-          local menu_offset = scroll_offset_locked(1, 10, 2) -- index, height, locked_row
           local line = 1
           local event_fields = {"category", "subcategory", "name"}  -- variant of what we store in events_menus (omits "event_")
-
-          screen.level(3)
-
-          if lane_type == "Multi" then
-            screen.move(2, 28)
-            screen.text("⏎")--↺")
-          end
 
           for i = 1, 3 do -- only do category, subcategory, event from event_fields
             local menu_id = event_fields[i]
@@ -5703,24 +5723,53 @@ function redraw()
             if event_def ~= nil then
 
               -- WIP stuff
-              screen.move(10, (line + 1) * 10 + 8 - menu_offset)
-              -- screen.move(6 + (line * 4), (line + 1) * 10 + 8 - menu_offset) -- trying out stagger
-
-              screen.text(first_to_upper(param_id_to_name("event_" .. menu_id)) .. ": " .. first_to_upper(string.sub(event_def[menu_id], 1, events_menu_trunc)))
+              -- screen.move(10, (line + 1) * 10 + 8)-- - menu_offset)
+              screen.move(2 + ((line - 1) * 4), (line + 1) * 10 + 9) -- staggered
+              -- screen.text(first_to_upper(param_id_to_name("event_" .. menu_id)) .. ": " .. first_to_upper(string.sub(event_def[menu_id], 1, events_menu_trunc)))
+              screen.text("-" .. first_to_upper(event_def[menu_id]))
               line = line + 1
             end
 
-          end     
-          
+          end
+
+          -- -- todo some way of indicating that multi event summary is last-saved event type
+          -- if lane_type == "Multi" then
+          --   screen.move(2, 28)
+          --   screen.text("⏎")--↺")
+          -- end
+
+
+          -- draw masking rect in case event/category/subcat is super duper long
+          screen.level(0)
+          screen.rect(90, 11, 38, 42)
+          screen.fill()
+
+          -- vertical divider between actions and lane summary
+          screen.move(93, 11)
+          screen.level(3)
+          screen.line(93, 53)
+          screen.stroke()
+
+          for row = 1, #event_lane_actions do
+            screen.move(96, row * 10 + 9)
+            screen.level(params:get("event_lane_actions") == row and 15 or 3)
+            screen.text(event_lane_actions[row])
+          end
+
+          -- footer
           screen.level(4)
           screen.move(1,54)
           screen.line(128,54)
           screen.stroke()
           screen.level(3)      
           screen.move(1,62)
-          screen.text("(K1 HOLD) DEL.")
-          screen.move(128,62)
-          screen.text_right("(K3) ARRANGER")
+          screen.text("(K2) Arranger")
+
+          if params:get("event_lane_actions") > 1 then
+            screen.move(128,62)
+            -- screen.text_right("(K3) " .. params:string("event_lane_actions"))
+            screen.text_right("(K3) Act")
+          end
 
         else
           screen.level(15)      
@@ -5747,7 +5796,7 @@ function redraw()
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
 
-          screen.move(2, line * 10 + 8 - menu_offset)
+          screen.move(2, line * 10 + 9 - menu_offset)
           screen.level(events_index == i and 15 or 3)
 
           -- use event_value to format values
@@ -5861,12 +5910,12 @@ function redraw()
         screen.stroke()
         screen.level(3)
         screen.move(1,62)
-        screen.text("(K2) DELETE")
+        screen.text("(K2) Delete")
         screen.move(128,62)
         if event_edit_status == "(Saved)" then
-          screen.text_right("(K3) EVENTS")
+          screen.text_right("(K3) Done")
         else
-          screen.text_right("(K3) SAVE")
+          screen.text_right("(K3) Save")
         end
       end
         
@@ -5887,10 +5936,9 @@ function redraw()
         local param_id = menus[page_index][i]
         local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
         local param_get = preview_param_q_get[param_id] or params:get(param_id)
-        -- local param_string = (preview_param_q_string[param_id] and preview_param_q_string[param_id].."*") or params:string(param_id)
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
 
-        screen.move(2, line * 10 + 8 - menu_offset)
+        screen.move(2, line * 10 + 9 - menu_offset)
         screen.level(menu_index == i and 15 or 3)
         
         -- Generate menu and draw ▶◀ indicators for scroll range

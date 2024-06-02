@@ -310,7 +310,7 @@ end
 function delete_all_events_segment()
   key_countdown = 4
   
-  while event_k2 == true do
+  while event_action_key_held == true do
     key_countdown = key_countdown - 1
     -- redraw()
     if key_countdown == 0 then
@@ -319,14 +319,14 @@ function delete_all_events_segment()
         events[event_edit_segment][step] = {}
       end
       events[event_edit_segment].populated = 0
-      -- grid_redraw()
-      grid_dirty = true
       key_countdown = 4
       break
     end
     clock.sleep(.2)
   end
   key_countdown = 4
+  update_lanes()
+  grid_dirty = true
   --todo p3 should probably have a "Deleted message appear until key up"
   -- redraw()
 end
