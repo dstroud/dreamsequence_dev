@@ -312,14 +312,15 @@ function delete_all_events_segment()
   
   while event_k2 == true do
     key_countdown = key_countdown - 1
-    redraw()
+    -- redraw()
     if key_countdown == 0 then
       print("Deleting all events in segment " .. event_edit_segment)
       for step = 1, max_chord_pattern_length do
         events[event_edit_segment][step] = {}
       end
       events[event_edit_segment].populated = 0
-      grid_redraw()
+      -- grid_redraw()
+      grid_dirty = true
       key_countdown = 4
       break
     end
@@ -327,5 +328,5 @@ function delete_all_events_segment()
   end
   key_countdown = 4
   --todo p3 should probably have a "Deleted message appear until key up"
-  redraw()
+  -- redraw()
 end
