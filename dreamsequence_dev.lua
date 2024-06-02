@@ -1726,8 +1726,8 @@ function update_lane_glyph()
   local saved_event = events[event_edit_segment][event_edit_step][event_edit_lane]
 
   if lane_path.type == "Single" then
-    if preview_event.id ~= lane_path.id then          -- if the new event is different than the lane id
-      if saved_event == nil then                      -- and it's a new event slot
+    if preview_event.id ~= lane_path.id then            -- if the new event is different than the lane id
+      if saved_event == nil then                        -- and it's a new event slot
         lane_glyph_preview = "Multi"
       elseif lane_path["events"][lane_path.id] > 1 then -- if editing a saved event but it's not the last of its type in the lane
         lane_glyph_preview = "Multi"
@@ -1738,11 +1738,12 @@ function update_lane_glyph()
       lane_glyph_preview = nil
     end
 
-  elseif lane_path.countd == 2  -- if there's a possibility of going from 2 to 1 event
-  and saved_event             -- and it's an existing saved event, not a new one
-  and (preview_event.id ~= saved_event.id)  -- and the event is changing
-  and lane_path["events"][preview_event.id] == 1 then -- and it's the last of this event type in the slot
-    lane_glyph_preview = "Single" -- then, hurray!, we can update the lane preview glyph to Single
+  elseif lane_path.countd == 2                      -- if there's a possibility of going from 2 to 1 event
+  and saved_event                                   -- and it's an existing saved event, not a new one
+  and (preview_event.id ~= saved_event.id)          -- and the event is changing
+  and lane_path["events"][preview_event.id] ~= nil  -- and the event type we're changing to is in use
+  and lane_path["events"][saved_event.id] == 1 then -- and we're releasing the last of this event type in the slot
+  lane_glyph_preview = "Single"                     -- update the lane preview glyph to Single
   else
     lane_glyph_preview = nil
   end
