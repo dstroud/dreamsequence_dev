@@ -305,28 +305,3 @@ function scrollbar(index, total, in_view, locked_row, screen_height)
   local offset = 12 + (index * increment)
   return(offset)
 end
-    
-    
-function delete_all_events_segment()
-  key_countdown = 4
-  
-  while event_action_key_held == true do
-    key_countdown = key_countdown - 1
-    -- redraw()
-    if key_countdown == 0 then
-      print("Deleting all events in segment " .. event_edit_segment)
-      for step = 1, max_chord_pattern_length do
-        events[event_edit_segment][step] = {}
-      end
-      events[event_edit_segment].populated = 0
-      key_countdown = 4
-      break
-    end
-    clock.sleep(.2)
-  end
-  key_countdown = 4
-  update_lanes()
-  grid_dirty = true
-  --todo p3 should probably have a "Deleted message appear until key up"
-  -- redraw()
-end
