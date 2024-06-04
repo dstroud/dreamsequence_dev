@@ -689,12 +689,16 @@ function init()
   params:add_number("event_lane", "Lane", 1, 15, 1) -- Selected event lane in event editor. 16 == all
   params:hide("event_lane")
 
-  -- {"Copy", "Paste", "Delete", "Kill lane"} -- punting on copy+paste because it's needed for steps, too. 
-  -- "Copy →", "← Copy" -- apply forward
-  -- "Save A", "Save B", "Save C", "Save D" -- maybe auto load according to underlying chord pattern?
-  -- and adjusting event counts sounds awful :/
-  -- {"Quick actions:", "Clear segment events"}
-  event_quick_actions = {"Quick actions:", "Clear segment events"} --"Clr events", "Kill lane"}
+  -- event quick action ideas:
+  -- copy pattern forward/back
+  -- apply to pattern A/B/C/D
+  -- pattern defaults
+  -- apply single pattern default
+  -- apply all pattern defaults
+  -- Reset lane (all segments)
+  -- copy/paste lane (need to think about steps tho)
+  -- etc...
+  event_quick_actions = {"Quick actions:", "Clear segment events"}
   params:add_option("event_quick_actions", "Event actions", event_quick_actions, 1)
   params:hide("event_quick_actions")
 
@@ -781,7 +785,7 @@ function init()
   grid_size()
 
   start = false
-  metro_beat = 0
+  metro_measure = false
   send_continue = false
   transport_state = "stopped"
   clock_start_method = "start"
@@ -845,6 +849,7 @@ function init()
   for i = 1, 15 do
     event_lanes[i] = {} --{type = "single", id = nil}
   end
+  -- event_ghosting = {0, 0, 0}
   events = {}
   events_length = {}
   
@@ -1538,11 +1543,13 @@ params:set_action("ts_numerator",
   init_sprocket_measure(params:get("ts_numerator") / params:string("ts_denominator"))
 
 
+  -- runs at 2x time signature to turn metronome on/off
+  -- can also be used to calculate beats if needed
   function init_sprocket_metro(div)
     sprocket_metro = seq_lattice:new_sprocket{
       action = function(t)
-        -- cheating a bit by doubling for on/off metro state so this technically counts twice per beat
-        metro_beat = util.wrap(metro_beat + 1, 1, params:get("ts_numerator") * 2) -- replace with sprocket_measure check
+        -- metro_measure = util.wrap(metro_measure + 1, 1, params:get("ts_numerator") * 2) -- alternative for actual 1/2 beats
+        metro_measure = sprocket_measure.phase == 1
       end,
       -- div_action = function(t)  -- call action when div change is processed
       -- end,
@@ -1724,6 +1731,39 @@ end -- end of init
 -- end
 
 
+-- -- absolutely ridiculous method to clean up ghosting in event lane view
+-- function fix_ghosting_events()
+--   local row = {0, 0, 0}
+--   for i = 1, 15 do
+--     local type = event_lanes[i].type
+
+--     for j = 1, 2 do
+--       if j == 1 then -- rows 1 and 3 are the same
+--         if type == "Single" then
+--           row[j] = row[j] + 5
+--         elseif type == nil then -- "Empty"
+--           row[j] = row[j] + 2
+--         end -- nothing for 'Multi'!
+--       else -- row 2
+--         if type then -- Single and Multi have 5 dark pixels
+--           row[2] = row[2] + 5
+--         else
+--           row[2] = row[2] + 2
+--         end
+--       end
+--     end
+
+--   end
+
+--   row[3] = row[1]
+--   -- print(row[1], row[2], row[3]) -- debug if reducing glyph level
+
+--   for i = 1, 3 do
+--     event_ghosting[i] = (row[i] > 62) and 2 or (row[i] > 21) and 1 or 0
+--   end
+-- end
+
+
 function reset_norns_interaction(interaction)
   local countdown = 3
   while true do
@@ -1744,6 +1784,9 @@ function delete_events_in_segment(new_action)
   end
   events[event_edit_segment].populated = 0
   update_lanes()
+  event_edit_step = 0
+  event_edit_active = false
+  reset_grid_led_phase()
   grid_dirty = true
   norns_interaction = "event_actions_done"
   clock.run(reset_norns_interaction, new_action)
@@ -2096,7 +2139,7 @@ function reset_sprocket_metro(from)
   sprocket_metro.division = 1 / params:string("ts_denominator") / 2
   sprocket_metro.phase = sprocket_metro.division * seq_lattice.ppqn * 4 * (1 - sprocket_metro.delay)
   sprocket_metro.downbeat = false
-  metro_beat = 0
+  metro_measure = false
 end
 
 
@@ -3676,11 +3719,11 @@ function grid_redraw()
   if screen_view_name == "Events" then
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
     local lanes = 15
-    local saved_level = 6         -- can layer playhead + editing_lane_level + pulse (9 max)
+    local saved_level = 8         -- can layer playhead(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
     local editing_level = 15
     local playhead_level = 3
     local lane_configured_led = 2 -- not layered and of secondary importance as screen is primary
-    local editing_lane_level = 3  -- always add 3 so we don't lose this when on unconfigured lanes
+    local editing_lane_level = 4  -- min of 1 (4 - max led_pulse) so we don't completely lose the led when on unconfigured lanes.
 
     -- For now, just fixing the loop length to underlying pattern (g.key disabled, too)
     -- events_length[event_edit_segment] = length
@@ -3712,7 +3755,7 @@ function grid_redraw()
 
         -- pulse selected event_lane when not editing event slot
         if not event_edit_active and x == params:get("event_lane") then
-          pattern_led = pattern_led + editing_lane_level + led_pulse
+          pattern_led = pattern_led + editing_lane_level - led_pulse
         end
 
         -- selected event supercedes all layers
@@ -4528,8 +4571,7 @@ function key(n,z)
         redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
       end
 
-      -- KEY 2  
-    elseif n == 2 then
+    elseif n == 2 then -- KEY 2
       if view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -4571,52 +4613,56 @@ function key(n,z)
       
       elseif screen_view_name == "Events" then
        
-        ------------------------
-        -- K2 DELETE EVENT
-        ------------------------
-        if event_edit_active then
+        if norns_interaction ~= "event_actions" then
+          ------------------------
+          -- K2 DELETE EVENT
+          ------------------------
+          if event_edit_active then
 
-          -- Record the count of events on this step
-          local event_count = events[event_edit_segment][event_edit_step].populated or 0
-          
-          -- Check if event is populated and needs to be deleted
-          if events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil then
+            -- Record the count of events on this step
+            local event_count = events[event_edit_segment][event_edit_step].populated or 0
             
-            -- Decrement populated count at the step level
-            events[event_edit_segment][event_edit_step].populated = event_count - 1
-            
-            -- If the step's new populated count == 0, update the segment level populated count
-            if events[event_edit_segment][event_edit_step].populated == 0 then 
-              events[event_edit_segment].populated = events[event_edit_segment].populated - 1 
+            -- Check if event is populated and needs to be deleted
+            if events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil then
+              
+              -- Decrement populated count at the step level
+              events[event_edit_segment][event_edit_step].populated = event_count - 1
+              
+              -- If the step's new populated count == 0, update the segment level populated count
+              if events[event_edit_segment][event_edit_step].populated == 0 then 
+                events[event_edit_segment].populated = events[event_edit_segment].populated - 1 
+              end
+              
+              -- Delete the event
+              events[event_edit_segment][event_edit_step][event_edit_lane] = nil
             end
+
+            update_lanes(event_edit_lane)
+
+            -- Back to event overview
+            event_edit_active = false
+            reset_grid_led_phase()
+            -- fix_ghosting_events()
             
-            -- Delete the event
-            events[event_edit_segment][event_edit_step][event_edit_lane] = nil
+            -- If the event key is still being held (so user can copy and paste immediatly after saving it), preserve these vars, otherwise zero
+            if event_key_count == 0 then
+              event_edit_step = 0
+              event_edit_lane = 0
+            end
+            event_saved = true
+            
+            -- screen_dirty = true -- redraw()
+            
+            
+            -------------------------------------------
+            -- K2 BACK TO ARRANGER VIEW
+            -------------------------------------------
+          else -- exit back to Arranger
+            screen_view_name = "Session"
+            event_key_count = 0
+            gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor        
+            grid_dirty = true
           end
-
-          update_lanes(event_edit_lane)
-
-          -- Back to event overview
-          event_edit_active = false
-          
-          -- If the event key is still being held (so user can copy and paste immediatly after saving it), preserve these vars, otherwise zero
-          if event_key_count == 0 then
-            event_edit_step = 0
-            event_edit_lane = 0
-          end
-          event_saved = true
-          
-          -- screen_dirty = true -- redraw()
-          
-          
-        -------------------------------------------
-        -- K2 BACK TO ARRANGER VIEW
-        -------------------------------------------
-        else -- exit back to Arranger
-          screen_view_name = "Session"
-          event_key_count = 0
-          gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor        
-          grid_dirty = true
         end
         
         gen_dash("K2 events editor closed") -- update events strip in dash after making changes in events editor
@@ -4728,11 +4774,8 @@ function key(n,z)
         end
         
       end
-  
-      -----------------------  
-      -- KEY 3  
-      -----------------------
-    elseif n == 3 then
+
+    elseif n == 3 then -- KEY 3
       -- if keys[1] == 1 then
       -- rework to enter chord/scale editor, maybe
       -- if view_key_count > 0 then -- Grid view key held down
@@ -4751,19 +4794,26 @@ function key(n,z)
         event_edit_step = 0
         event_edit_lane = 0
         event_edit_active = false
+        reset_grid_led_phase()
         screen_view_name = "Events"
         interaction = nil
         grid_dirty = true
 
         update_lanes() -- in case arranger shift has changed lane config
-  
-      -- K3 saves event to events
-      elseif screen_view_name == "Events" then
+        -- fix_ghosting_events()
 
-        ---------------------------------------
-        -- K3 TO SAVE EVENT
-        ---------------------------------------
-        if event_edit_active then
+
+      elseif screen_view_name == "Events" then
+        if norns_interaction == "event_actions" then
+          local action = params:string("event_quick_actions")
+
+          if action == "Clear segment events" then
+            delete_events_in_segment("event_actions") -- pass arg to keep window open
+          end
+          ---------------------------------------
+          -- K3 TO SAVE EVENT
+          ---------------------------------------
+        elseif event_edit_active then
           local event_index = params:get("event_name")
           local id = events_lookup[event_index].id
           local order = tonumber(events_lookup[event_index].order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
@@ -4871,10 +4921,10 @@ function key(n,z)
               print(">> limit_max = " .. limit_max)
             end
             print(">> probability = " .. probability)
-           
+          
               
           else --operation == "Increment" or "Wander"
-           if limit == "Off" then -- so clunky yikes
+          if limit == "Off" then -- so clunky yikes
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = id, 
@@ -4928,6 +4978,8 @@ function key(n,z)
 
           -- Back to event overview
           event_edit_active = false
+          reset_grid_led_phase()
+          -- fix_ghosting_events()
           
           -- If the event key is still being held (so user can copy and paste immediatly after saving it), preserve these vars, otherwise zero
           if event_key_count == 0 then
@@ -4938,19 +4990,13 @@ function key(n,z)
           
           grid_dirty = true
         
-        elseif norns_interaction == "event_actions" then
-          local action = params:string("event_quick_actions")
-
-          if action == "Clear segment events" then
-            delete_events_in_segment("event_actions") -- pass arg to keep window open
-          end
         else -- exit back to Arranger
           screen_view_name = "Session"
           event_key_count = 0
           gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor        
           grid_dirty = true  
         end
-
+        
         ----------------------------------
         -- Transport controls K3 - PLAY --
         ----------------------------------
@@ -5100,23 +5146,17 @@ function enc(n,d)
     elseif screen_view_name == "Events" then
       if norns_interaction == "event_actions" then
         params:delta("event_quick_actions", d) -- change focus on event_quick_actions
-
       elseif event_edit_active == false then -- lane view
         params:delta("event_lane", d) -- for now, change lane. Redundant with E3
         grid_dirty = true
-  
       elseif event_saved == false then -- Scroll through the Events menus
         events_index = util.clamp(events_index + d, 1, #events_menus)      
         selected_events_menu = events_menus[events_index]
       end
-    else
+
+    else -- standard menus
       menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
       selected_menu = menus[page_index][menu_index]
-
-      if norns_interaction == "preview_param" and menu_index ~= 0 then
-        preview_param = clone_param(selected_menu)
-      end
-
     end
     
   else -- n == ENC 3 -------------------------------------------------------------  
@@ -5134,12 +5174,14 @@ function enc(n,d)
     ----------------------    
     -- Not using param actions on these since some use dynamic .options which don't reliably fire on changes. Also we want to fire edit_status_edited() on encoder changes but not when params are set elsewhere (loading events etc)
     elseif screen_view_name == "Events" then
-      
-      if event_edit_active == false then -- event lane view
-        params:delta("event_lane", d) -- change lane
+      if norns_interaction == "event_actions" then
+        params:delta("event_quick_actions", d) -- change focus on event_quick_actions
+            
+      elseif event_edit_active == false then -- event lane view
+        params:delta("event_lane", d)
         grid_dirty = true
 
-      elseif event_saved == false then
+      elseif event_saved == false then -- event edit menus
         if selected_events_menu == "event_category" then
           if delta_menu(d) then
             change_category()
@@ -5605,12 +5647,45 @@ end
 function redraw()
   -- screen.font_face(tab.key(screen.font_face_names, "norns"))
   local dash_x = 94
-  local header_lvl = 6
-  local header_text_lvl = 1
-  local grey_text_lvl = 3
-  local white_text_lvl = 15
-  
+
+  local lvl_pane = 6
+  local lvl_pane_text = 0
+  local lvl_pane_ui_bright = 15
+  local lvl_pane_ui_dim = 1
+  local lvl_pane_ui_dark = 0
+  local lvl_text_gray = 3
+  local lvl_text_white = 15
+  local lvl_divider = 4
+
+  if norns_interaction == "event_actions" then
+    lvl_pane = 4
+    lvl_pane_text = 1
+    lvl_pane_ui_bright = 7
+    lvl_pane_ui_dim = 2
+    lvl_pane_ui_dark = 1
+    lvl_text_gray = 1
+    lvl_text_white = 3
+    lvl_divider = 3
+  end
+
   screen.clear()
+
+  local function header(x, y, width, lvl_offset)
+    -- filled type:
+    screen.level(lvl_pane)
+    screen.rect(x, y, width, 11)
+    screen.fill()
+
+
+    -- --line type:
+    -- screen.level(0) -- mask for line type
+    -- screen.rect(0,0,92,10)
+    -- -- screen.fill() -- necessary?
+    -- screen.level(4) -- horizontal separator
+    -- screen.rect(0, 10, 92, 1)
+    -- screen.fill()
+
+  end
 
   local function footer(k2, k3)
     -- mask any partial menu items
@@ -5619,13 +5694,13 @@ function redraw()
     screen.fill()
     
     -- divider
-    screen.level(4)
+    screen.level(lvl_divider)
     screen.move(0, 54)
     screen.line(128, 54)
     screen.stroke()
 
     -- K2/K3 text
-    screen.level(3)
+    screen.level(lvl_text_gray)
     if k2 then
       screen.move(2, 62)
       screen.text("(K2) ".. k2)
@@ -5741,7 +5816,7 @@ function redraw()
       local lane_type = event_lanes[lane].type -- or "Empty"
       local lane_glyph = lane_type == "Single" and "⏹" or lane_type == "Multi" and "☰" or "☐" -- ☑ 
 
-      screen.level(15)
+      screen.level(lvl_text_white)
       screen.move(2,8)
       if event_edit_active == false then -- lane-level preview
         --------------------------
@@ -5750,28 +5825,39 @@ function redraw()
         local event_def = events_lookup[events_lookup_index[lane_id]]
 
         -- LANE EDITOR HEADER
-        screen.level(header_lvl) -- was 4
-        screen.rect(0,0,128,11)
-        screen.fill()
+        header(0, 0, 128) -- should probably just manually do this in 2 sections (inefficient as there's a mask + duplicate rows)
+
+
+        -- -- apply fix for ghosting
+        -- screen.level(lvl_pane - 2)
+        -- screen.rect(0, 3, 128, 1) -- top of boxes, static
+        -- screen.rect(0, 7, 128, 1) -- bottom of boxes, static
+        -- screen.fill()
+
+        -- for i = 1, 3 do
+        --   screen.level(lvl_pane - event_ghosting[i])
+        --   screen.rect(0, i + 3, 128, 1)
+        --   screen.fill()
+        -- end
 
         -- lane type glyphs
         for i = 1, 15 do
           local type = event_lanes[i].type
           local glyph = type == "Single" and "⏹" or type == "Multi" and "☰" or "☐" --☑
 
-          screen.level(lane == i and 15 or 1)
+          screen.level(lane == i and lvl_pane_ui_bright or lvl_pane_ui_dim) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
           screen.move(-6 + (i * 8), 8)
           screen.text(glyph)
         end
 
         -- lane summary top
-        screen.level(15) -- or 3 IDK
+        screen.level(lvl_text_white) -- or 3 IDK
         screen.move(2, 19)
         screen.text("Lane " .. lane .. ": " .. (lane_type and (lane_type .. "-event") or "Empty"))
 
         local line = 1
         local event_fields = {"category", "subcategory", "name"}  -- variant of what we store in events_menus (omits "event_")
-        screen.level(3)
+        screen.level(lvl_text_gray)
 
         -- lane event summary
         for i = 1, 3 do -- only do category, subcategory, event from event_fields
@@ -5793,10 +5879,8 @@ function redraw()
 
         footer("Arranger", nil) -- K3 also goes back to arranger 🤫
       else
-   
-   
         --------------------------
-        -- Scrolling events menu
+        -- Event editor menus
         --------------------------
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
@@ -5813,7 +5897,7 @@ function redraw()
           local event_val_string = params:string(menu_id)
           
           screen.move(2, line * 10 + 9 - menu_offset)
-          screen.level(events_index == i and 15 or 3)
+          screen.level(events_index == i and lvl_text_white or lvl_text_gray)
 
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
@@ -5883,32 +5967,30 @@ function redraw()
         end
         
         -- events editor scrollbar
-        screen.level(header_lvl - 2) -- adjusted to match top header
+        screen.level(lvl_pane - 2) -- adjusted to match top header
         local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 4 / #events_menus * 40
         screen.rect(127, offset, 1, bar_height)
         screen.fill()
       
-        -- EVENTS LANE VIEW HEADER
-        screen.level(header_lvl)
-        screen.rect(0,0,128,11)
-        screen.fill()
+        -- EVENT EDITOR HEADER
+        header(0, 0, 128)
         
         -- lane_glyph (with dynamic preview)
         if lane_glyph_preview == "Single" then
-          screen.level(header_text_lvl)
+          screen.level(lvl_pane_text)
           lane_glyph = "⏹"--"☑" -- probably no need to blink if we're going down to Single event lane
         elseif lane_glyph_preview == "Multi" then
-          screen.level(header_text_lvl + fast_blinky) --fast_blinky * 2)
+          screen.level(fast_blinky == 0 and lvl_pane_text or (lvl_pane - 2))
           lane_glyph = "☰"
         else
-          screen.level(header_text_lvl)
+          screen.level(lvl_pane_text)
         end
 
         screen.move(2,8)
         screen.text(lane_glyph)
         screen.move(6, 8)
-        screen.level(header_text_lvl)
+        screen.level(lvl_pane_text)
         screen.text(" LANE " .. event_edit_lane .. ", STEP " .. event_edit_step) -- add event_edit_segment?
 
         -- event save status
@@ -5996,19 +6078,17 @@ function redraw()
       
       -- main menu scrollbar
       if menu_index ~= 0 then
-        screen.level(header_lvl - 2) -- adjusted to match top header
+        screen.level(lvl_pane - 2) -- adjusted to match top header
         local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
         screen.rect(91, offset, 1, bar_height)
         screen.fill()
       end
       
-      -- Main menu header
-      screen.level(header_lvl) -- menu_index == 0 and 15 or 4)
-      screen.rect(0,0,92,11)
-      screen.fill()
+      -- MAIN MENU HEADER
+      header(0, 0, 92)
 
-      -- horizontal pagination
+      -- horizontal main menu pagination
       if menu_index == 0 then  -- if we want it to only appear when changing pages
         for i = 1, #pages do
           screen.level(i == page_index and 15 or 1)
@@ -6018,7 +6098,7 @@ function redraw()
       end
 
       screen.move(2,8)
-      screen.level(menu_index == 0 and 15 or 1)--0)
+      screen.level(menu_index == 0 and 15 or lvl_pane_text)
       screen.text(page_name)
       screen.fill()
 
@@ -6028,13 +6108,13 @@ function redraw()
       --------------------------------------------
 
       -- border around chord readout
-      screen.level(header_lvl - 3) --9) -- adjustment to match header (drawn below)
+      screen.level(lvl_pane - 3) --9) -- adjustment to match header (drawn below)
       screen.rect(dash_x+1,11,33,12)
       screen.stroke()
       
       -- chord readout header
       -- screen.level(menu_index == 0 and 15 or 13) -- adjusting for main menu stealing levels LOL
-      screen.level(header_lvl)
+      screen.level(lvl_pane)
       screen.rect(dash_x,0,34,11)
       screen.fill()
 
@@ -6046,7 +6126,7 @@ function redraw()
       local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- simplify?
 
       -- 2x metro rate to flash on beats
-      screen.level(transport_state == "playing" and (metro_beat == 1 and 15 or sprocket_metro.downbeat and header_text_lvl or (header_lvl)) or header_text_lvl)
+      screen.level(transport_state == "playing" and ((metro_measure and lvl_pane_ui_bright) or (sprocket_metro.downbeat and lvl_pane_ui_dark) or (lvl_pane)) or lvl_pane_ui_dark)
 
       local x_offset = dash_x + 27
       local y_offset = 3
@@ -6057,9 +6137,9 @@ function redraw()
       screen.fill()
     
       --------------------------------------------    
-      -- Pattern position readout
+      -- PATTERN POSITION READOUT
       --------------------------------------------      
-      screen.level(header_text_lvl)
+      screen.level(lvl_pane_text)
       screen.move(dash_x + 2, y_offset + 5)
       if chord_pattern_position == 0 then
         screen.text(pattern_name[active_chord_pattern].. ".RST") --".RST")
@@ -6069,7 +6149,7 @@ function redraw()
       end
       
       --------------------------------------------
-      -- Chord readout
+      -- CHORD READOUT
       --------------------------------------------
       screen.level(15)
       if chord_no > 0 then
@@ -6079,7 +6159,7 @@ function redraw()
       
       
       --------------------------------------------
-      -- Arranger dash
+      -- ARRANGER DASH
       --------------------------------------------
       local arranger_dash_y = 24
       
@@ -6109,16 +6189,14 @@ function redraw()
         arranger_dash_x = arranger_dash_x + 1
       end
 
-
-      screen.level(params:get("arranger") == 2 and (header_lvl - 2) or 1)-- 9 or 2) -- adjustment to match top headers
-      -- Arranger dash rect (rendered after chart to cover chart edge overlap)
-      screen.rect(dash_x+1, arranger_dash_y+2,33,38)
-      screen.stroke()
-      
-      -- Header
-      -- screen.level((params:get("arranger") == 2) and header_lvl or 2)
-      screen.rect(dash_x, arranger_dash_y+1,34,11)
+      -- Arranger dash header/border
+      screen.level(lvl_pane - 2) -- slight adjustment as this header is brighter because of less bright pixels on row vs up top
+      -- Arranger header
+      screen.rect(dash_x, arranger_dash_y+1,34,11) -- OG
       screen.fill()
+      -- Arranger dash rect (rendered after chart to cover chart edge overlap)
+      screen.rect(dash_x+1, arranger_dash_y + 12, 33, 28)
+      screen.stroke()
 
       --------------------------------------------
       -- Arranger countdown timer readout
@@ -6139,7 +6217,13 @@ function redraw()
         screen.level(((
           arranger_position == arranger_length 
           and (arranger_queue == nil or arranger_queue > arranger_length)) -- if arranger is jumped on the last seg
-          and (fast_blinky + 1) or header_text_lvl)) -- needs work
+          -- and (fast_blinky + 2) or lvl_pane_ui_dark)) -- needs work
+          
+          and (fast_blinky == 0 and lvl_pane_ui_dark or (lvl_pane - 4)) or lvl_pane_ui_dark)) -- needs work
+
+
+          -- screen.level(fast_blinky == 0 and lvl_pane_text or (lvl_pane - 2)) -- used for blinking lane glyph
+
 
         for i = 1, #glyphs.loop do
           screen.pixel(glyphs.loop[i][1] + x_offset, glyphs.loop[i][2] + y_offset)
@@ -6158,7 +6242,7 @@ function redraw()
       --------------------------------------------
       -- Arranger position readout
       --------------------------------------------      
-      screen.level(header_text_lvl) -- why is this washed out?
+      screen.level(lvl_pane_text) -- why is this washed out?
       screen.move(dash_x + 2,arranger_dash_y + 9)
 
       local steps = math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0)
