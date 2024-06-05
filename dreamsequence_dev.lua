@@ -2858,7 +2858,7 @@ end
 
 
 -- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false
--- arranger_active will be false until Arranger is re-synched/resumed
+-- Does not flip to true until Arranger is re-synced upon advance_chord_pattern (or transport reset)
 -- Also updates pattern_queue
 function update_arranger_active()
   if params:string("arranger") == "Off" then
@@ -2870,7 +2870,7 @@ function update_arranger_active()
     update_pattern_queue()
   end
   gen_dash("update_arranger_active")
-end  
+end
 
 
 -- variant of do_events specifically for handling chord division changes BEFORE chord plays
@@ -3807,6 +3807,40 @@ function grid_redraw()
     if grid_view_name == "Arranger" then
       g:led(16, 6 + extra_rows, 15)
       
+      -- final function for drawing arranger patterns + playhead
+      -- used by regular or shifted arranger (latter will pass modified x_offset depending on section)
+      local function draw_patterns_playheads(x, y, x_offset, arranger_led)
+
+        -- q jump supercedes all
+        if x_offset == arranger_queue then
+          arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+
+        -- loop or end of arranger  
+        elseif (arranger_position >= arranger_length) and (not arranger_queue) then
+
+          -- pulse 1st seg at end of loop
+          if params:string("playback") == "Loop" then
+            if x_offset == 1 then
+              arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+            elseif x_offset == arranger_position and arranger_led ~= 15 then
+              arranger_led = (arranger_led or 0) + 3
+            end
+          
+          -- flicker at end of arrangement     
+          elseif x_offset == arranger_position and arranger_led ~= 15 then
+            arranger_led = (arranger_led or 0) + 3 - (fast_blinky * 3)
+          end
+
+        -- regular segments  
+        elseif x_offset == arranger_position and arranger_led ~= 15 then
+          arranger_led = (arranger_led or 0) + 3
+        end
+
+        if arranger_led then
+          g:led(x, y, arranger_led)
+        end
+      end
+
       ----------------------
       -- Arranger shifting 
       ------------------------
@@ -3824,19 +3858,6 @@ function grid_redraw()
             arranger_led = 3   -- dim padded segments
           end
           return(arranger_led)
-        end
-        
-        -- needs to be passed x_offset which can be modified by each section 
-        local function draw_patterns_playheads(x, y, x_offset, arranger_led)
-          if x_offset == arranger_position and arranger_led ~= 15 then
-            arranger_led = (arranger_led or 0) + 3
-          elseif x_offset == arranger_queue then
-            arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
-          end
-
-          if arranger_led then
-            g:led(x, y, arranger_led)
-          end
         end
 
         local function draw_events(x, x_offset)
@@ -3927,16 +3948,7 @@ function grid_redraw()
             local arranger_led = nil
 
             arranger_led = y == arranger[x_offset] and 15 or (y == arranger_padded[x_offset] and 3) -- actual/padded segments
-          
-            if x_offset == arranger_position and arranger_led ~= 15 then  -- playhead and queued position pulses
-              arranger_led = (arranger_led or 0) + 3
-            elseif x_offset == arranger_queue then
-              arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
-            end
-
-            if arranger_led then
-              g:led(x, y, arranger_led)
-            end
+            draw_patterns_playheads(x, y, x_offset, arranger_led)
 
           end
 
@@ -6162,7 +6174,10 @@ function redraw()
       -- ARRANGER DASH
       --------------------------------------------
       local arranger_dash_y = 24
-      
+      local on = params:string("arranger") == "On" -- difference between this and arranger_active might be an issue
+      local final_seg = arranger_position >= arranger_length
+      local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
+
       -- Axis reference marks
       for i = 1,4 do
         screen.level(1)
@@ -6198,78 +6213,88 @@ function redraw()
       screen.rect(dash_x+1, arranger_dash_y + 12, 33, 28)
       screen.stroke()
 
-      --------------------------------------------
-      -- Arranger countdown timer readout
-      --------------------------------------------
-    
-      -- Arranger time
-      screen.level(params:get("arranger") == 2 and 15 or 3)
 
-      -- Bottom left
+      -- ARRANGER COUNTDOWN TIMER 
+      screen.level(on and 15 or 3) -- brightens immediately but value won't update until resync (arranger_active)
       screen.move(dash_x +3, arranger_dash_y + 36)
       screen.text(seconds_remaining)
       
-      -- Arranger mode glyph
+
+      -- ARRANGER MODE GLYPH
       local x_offset = dash_x + 27
       local y_offset = arranger_dash_y + 4
 
+      -- glyph level
+      local lvl = on and lvl_pane_ui_bright or lvl_pane_ui_dark   -- bright == on/dark == off
+      if final_seg and not valid_jump then                        -- blink final-segment warning
+        if transport_state == "playing" then
+          lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
+        else
+          lvl = fast_blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
+        end
+      end
+      screen.level(lvl)
+
+      -- glyph type: loop or one-shot
       if params:string("playback") == "Loop" then
-        screen.level(((
-          arranger_position == arranger_length 
-          and (arranger_queue == nil or arranger_queue > arranger_length)) -- if arranger is jumped on the last seg
-          -- and (fast_blinky + 2) or lvl_pane_ui_dark)) -- needs work
-          
-          and (fast_blinky == 0 and lvl_pane_ui_dark or (lvl_pane - 4)) or lvl_pane_ui_dark)) -- needs work
-
-
-          -- screen.level(fast_blinky == 0 and lvl_pane_text or (lvl_pane - 2)) -- used for blinking lane glyph
-
-
         for i = 1, #glyphs.loop do
           screen.pixel(glyphs.loop[i][1] + x_offset, glyphs.loop[i][2] + y_offset)
         end
-      else 
-        screen.level(((arranger_position == arranger_length 
-          and arranger_one_shot_last_pattern) -- if arranger is jumped on the last seg
-        and fast_blinky or 0) * 2)
-
+      else
         for i = 1, #glyphs.one_shot do
           screen.pixel(glyphs.one_shot[i][1] + x_offset, glyphs.one_shot[i][2] + y_offset)
         end
       end
-      screen.fill()
+
+      screen.fill() -- remove when switching to norns.ttf
       
-      --------------------------------------------
-      -- Arranger position readout
-      --------------------------------------------      
-      screen.level(lvl_pane_text) -- why is this washed out?
+
+      -- ARRANGER POSITION READOUT
+      screen.level(lvl_pane_text)
       screen.move(dash_x + 2,arranger_dash_y + 9)
 
       local steps = math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0)
-      if arranger_position == 0 then
+
+      if arranger_position == 0 then         -- arranger is reset
         if arranger_queue == nil then
-          screen.text("RST")
+          if chord_pattern_position == 0 then
+            screen.text("RST")
+          else
+            screen.text("1." .. steps) -- always show re-sync countdown unless reset
+          end
         elseif arranger_active == false then
-          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
-        else
-          screen.text(arranger_queue .. ".0")
+          if valid_jump then
+            screen.text(arranger_queue .. ".".. steps)
+          else
+            screen.text("LP.".. steps) -- OG
+          end
+        else 
+          if valid_jump then
+            screen.text(arranger_queue .. ".0")
+          else
+            screen.text("LP.0") -- "RST")
+          end
         end
+
       elseif arranger_active == false then
         if chord_pattern_position == 0 then -- condition for when pattern is reset to position 0 and is in-between segments
           screen.text(arranger_position .. ".0")
-        elseif arranger_position == arranger_length then
-          if params:string("playback") == "Loop" then
-            screen.text("LP." .. steps)  -- todo font enhancement: use loop glyph
+        elseif final_seg then
+          if valid_jump then
+            screen.text(arranger_queue .. "." .. steps)        -- segment we're jumping to
+          elseif params:string("playback") == "Loop" then
+            screen.text("LP." .. steps)                        -- looping back to seg 1 (use norns.ttf glyph?)
           else
-            screen.text("EN." .. steps)  -- todo font enhancement: use loop glyph
+            screen.text("EN." .. steps)                        -- ending (use norns.ttf glyph?)
           end
         else
           screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
         end
+
       else
         screen.text(arranger_position .. "." .. chord_pattern_position)
-        
-      end      
+
+      end
       screen.fill()
       
       
