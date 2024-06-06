@@ -5671,10 +5671,10 @@ function redraw()
   local lvl_text_white = 15
   local lvl_divider = 4
 
-  -- -- palette options?
+  -- -- alt palette options WIP
   -- local lvl_pane = 15
   -- local lvl_pane_text = 0
-  -- local lvl_pane_ui_bright = 0 -- selected element
+  -- local lvl_pane_ui_bright = 0  -- selected element
   -- local lvl_pane_ui_dim = 3     -- unselected element
   -- local lvl_pane_ui_dark = 2    -- static element
   -- local lvl_text_gray = 3
@@ -6051,6 +6051,7 @@ function redraw()
         screen.rect(table.unpack(rect))
         screen.stroke()
 
+        -- todo use param options so event_quick_actions can be local
         for row = 1, #event_quick_actions do
           screen.level(params:get("event_quick_actions") == row and 15 or 3)
           screen.move(border + 6, row * 10 + 14)  -- exaggerate border a bit
@@ -6061,24 +6062,22 @@ function redraw()
         
     -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
     else
-      ---------------------------
-      -- UI elements placed here appear in all non-Events views
-      ---------------------------
-      
-      --------------------------------------------
-      -- Scrolling menus
-      --------------------------------------------
+      -------------------------------
+      -- SCROLLING MAIN MENUS
+      -------------------------------
       -- todo p1 move calcs out of redraw
+      local paging = menu_index == 0
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
       local line = 1
+
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
         local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
         local param_get = preview_param_q_get[param_id] or params:get(param_id)
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
 
-        screen.move(2, line * 10 + 9 - menu_offset)
-        screen.level(menu_index == i and 15 or 3)
+        screen.move(2, line * 10 + 9 - menu_offset + (paging and 2 or 0))
+        screen.level(menu_index == i and lvl_text_white or lvl_text_gray)
         
         -- Generate menu and draw ▶◀ indicators for scroll range
         if menu_index == i then
@@ -6095,36 +6094,50 @@ function redraw()
         line = line + 1
       end
 
-      -- -- mask the area to the right of main menu since we can't rely on screen.text_extents
-      -- screen.level(0)
-      -- screen.rect(91, 0, 37, 64)
-      -- screen.fill()
       
-      -- main menu scrollbar
-      if menu_index ~= 0 then
-        screen.level(lvl_pane - 2) -- adjusted to match top header
-        local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
-        local bar_height = 5 / #menus[page_index] * 52
-        screen.rect(90, offset, 1, bar_height)
+      -- PAGE HEADER, PAGINATION, SCROLLBAR
+      -- todo: this covers up menus that scroll up behind. should fix
+      if paging then -- skeuomorphin' BBY!
+        screen.level(lvl_pane)
+        screen.rect(0, 2, dash_x - 2, 11)
         screen.fill()
-      end
-      
-      -- MAIN MENU HEADER
-      header(0, 0, dash_x - 2)
 
-      -- horizontal main menu pagination
-      -- todo adapt to max_seqs
-      if menu_index == 0 then  -- if we want it to only appear when changing pages
-        for i = 1, #pages do
-          screen.level(i == page_index and lvl_pane_ui_bright or lvl_pane_ui_dim)
-          screen.rect(35 + ((i - 1) * 4), 1, 3, 1) -- small centered pagination
-          screen.fill()
-        end
+        screen.level(lvl_pane - 3)
+        screen.rect(1, 1, dash_x - 4, 1)
+        screen.fill()
+        
+        screen.level(lvl_pane - 4)
+        screen.rect(2, 0, dash_x - 6, 1)
+        screen.fill()  
+
+        -- horizontal main menu pagination
+        -- todo p0 adapt to max_seqs
+        -- if menu_index == 0 then  -- if we want it to only appear when changing pages
+          for i = 1, #pages do
+            screen.level(i == page_index and lvl_pane_ui_bright or lvl_pane_ui_dim)
+            screen.rect(35 + ((i - 1) * 4), 3, 3, 1) -- small centered pagination
+            screen.fill()
+          end
+        -- end
+
+        screen.move(2, 10)
+        screen.level(menu_index == 0 and lvl_pane_ui_bright or lvl_pane_ui_dim)
+        screen.text(page_name)
+        screen.fill()
+
+      else
+        header(0, 0, dash_x - 2)
+
+        screen.move(2,8)
+        screen.level(menu_index == 0 and lvl_pane_ui_bright or lvl_pane_ui_dark)
+        screen.text(page_name)
+        screen.fill()        
       end
 
-      screen.move(2,8)
-      screen.level(menu_index == 0 and lvl_pane_ui_bright or lvl_pane_ui_dim)
-      screen.text(page_name)
+      screen.level(lvl_pane - 2) -- adjusted to match top header
+      local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
+      local bar_height = 5 / #menus[page_index] * 52
+      screen.rect(90, offset + (paging and 2 or 0), 1, bar_height)
       screen.fill()
 
 
@@ -6139,13 +6152,20 @@ function redraw()
       screen.rect(dash_x, 0, 35, 11)
       screen.fill()
 
-
       -- pane border
       screen.level(lvl_pane - 3) -- adjustment to match header
       screen.rect(dash_x, 11, 1, 11)  -- left border
       screen.rect(127, 11, 1, 11)     -- right border
       screen.rect(dash_x, 22, 35, 1)  -- bottom border
       screen.fill()
+
+      if paging then -- clean up banding
+        screen.level(lvl_pane)
+        screen.rect(dash_x, 11, 1, 2)  -- left border
+        screen.rect(127, 11, 1, 2)     -- right border
+        screen.fill()
+      end
+
       
 
       -- PATTERN POSITION READOUT
