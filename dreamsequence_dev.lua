@@ -5658,16 +5658,28 @@ end
 -- todo p1: this can be improved quite a bit by just having these custom screens be generated at the key/g.key level. Should be a fun refactor.
 function redraw()
   -- screen.font_face(tab.key(screen.font_face_names, "norns"))
-  local dash_x = 94
+
+  -- x origin of chord and arranger dashes
+  local dash_x = 93
 
   local lvl_pane = 6
   local lvl_pane_text = 0
-  local lvl_pane_ui_bright = 15
-  local lvl_pane_ui_dim = 1
-  local lvl_pane_ui_dark = 0
+  local lvl_pane_ui_bright = 15 -- selected element
+  local lvl_pane_ui_dim = 2     -- unselected element
+  local lvl_pane_ui_dark = 0    -- static element
   local lvl_text_gray = 3
   local lvl_text_white = 15
   local lvl_divider = 4
+
+  -- -- palette options?
+  -- local lvl_pane = 15
+  -- local lvl_pane_text = 0
+  -- local lvl_pane_ui_bright = 0 -- selected element
+  -- local lvl_pane_ui_dim = 3     -- unselected element
+  -- local lvl_pane_ui_dark = 2    -- static element
+  -- local lvl_text_gray = 3
+  -- local lvl_text_white = 15
+  -- local lvl_divider = 4
 
   if norns_interaction == "event_actions" then
     lvl_pane = 4
@@ -5682,7 +5694,7 @@ function redraw()
 
   screen.clear()
 
-  local function header(x, y, width, lvl_offset)
+  local function header(x, y, width)--, lvl_offset)
     -- filled type:
     screen.level(lvl_pane)
     screen.rect(x, y, width, 11)
@@ -6093,97 +6105,98 @@ function redraw()
         screen.level(lvl_pane - 2) -- adjusted to match top header
         local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
-        screen.rect(91, offset, 1, bar_height)
+        screen.rect(90, offset, 1, bar_height)
         screen.fill()
       end
       
       -- MAIN MENU HEADER
-      header(0, 0, 92)
+      header(0, 0, dash_x - 2)
 
       -- horizontal main menu pagination
+      -- todo adapt to max_seqs
       if menu_index == 0 then  -- if we want it to only appear when changing pages
         for i = 1, #pages do
-          screen.level(i == page_index and 15 or 1)
+          screen.level(i == page_index and lvl_pane_ui_bright or lvl_pane_ui_dim)
           screen.rect(35 + ((i - 1) * 4), 1, 3, 1) -- small centered pagination
           screen.fill()
         end
       end
 
       screen.move(2,8)
-      screen.level(menu_index == 0 and 15 or lvl_pane_text)
+      screen.level(menu_index == 0 and lvl_pane_ui_bright or lvl_pane_ui_dim)
       screen.text(page_name)
       screen.fill()
 
 
       --------------------------------------------
-      -- Transport state, pattern, chord readout
+      -- CHORD DASH: PATTERN, PROGRESS BAR, METRONOME/TRANSPORT STATE, CHORD READOUT
       --------------------------------------------
-
-      -- border around chord readout
-      screen.level(lvl_pane - 3) --9) -- adjustment to match header (drawn below)
-      screen.rect(dash_x+1,11,33,12)
-      screen.stroke()
       
-      -- chord readout header
-      -- screen.level(menu_index == 0 and 15 or 13) -- adjusting for main menu stealing levels LOL
+      local x_offset = dash_x + 26 -- redefinable offset from dash_x
+
+      -- pane header
       screen.level(lvl_pane)
-      screen.rect(dash_x,0,34,11)
+      screen.rect(dash_x, 0, 35, 11)
       screen.fill()
 
-      -----------------------------
-      -- Draw transport status glyph and metronome
-      -----------------------------
 
-      -- simplify intermediate states for the glyph selection
+      -- pane border
+      screen.level(lvl_pane - 3) -- adjustment to match header
+      screen.rect(dash_x, 11, 1, 11)  -- left border
+      screen.rect(127, 11, 1, 11)     -- right border
+      screen.rect(dash_x, 22, 35, 1)  -- bottom border
+      screen.fill()
+      
+
+      -- PATTERN POSITION READOUT
+      screen.level(lvl_pane_text)
+      screen.move(dash_x + 2, 8)
+      screen.text(pattern_name[active_chord_pattern])
+
+
+      -- CHORD STEP PROGRESS BAR
+      screen.level(lvl_pane_ui_dim)
+      screen.rect(dash_x + 9, 3, chord_pattern_length[active_chord_pattern], 5)
+      screen.fill()
+
+      screen.level(lvl_pane_ui_bright)
+      screen.rect(dash_x + 9, 3, chord_pattern_position, 5)
+      screen.fill()
+
+
+      -- METRONOME AND TRANSPORT STATUS GLYPHS
       local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- simplify?
 
-      -- 2x metro rate to flash on beats
       screen.level(transport_state == "playing" and ((metro_measure and lvl_pane_ui_bright) or (sprocket_metro.downbeat and lvl_pane_ui_dark) or (lvl_pane)) or lvl_pane_ui_dark)
-
-      local x_offset = dash_x + 27
-      local y_offset = 3
-
       for i = 1, #glyphs[transport_state] do
-        screen.pixel(glyphs[transport_state][i][1] + x_offset, glyphs[transport_state][i][2] + y_offset)
+        screen.pixel(glyphs[transport_state][i][1] + 128 - 7, glyphs[transport_state][i][2] + 3)
       end
       screen.fill()
-    
-      --------------------------------------------    
-      -- PATTERN POSITION READOUT
-      --------------------------------------------      
-      screen.level(lvl_pane_text)
-      screen.move(dash_x + 2, y_offset + 5)
-      if chord_pattern_position == 0 then
-        screen.text(pattern_name[active_chord_pattern].. ".RST") --".RST")
-      else
-        screen.text(pattern_name[active_chord_pattern] ..".".. chord_pattern_position)
-        -- screen.text(pattern_name[active_chord_pattern] ..".".. chord_pattern_position .. "/" .. chord_pattern_length[active_chord_pattern])
-      end
       
-      --------------------------------------------
+
       -- CHORD READOUT
-      --------------------------------------------
       screen.level(15)
       if chord_no > 0 then
-        screen.move(dash_x + 17,y_offset + 16)
+        screen.move(dash_x + 17, 19)
         screen.text_center(chord_readout)
       end
       
       
+
       --------------------------------------------
       -- ARRANGER DASH
       --------------------------------------------
-      local arranger_dash_y = 24
+      local arranger_dash_y = 25 -- top of arranger pane
       local on = params:string("arranger") == "On" -- difference between this and arranger_active might be an issue
       local final_seg = arranger_position >= arranger_length
       local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
 
       -- Axis reference marks
-      for i = 1,4 do
+      for i = 1, 4 do
         screen.level(1)
-        screen.rect(dash_x + 3, arranger_dash_y + 12 + i * 3, 1, 2)
+        screen.rect(dash_x + 4, arranger_dash_y + 11 + i * 3, 1, 2)
       end
-      screen.pixel(dash_x + 3, arranger_dash_y + 27)
+      screen.pixel(dash_x + 4, arranger_dash_y + 26)
       screen.fill()
       
       local arranger_dash_x = dash_x + (arranger_position == 0 and 5 or 3) -- If arranger is reset, add an initial gap to the x position
@@ -6193,38 +6206,42 @@ function redraw()
         screen.level(dash_levels[i] or 1)
         -- arranger segment patterns
         if dash_patterns[i] ~= 0 then
-          screen.rect(arranger_dash_x, arranger_dash_y + 12 + (dash_patterns[i] * 3), 1, 2)
+          screen.rect(arranger_dash_x + 1, arranger_dash_y + 11 + (dash_patterns[i] * 3), 1, 2)
           screen.fill()
         end
         -- events pips
         screen.level(dash_events[i] or 0)
-        screen.pixel(arranger_dash_x, 51)
+        screen.pixel(arranger_dash_x + 1, 51)
         screen.fill()
 
         arranger_dash_x = arranger_dash_x + 1
       end
 
-      -- Arranger dash header/border
-      screen.level(lvl_pane - 2) -- slight adjustment as this header is brighter because of less bright pixels on row vs up top
-      -- Arranger header
-      screen.rect(dash_x, arranger_dash_y+1,34,11) -- OG
+      -- Arranger pane header
+      screen.level(lvl_pane - (on and 2 or 4)) -- slight adjustment to more closely match top header levels
+      screen.rect(dash_x, arranger_dash_y, 35, 11)
       screen.fill()
-      -- Arranger dash rect (rendered after chart to cover chart edge overlap)
-      screen.rect(dash_x+1, arranger_dash_y + 12, 33, 28)
-      screen.stroke()
+
+      -- Arranger dash border (rendered after chart to cover chart edge overlap)
+      screen.level(lvl_pane - (on and 3 or 4))
+      screen.rect(dash_x, arranger_dash_y + 11, 1, 27)      -- left border      
+      screen.rect(127, arranger_dash_y + 11, 1, 27)         -- right border
+      screen.rect(dash_x, 63, 35, 1)      -- bottom border
+      screen.fill()
 
 
       -- ARRANGER COUNTDOWN TIMER 
       screen.level(on and 15 or 3) -- brightens immediately but value won't update until resync (arranger_active)
-      screen.move(dash_x +3, arranger_dash_y + 36)
+      screen.move(dash_x + 4, arranger_dash_y + 35)
       screen.text(seconds_remaining)
       
 
       -- ARRANGER MODE GLYPH
       local x_offset = dash_x + 27
-      local y_offset = arranger_dash_y + 4
+      local y_offset = arranger_dash_y + 3
 
       -- glyph level
+      -- todo see if we should pulse final segment when looping and blink when ending (to match grid led)
       local lvl = on and lvl_pane_ui_bright or lvl_pane_ui_dark   -- bright == on/dark == off
       if final_seg and not valid_jump then                        -- blink final-segment warning
         if transport_state == "playing" then
@@ -6251,48 +6268,33 @@ function redraw()
 
       -- ARRANGER POSITION READOUT
       screen.level(lvl_pane_text)
-      screen.move(dash_x + 2,arranger_dash_y + 9)
+      screen.move(dash_x + 2, y_offset + 5)
 
-      local steps = math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0)
-
-      if arranger_position == 0 then         -- arranger is reset
-        if arranger_queue == nil then
-          if chord_pattern_position == 0 then
-            screen.text("RST")
-          else
-            screen.text("1." .. steps) -- always show re-sync countdown unless reset
-          end
-        elseif arranger_active == false then
-          if valid_jump then
-            screen.text(arranger_queue .. ".".. steps)
-          else
-            screen.text("LP.".. steps) -- OG
-          end
-        else 
-          if valid_jump then
-            screen.text(arranger_queue .. ".0")
-          else
-            screen.text("LP.0") -- "RST")
-          end
-        end
-
-      elseif arranger_active == false then
-        if chord_pattern_position == 0 then -- condition for when pattern is reset to position 0 and is in-between segments
-          screen.text(arranger_position .. ".0")
-        elseif final_seg then
-          if valid_jump then
-            screen.text(arranger_queue .. "." .. steps)        -- segment we're jumping to
-          elseif params:string("playback") == "Loop" then
-            screen.text("LP." .. steps)                        -- looping back to seg 1 (use norns.ttf glyph?)
-          else
-            screen.text("EN." .. steps)                        -- ending (use norns.ttf glyph?)
-          end
+      -- simple, pulse only when waiting to re-sync
+      if arranger_active == false then
+        if on then
+          screen.level(lvl_pane_ui_dark + 2 - led_pulse) -- pulse while waiting to enter arrangement
         else
-          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
+          screen.level(lvl_pane_ui_dark)
         end
 
-      else
-        screen.text(arranger_position .. "." .. chord_pattern_position)
+        if valid_jump then
+          screen.text(arranger_queue)
+        elseif final_seg and params:string("playback") == "1-shot" then
+          screen.text("End") -- indicate we'll hit end, not wrap
+        else
+          screen.text(util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
+        end
+
+      elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
+
+        if valid_jump then
+          screen.text(arranger_queue)
+        else
+          screen.text(arranger_position == 0 and 1 or arranger_position)
+        end
+      else                                          -- standard playback
+        screen.text(arranger_position)
 
       end
       screen.fill()
