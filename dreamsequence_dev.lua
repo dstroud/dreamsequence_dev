@@ -807,7 +807,7 @@ function init()
   led_pulse = 0
   fast_blinky = 0
   screen_view_name = "Session"
-
+  dash_y = 0
   -- initialize pages
   pages = {"SONG", "CHORD"}
   for i = 1, max_seqs do
@@ -1071,7 +1071,7 @@ function init()
       chord_raw = next_chord
       chord_no = 0 -- wipe chord readout
       gen_chord_readout()
-      gen_dash("params.action_read")
+      gen_arranger_dash_data("params.action_read")
       read_prefs()
       -- if transport_active, reset and continue playing so user can demo psets from the system menu
       -- todo p2 need to send different sync values depending on clock source.
@@ -1703,6 +1703,12 @@ end -- end of init
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
+
+function screenshot(name)
+  local filepath = norns.state.data .. (name or "screenshot") .. ".png"
+  _norns.screen_export_png(filepath)
+  print("screenshot saved to " .. filepath)
+end
 
 
 -- function dump_params()
@@ -2544,13 +2550,12 @@ function gen_arranger_padded()
       arranger_padded[i] = (patt or active_chord_pattern)
     end
   end
-  gen_dash("gen_arranger_padded")
+  gen_arranger_dash_data("gen_arranger_padded")
 end
 
 
 function calc_seconds_remaining()
   if arranger_active then
-    -- percent_step_elapsed = arranger_position == 0 and 0 or (math.max(clock_step,0) % chord_div / (chord_div-1)) -- todo kill chord_div?
     percent_step_elapsed = (arranger_position == 0 and 0 or sprocket_chord.phase) / (sprocket_chord.division * 4 * seq_lattice.ppqn) -- ppc
     seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
   else
@@ -2697,7 +2702,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   reset_lattice() -- reset_clock()
   get_next_chord()
   chord_raw = next_chord
-  gen_dash("reset_pattern")
+  gen_arranger_dash_data("reset_pattern")
   grid_dirty = true
 end
 
@@ -2802,7 +2807,7 @@ function advance_chord_pattern()
 
     if arranger_active then
       do_events()
-      gen_dash("advance_chord_pattern")
+      gen_arranger_dash_data("advance_chord_pattern")
     end
 
     -- Play the chord
@@ -2869,7 +2874,7 @@ function update_arranger_active()
     if chord_pattern_position == 0 then arranger_active = true end
     update_pattern_queue()
   end
-  gen_dash("update_arranger_active")
+  gen_arranger_dash_data("update_arranger_active")
 end
 
 
@@ -4296,7 +4301,7 @@ function g.key(x,y,z)
         if interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
           print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
-          gen_dash("Event copy+paste")
+          gen_arranger_dash_data("Event copy+paste")
         end
         
       -- ARRANGER EVENTS TIMELINE KEY DOWN
@@ -4314,7 +4319,7 @@ function g.key(x,y,z)
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
             print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
-            gen_dash("Event copy+paste")
+            gen_arranger_dash_data("Event copy+paste")
           end
         end
       end
@@ -4342,7 +4347,7 @@ function g.key(x,y,z)
       -- set chord_pattern_length  
       elseif x == 15 then
         params:set("chord_pattern_length", y + pattern_grid_offset)
-        gen_dash("g.key chord_pattern_length")
+        gen_arranger_dash_data("g.key chord_pattern_length")
       
 
       elseif x == 16 and y <5 then  --Key DOWN events for pattern switcher.
@@ -4604,7 +4609,7 @@ function key(n,z)
      
         elseif grid_view_name == "Chord" then      
           chord_generator_lite()
-          -- gen_dash("chord_generator_lite") -- will run when called from event but not from keys
+          -- gen_arranger_dash_data("chord_generator_lite") -- will run when called from event but not from keys
         elseif grid_view_name == "Seq" then       
           seq_generator("run")
         end
@@ -4672,12 +4677,12 @@ function key(n,z)
           else -- exit back to Arranger
             screen_view_name = "Session"
             event_key_count = 0
-            gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor        
+            gen_arranger_dash_data("K3 events saved") -- update events strip in dash after making changes in events editor        
             grid_dirty = true
           end
         end
         
-        gen_dash("K2 events editor closed") -- update events strip in dash after making changes in events editor
+        gen_arranger_dash_data("K2 events editor closed") -- update events strip in dash after making changes in events editor
         grid_dirty = true
     
         
@@ -5005,7 +5010,7 @@ function key(n,z)
         else -- exit back to Arranger
           screen_view_name = "Session"
           event_key_count = 0
-          gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor        
+          gen_arranger_dash_data("K3 events saved") -- update events strip in dash after making changes in events editor        
           grid_dirty = true  
         end
         
@@ -5555,7 +5560,7 @@ end
 
 -- Alternative for more digits up to 9 hours LETSGOOOOOOO
 function s_to_min_sec(seconds)
-  local seconds = tonumber(seconds)
+  -- local seconds = tonumber(seconds)
     -- hours = (string.format("%02.f", math.floor(seconds/3600));
     hours_raw = math.floor(seconds/3600);
     hours = string.format("%1.f", hours_raw);
@@ -5563,18 +5568,29 @@ function s_to_min_sec(seconds)
     secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
     -- Modify hours if it's 2+ digits
     -- hours = hours < 10 and string.format("%2.f",hours) or ">";
-    if hours_raw < 10 then
-      return hours..":"..mins..":"..secs
+    if hours_raw < 1 then
+      return mins .. ":" .. secs
+    elseif hours_raw < 10 then
+      return hours .. "h:" .. mins .. "m"
     else
-      return hours.." hrs"
+      return hours .. "h+"
     end
 end
 
 
 -- generates truncated flat tables at the chord step level for the arranger mini dashboard
 -- runs any time the arranger changes (generator, events, pattern changes, length changes, key pset load, arranger/pattern reset, event edits)
-function gen_dash(source)
-  -- print("gen_dash called by " .. (source or "?"))
+-- holy shit this needs a refactor. really awful
+function gen_arranger_dash_data(source)
+  local on = params:string("arranger") == "On"
+  local dash_steps = 0
+  local stop = 23 -- width of chart
+  local lvl_pane = 15 -- gotta update if lvl_xxx change or do a proper palette
+  local lvl_pane_selected = 1
+  local lvl_pane_deselected = 3
+  local steps_remaining_in_pattern = nil
+
+  -- print("gen_arranger_dash_data called by " .. (source or "?"))
   dash_patterns = {}
   -- dash_levels correspond to 3 arranger states:
   -- 1. Arranger was disabled then re-enabled mid-segment so current segment should be dimmed
@@ -5582,16 +5598,14 @@ function gen_dash(source)
   -- 3. Arranger is disabled completely and should be dimmed  
   dash_levels = {}
   dash_events = {}
-  dash_steps = 0
-  steps_remaining_in_active_pattern = 0
-  steps_remaining_in_arrangement = 0
+  steps_remaining_in_active_pattern = 0 -- used to calculate timer as well. todo look at updating in advance_chord_pattern
+  steps_remaining_in_arrangement = 0 -- same
 
   ---------------------------------------------------------------------------------------------------
   -- iterate through all steps in arranger so we can get a total for steps_remaining_in_arrangement
   -- then build the arranger dash charts, limited to area drawn on screen (~30px)
   ---------------------------------------------------------------------------------------------------
-  for i = math.max(arranger_position, 1), arranger_length do
-    
+  for i = math.max(arranger_position, 1), arranger_length do    
   -- _sticky vars handle instances when the active arranger segment is interrupted, in which case we want to freeze its vars to stop the segment from updating on the dash (while still allowing upcoming segments to update)
   -- Scenarios to test for:
     -- 1. User changes the current arranger segment pattern while on that segment. In this case we want to keep displaying the currently *playing* chord pattern
@@ -5599,16 +5613,18 @@ function gen_dash(source)
     -- 3. Current arranger segment is turned off, resulting in it picking up a different pattern (either the previous pattern or wrapping around to grab the last pattern. arranger_padded shenanigans)
     -- 4. We DO want this to update if the arranger is reset (arranger_position = 0, however)
     
+    local segment_level = on and lvl_pane_selected or lvl_pane_deselected --and 15 or 2 WAG moving this up here
+
     -- Note: arranger_position == i idenifies if we're on the active segment. Implicitly false when arranger is reset (arranger_position 0) todo p2 make local
     if arranger_position == i then
       -- todo p2 would be nice to rewrite this so these can be local
-      if arranger_active == true then
+      if arranger_active then
         active_pattern = active_chord_pattern
         active_chord_pattern_length = chord_pattern_length[active_pattern]
         active_chord_pattern_position = math.max(chord_pattern_position, 1)
-        segment_level = 15
+        segment_level = lvl_pane_selected -- 15
       else
-        segment_level = 2 -- interrupted segment pattern, redraw will add +1 for better contrast only on events
+        segment_level = lvl_pane_deselected -- interrupted segment
       end
       pattern_sticky = active_pattern
       chord_pattern_length_sticky = active_chord_pattern_length
@@ -5623,29 +5639,34 @@ function gen_dash(source)
       chord_pattern_length_sticky = chord_pattern_length[pattern_sticky]
       chord_pattern_position_sticky = 1
       steps_remaining_in_pattern = chord_pattern_length[pattern_sticky]
-      segment_level = params:get("arranger") == 2 and 15 or 2
+      -- segment_level = params:string("arranger") == "On" and 0 or 3 --and 15 or 2
     end
     
     -- used to total remaining time in arrangement (beyond what is drawn in the dash)  
     steps_remaining_in_arrangement = steps_remaining_in_arrangement + steps_remaining_in_pattern
     
     -- todo p3 some sort of weird race condition is happening at init that requires nil check on events
-    if events ~= nil and dash_steps < 30 then -- capped so we only store what is needed for the dash (including inserted blanks)
-      for s = chord_pattern_position_sticky, chord_pattern_length_sticky do -- todo debug this was letting 0 values through at some point. Debug if errors surface.
-        -- if s == 0 then print("s == 0 " .. chord_pattern_position_sticky .. "  " .. chord_pattern_length_sticky) end -- p0 debug looking for 0000s
-        if dash_steps == 30 then
-         break 
+    if events ~= nil and dash_steps < stop then -- capped so we only store what is needed for the dash (including inserted blanks)
+      
+      for s = chord_pattern_position_sticky, chord_pattern_length_sticky do -- todo debug this was letting 0 values through at some point. Debug if errors surface.  
+        if dash_steps == stop then
+          break 
         end -- second length check for each step iteration cuts down on what is saved for long segments
+
         table.insert(dash_patterns, pattern_sticky)
         table.insert(dash_levels, segment_level)
-        table.insert(dash_events, ((events[i][s].populated or 0) > 0) and math.min(segment_level + 1, 15) or 1)
+        table.insert(dash_events, ((events[i][s].populated or 0) > 0) and segment_level or lvl_pane_deselected)
         dash_steps = dash_steps + 1
       end
-    -- insert blanks between segments
-    table.insert(dash_patterns, 0)
-    table.insert(dash_events, 0) 
-    table.insert(dash_levels, 0)
-    dash_steps = dash_steps + 1 -- and 1 to grow on!
+
+      -- insert blanks between segments
+      if dash_steps < stop then
+        table.insert(dash_patterns, lvl_pane)
+        table.insert(dash_events, lvl_pane)
+        table.insert(dash_levels, lvl_pane)
+        dash_steps = dash_steps + 1 -- and 1 to grow on!
+      end
+
     end
   end
   calc_seconds_remaining() -- firing before lattice is running which causes error
@@ -5660,35 +5681,22 @@ function redraw()
   -- screen.font_face(tab.key(screen.font_face_names, "norns"))
 
   -- x origin of chord and arranger dashes
-  local dash_x = 93
+  local dash_x = 99
 
-  local lvl_pane = 6
-  local lvl_pane_text = 0
-  local lvl_pane_ui_bright = 15 -- selected element
-  local lvl_pane_ui_dim = 2     -- unselected element
-  local lvl_pane_ui_dark = 0    -- static element
-  local lvl_text_gray = 3
-  local lvl_text_white = 15
-  local lvl_divider = 4
-
-  -- -- palette options?
-  -- local lvl_pane = 15
-  -- local lvl_pane_text = 0
-  -- local lvl_pane_ui_bright = 0 -- selected element
-  -- local lvl_pane_ui_dim = 3     -- unselected element
-  -- local lvl_pane_ui_dark = 2    -- static element
-  -- local lvl_text_gray = 3
-  -- local lvl_text_white = 15
-  -- local lvl_divider = 4
+  local lvl_pane = 15
+  local lvl_pane_selected = 1
+  local lvl_pane_deselected = 3
+  local lvl_menu_deselected = 3
+  local lvl_menu_selected = 15
+  local lvl_divider = 4 -- +1 for horizontal dividers to match lvl_menu_deselected
 
   if norns_interaction == "event_actions" then
     lvl_pane = 4
-    lvl_pane_text = 1
-    lvl_pane_ui_bright = 7
-    lvl_pane_ui_dim = 2
-    lvl_pane_ui_dark = 1
-    lvl_text_gray = 1
-    lvl_text_white = 3
+    lvl_pane_selected = 7
+    lvl_pane_deselected = 2
+    lvl_pane_selected = 1
+    lvl_menu_deselected = 1
+    lvl_menu_selected = 3
     lvl_divider = 3
   end
 
@@ -5724,7 +5732,7 @@ function redraw()
     screen.stroke()
 
     -- K2/K3 text
-    screen.level(lvl_text_gray)
+    screen.level(lvl_menu_deselected)
     if k2 then
       screen.move(2, 62)
       screen.text("(K2) ".. k2)
@@ -5840,7 +5848,7 @@ function redraw()
       local lane_type = event_lanes[lane].type -- or "Empty"
       local lane_glyph = lane_type == "Single" and "⏹" or lane_type == "Multi" and "☰" or "☐" -- ☑ 
 
-      screen.level(lvl_text_white)
+      screen.level(lvl_menu_selected)
       screen.move(2,8)
       if event_edit_active == false then -- lane-level preview
         --------------------------
@@ -5869,19 +5877,19 @@ function redraw()
           local type = event_lanes[i].type
           local glyph = type == "Single" and "⏹" or type == "Multi" and "☰" or "☐" --☑
 
-          screen.level(lane == i and lvl_pane_ui_bright or lvl_pane_ui_dim) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
+          screen.level(lane == i and lvl_pane_selected or lvl_pane_deselected) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
           screen.move(-6 + (i * 8), 8)
           screen.text(glyph)
         end
 
         -- lane summary top
-        screen.level(lvl_text_white) -- or 3 IDK
+        screen.level(lvl_menu_selected) -- or 3 IDK
         screen.move(2, 19)
         screen.text("Lane " .. lane .. ": " .. (lane_type and (lane_type .. "-event") or "Empty"))
 
         local line = 1
         local event_fields = {"category", "subcategory", "name"}  -- variant of what we store in events_menus (omits "event_")
-        screen.level(lvl_text_gray)
+        screen.level(lvl_menu_deselected)
 
         -- lane event summary
         for i = 1, 3 do -- only do category, subcategory, event from event_fields
@@ -5921,7 +5929,7 @@ function redraw()
           local event_val_string = params:string(menu_id)
           
           screen.move(2, line * 10 + 9 - menu_offset)
-          screen.level(events_index == i and lvl_text_white or lvl_text_gray)
+          screen.level(events_index == i and lvl_menu_selected or lvl_menu_deselected)
 
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
@@ -6002,19 +6010,19 @@ function redraw()
         
         -- lane_glyph (with dynamic preview)
         if lane_glyph_preview == "Single" then
-          screen.level(lvl_pane_text)
+          screen.level(lvl_pane_selected)
           lane_glyph = "⏹"--"☑" -- probably no need to blink if we're going down to Single event lane
         elseif lane_glyph_preview == "Multi" then
-          screen.level(fast_blinky == 0 and lvl_pane_text or (lvl_pane - 2))
+          screen.level(fast_blinky == 0 and lvl_pane_selected or (lvl_pane - 2))
           lane_glyph = "☰"
         else
-          screen.level(lvl_pane_text)
+          screen.level(lvl_pane_selected)
         end
 
         screen.move(2,8)
         screen.text(lane_glyph)
         screen.move(6, 8)
-        screen.level(lvl_pane_text)
+        screen.level(lvl_pane_selected)
         screen.text(" LANE " .. event_edit_lane .. ", STEP " .. event_edit_step) -- add event_edit_segment?
 
         -- event save status
@@ -6066,32 +6074,38 @@ function redraw()
       ---------------------------
       
       --------------------------------------------
-      -- Scrolling menus
+      -- MAIN SCROLLING MENUS
       --------------------------------------------
       -- todo p1 move calcs out of redraw
+      local paging = menu_index == 0
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
       local line = 1
+
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
         local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
         local param_get = preview_param_q_get[param_id] or params:get(param_id)
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
-
-        screen.move(2, line * 10 + 9 - menu_offset)
-        screen.level(menu_index == i and 15 or 3)
+        local y = line * 10 + 9 - menu_offset
         
-        -- Generate menu and draw ▶◀ indicators for scroll range
-        if menu_index == i then
-          if norns_interaction then q = "-" end
-          local range = params:get_range(param_id)
-          local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
-          local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
-          local session_menu_txt = q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf
+        if y > 11 then
+          screen.move(0, line * 10 + 9 - menu_offset)
+          screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
           
-          screen.text(session_menu_txt)
-        else  
-          screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
+          -- Generate menu and draw ▶◀ indicators for scroll range
+          if menu_index == i then
+            if norns_interaction then q = "-" end
+            local range = params:get_range(param_id)
+            local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
+            local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
+            local session_menu_txt = q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf
+            
+            screen.text(session_menu_txt)
+          else  
+            screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
+          end
         end
+
         line = line + 1
       end
 
@@ -6101,205 +6115,262 @@ function redraw()
       -- screen.fill()
       
       -- main menu scrollbar
-      if menu_index ~= 0 then
-        screen.level(lvl_pane - 2) -- adjusted to match top header
+      -- screen.level(lvl_menu_deselected)
+      -- screen.rect(90, 0, 1, 64)
+      -- screen.fill()
+      if not paging then
+        screen.level(lvl_menu_selected)
         local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
-        screen.rect(90, offset, 1, bar_height)
+        screen.rect(dash_x - 2, offset, 1, bar_height)
         screen.fill()
       end
       
       -- MAIN MENU HEADER
-      header(0, 0, dash_x - 2)
+      -- header(0, 0, dash_x - 2)
 
       -- horizontal main menu pagination
       -- todo adapt to max_seqs
-      if menu_index == 0 then  -- if we want it to only appear when changing pages
+      if paging then  -- if we want it to only appear when changing pages
         for i = 1, #pages do
-          screen.level(i == page_index and lvl_pane_ui_bright or lvl_pane_ui_dim)
-          screen.rect(35 + ((i - 1) * 4), 1, 3, 1) -- small centered pagination
+          screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
+          screen.rect(35 + ((i - 1) * 4), 0, 3, 1) -- small centered pagination
+          -- screen.rect(((i - 1) * 4), 9, 3, 1) -- underline page name
           screen.fill()
         end
       end
 
-      screen.move(2,8)
-      screen.level(menu_index == 0 and lvl_pane_ui_bright or lvl_pane_ui_dim)
+      screen.move(0, 7) -- 5 + 2px gap above
+      screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
-      screen.fill()
+      -- screen.rect(0, 9, screen.text_extents(page_name), 1)
+      -- screen.fill()
 
 
-      --------------------------------------------
-      -- CHORD DASH: PATTERN, PROGRESS BAR, METRONOME/TRANSPORT STATE, CHORD READOUT
-      --------------------------------------------
-      
-      local x_offset = dash_x + 26 -- redefinable offset from dash_x
+      --------------------
+      -- MODULAR DASHBOARD
+      --------------------
+      local width = 29
+      -- dash_x = 97
 
-      -- pane header
-      screen.level(lvl_pane)
-      screen.rect(dash_x, 0, 35, 11)
-      screen.fill()
+      -- TRANSPORT STATE/METRONOME
+      function dash_transport()
+        local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
 
+        -- pane
+        screen.level(lvl_pane)
+        screen.rect(dash_x, dash_y, width, 9)
+        screen.fill()
 
-      -- pane border
-      screen.level(lvl_pane - 3) -- adjustment to match header
-      screen.rect(dash_x, 11, 1, 11)  -- left border
-      screen.rect(127, 11, 1, 11)     -- right border
-      screen.rect(dash_x, 22, 35, 1)  -- bottom border
-      screen.fill()
-      
+        -- glyph level
+        if transport_state == "playing" then
+          screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_selected) or lvl_pane)
+        else
+          screen.level(lvl_pane_selected)
+        end
 
-      -- PATTERN POSITION READOUT
-      screen.level(lvl_pane_text)
-      screen.move(dash_x + 2, 8)
-      screen.text(pattern_name[active_chord_pattern])
+        -- glyph
+        for i = 1, #glyphs[transport_state] do
+          -- screen.pixel(dash_x + 12 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
+          screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
+        end
+        screen.fill()
 
-
-      -- CHORD STEP PROGRESS BAR
-      screen.level(lvl_pane_ui_dim)
-      screen.rect(dash_x + 9, 3, chord_pattern_length[active_chord_pattern], 5)
-      screen.fill()
-
-      screen.level(lvl_pane_ui_bright)
-      screen.rect(dash_x + 9, 3, chord_pattern_position, 5)
-      screen.fill()
-
-
-      -- METRONOME AND TRANSPORT STATUS GLYPHS
-      local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- simplify?
-
-      screen.level(transport_state == "playing" and ((metro_measure and lvl_pane_ui_bright) or (sprocket_metro.downbeat and lvl_pane_ui_dark) or (lvl_pane)) or lvl_pane_ui_dark)
-      for i = 1, #glyphs[transport_state] do
-        screen.pixel(glyphs[transport_state][i][1] + 128 - 7, glyphs[transport_state][i][2] + 3)
+        dash_y = dash_y + 10 -- position for next dash
       end
-      screen.fill()
       
 
+      -----------------------------
+      -- CHORD PATTERN PROGRESS BAR
+      -----------------------------
+      function dash_chord_pattern()
+        -- pane
+        screen.level(lvl_pane)
+        screen.rect(dash_x, dash_y, width, 9)
+        screen.fill()
+
+        -- pattern text a-d
+        screen.level(lvl_pane_selected)
+        screen.move(dash_x + 3, dash_y + 7)
+        screen.text(pattern_name[active_chord_pattern])
+
+        -- pattern step progress bar
+        screen.level(lvl_pane_deselected)
+        screen.rect(dash_x + 10, dash_y + 2, chord_pattern_length[active_chord_pattern], 5)
+        screen.fill()
+
+        screen.level(lvl_pane_selected)
+        screen.rect(dash_x + 10, dash_y + 2, chord_pattern_position, 5)
+        screen.fill()
+
+        dash_y = dash_y + 10 -- position for next dash
+      end
+
+
+      ----------------
       -- CHORD READOUT
-      screen.level(15)
-      if chord_no > 0 then
-        screen.move(dash_x + 17, 19)
-        screen.text_center(chord_readout)
+      ----------------
+      function dash_active_chord()
+        -- pane
+        screen.level(lvl_pane)
+        screen.rect(dash_x, dash_y, width, 9)
+        screen.fill()
+
+        screen.level(lvl_pane_selected)
+        if chord_no > 0 then
+          -- screen.move(dash_x + 14, dash_y + 7) -- centered
+          -- screen.text_center(chord_readout)
+          screen.move(dash_x + 3, dash_y + 7)
+          screen.text(chord_readout)
+        end
+
+        dash_y = dash_y + 10 -- position for next dash
       end
-      
-      
+
 
       --------------------------------------------
       -- ARRANGER DASH
       --------------------------------------------
-      local arranger_dash_y = 25 -- top of arranger pane
-      local on = params:string("arranger") == "On" -- difference between this and arranger_active might be an issue
-      local final_seg = arranger_position >= arranger_length
-      local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
+      function dash_arranger_chart()
+        local on = params:string("arranger") == "On"
+        local final_seg = arranger_position >= arranger_length
+        local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
 
-      -- Axis reference marks
-      for i = 1, 4 do
-        screen.level(1)
-        screen.rect(dash_x + 4, arranger_dash_y + 11 + i * 3, 1, 2)
-      end
-      screen.pixel(dash_x + 4, arranger_dash_y + 26)
-      screen.fill()
-      
-      local arranger_dash_x = dash_x + (arranger_position == 0 and 5 or 3) -- If arranger is reset, add an initial gap to the x position
-      
-      -- Draw arranger patterns and events timeline straight from x_dash_flat
-      for i = 1, dash_steps do -- alternative to #dash_patterns. This is faster at the cost of a global var which I guess is okay?
-        screen.level(dash_levels[i] or 1)
-        -- arranger segment patterns
-        if dash_patterns[i] ~= 0 then
-          screen.rect(arranger_dash_x + 1, arranger_dash_y + 11 + (dash_patterns[i] * 3), 1, 2)
-          screen.fill()
-        end
-        -- events pips
-        screen.level(dash_events[i] or 0)
-        screen.pixel(arranger_dash_x + 1, 51)
+        -- ARRANGER PANE
+        screen.level(lvl_pane)
+        screen.rect(dash_x, dash_y, width, 24)
         screen.fill()
 
-        arranger_dash_x = arranger_dash_x + 1
+
+        -- ARRANGER POSITION READOUT
+        -- dark = synced with arranger
+        -- dim = arranger off
+        -- pulsing = syncing
+
+        screen.move(dash_x + 3, dash_y + 7)
+        if arranger_active == false then  -- DE-SYNC
+          if on then
+            screen.level(lvl_pane_selected + 2 - led_pulse) -- pulse while waiting to enter arrangement
+          else
+            screen.level(lvl_pane_deselected)
+          end
+
+          if valid_jump then
+            screen.text(arranger_queue)
+          elseif final_seg and params:string("playback") == "1-shot" then
+            screen.text("End") -- indicate we'll hit end, not wrap
+          else
+            screen.text(util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
+          end
+
+        elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
+          screen.level(lvl_pane_selected)
+          if valid_jump then
+            screen.text(arranger_queue)
+          else
+            screen.text(arranger_position == 0 and 1 or arranger_position)
+          end
+        else                                          -- standard playback
+          screen.level(lvl_pane_selected)
+          screen.text(arranger_position)
+
+        end
+        screen.fill()
+
+
+        -- ARRANGER MODE GLYPH
+
+        -- glyph level -- todo see if we should pulse final segment when looping and blink when ending (to match grid led)
+        local lvl = on and lvl_pane_selected or lvl_pane_deselected   -- bright == on/dark == off
+        if final_seg and not valid_jump then                        -- blink final-segment warning
+          if transport_state == "playing" then
+            lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
+          else
+            lvl = fast_blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
+          end
+        end
+        screen.level(lvl)
+
+        -- glyph type: loop or one-shot
+        -- todo norns.ttf
+        if params:string("playback") == "Loop" then
+          for i = 1, #glyphs.loop do
+            screen.pixel(dash_x + 21 + glyphs.loop[i][1], glyphs.loop[i][2] + dash_y + 2)
+          end
+        else
+          for i = 1, #glyphs.one_shot do
+            screen.pixel(dash_x + 21 + glyphs.one_shot[i][1], glyphs.one_shot[i][2] + dash_y + 2)
+          end
+        end
+
+        screen.fill() -- remove when switching to norns.ttf
+
+
+
+        -- ARRANGER CHART
+        -- todo break into sub-function so we can do a variation without this
+
+        -- Axis reference marks
+        screen.level(lvl_pane_deselected)
+        for i = 1, 4 do
+          screen.rect(dash_x + 3, dash_y + 6 + i * 3, 1, 2)
+          -- screen.rect(dash_x + 3, dash_y + 6 + i * 3, 22, 2)
+        end
+
+        screen.pixel(dash_x + 3, dash_y + 21)
+        screen.fill()
+        local reset_shift = arranger_position == 0 and 2 or 0
+        local arranger_dash_x = dash_x + 3 + reset_shift -- If arranger is reset, add an initial gap (and chop off the end)
+        
+        -- todo make these proper globals if we're doing this
+        local dash_patterns = dash_patterns
+        local dash_events = dash_events
+        local dash_levels = dash_levels
+
+        -- Draw arranger patterns and events timeline straight from x_dash_flat
+        for i = 1, #dash_patterns - reset_shift do
+
+          -- arranger segment patterns
+          screen.level(dash_levels[i])
+          screen.rect(arranger_dash_x , dash_y + 6 + (dash_patterns[i] * 3), 1, 2)
+          screen.fill()
+
+          -- events pips
+          screen.level(dash_events[i] or lvl_pane)
+          screen.pixel(arranger_dash_x, dash_y + 21)
+          screen.fill()
+
+          arranger_dash_x = arranger_dash_x + 1
+        end
+        
+        dash_y = dash_y + 25 -- position for next dash
       end
 
-      -- Arranger pane header
-      screen.level(lvl_pane - (on and 2 or 4)) -- slight adjustment to more closely match top header levels
-      screen.rect(dash_x, arranger_dash_y, 35, 11)
-      screen.fill()
 
-      -- Arranger dash border (rendered after chart to cover chart edge overlap)
-      screen.level(lvl_pane - (on and 3 or 4))
-      screen.rect(dash_x, arranger_dash_y + 11, 1, 27)      -- left border      
-      screen.rect(127, arranger_dash_y + 11, 1, 27)         -- right border
-      screen.rect(dash_x, 63, 35, 1)      -- bottom border
-      screen.fill()
+      -----------------------------
+      -- ARRANGER COUNTDOWN
+      -----------------------------
+      function dash_arranger_countdown()
+        -- pane
+        screen.level(lvl_pane)
+        screen.rect(dash_x, dash_y, width, 9)
+        screen.fill()
 
+        -- pattern text a-d
+        screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected)
+        screen.move(dash_x + 3, dash_y + 7)
+        screen.text(seconds_remaining)
 
-      -- ARRANGER COUNTDOWN TIMER 
-      screen.level(on and 15 or 3) -- brightens immediately but value won't update until resync (arranger_active)
-      screen.move(dash_x + 4, arranger_dash_y + 35)
-      screen.text(seconds_remaining)
+        dash_y = dash_y + 10 -- position for next dash
+      end      
       
+      dash_y = 0
+      dash_transport()
+      dash_chord_pattern()
+      dash_active_chord()
+      dash_arranger_chart()
+      dash_arranger_countdown()
 
-      -- ARRANGER MODE GLYPH
-      local x_offset = dash_x + 27
-      local y_offset = arranger_dash_y + 3
-
-      -- glyph level
-      -- todo see if we should pulse final segment when looping and blink when ending (to match grid led)
-      local lvl = on and lvl_pane_ui_bright or lvl_pane_ui_dark   -- bright == on/dark == off
-      if final_seg and not valid_jump then                        -- blink final-segment warning
-        if transport_state == "playing" then
-          lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
-        else
-          lvl = fast_blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
-        end
-      end
-      screen.level(lvl)
-
-      -- glyph type: loop or one-shot
-      if params:string("playback") == "Loop" then
-        for i = 1, #glyphs.loop do
-          screen.pixel(glyphs.loop[i][1] + x_offset, glyphs.loop[i][2] + y_offset)
-        end
-      else
-        for i = 1, #glyphs.one_shot do
-          screen.pixel(glyphs.one_shot[i][1] + x_offset, glyphs.one_shot[i][2] + y_offset)
-        end
-      end
-
-      screen.fill() -- remove when switching to norns.ttf
-      
-
-      -- ARRANGER POSITION READOUT
-      screen.level(lvl_pane_text)
-      screen.move(dash_x + 2, y_offset + 5)
-
-      -- simple, pulse only when waiting to re-sync
-      if arranger_active == false then
-        if on then
-          screen.level(lvl_pane_ui_dark + 2 - led_pulse) -- pulse while waiting to enter arrangement
-        else
-          screen.level(lvl_pane_ui_dark)
-        end
-
-        if valid_jump then
-          screen.text(arranger_queue)
-        elseif final_seg and params:string("playback") == "1-shot" then
-          screen.text("End") -- indicate we'll hit end, not wrap
-        else
-          screen.text(util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
-        end
-
-      elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
-
-        if valid_jump then
-          screen.text(arranger_queue)
-        else
-          screen.text(arranger_position == 0 and 1 or arranger_position)
-        end
-      else                                          -- standard playback
-        screen.text(arranger_position)
-
-      end
-      screen.fill()
-      
-      
     end -- of event vs. non-event check
   end
   screen.update()
