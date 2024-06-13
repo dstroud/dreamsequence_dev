@@ -5,6 +5,9 @@ musicutil = require("musicutil") -- subbed
 
 local lib = norns.state.shortname.."/lib/"
 
+-- modular dashboard functions
+include(lib .. "dashboards")
+
 -- modified version of lattice lib
 lattice = include(lib .. "lattice")
 

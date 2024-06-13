@@ -1,12 +1,12 @@
 -- Dreamsequence
--- 240604 @modularbeat
+-- 240613 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
 -- arpeggiator, and harmonizer 
 -- for Monome Norns+Grid
 -- 
--- K1: Fn
+-- K1: Alt (hold)
 -- K2: Pause/Stop(2x)
 -- K3: Play
 --
@@ -237,7 +237,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 6 + 16)
+  params:add_group("preferences", "PREFERENCES", 6 + 16 + 5)
 
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
@@ -248,6 +248,20 @@ function init()
   params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
+  local dash_name = {"Off", "Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown"} -- sync with dash_ids
+
+  for dash_no = 1, 5 do
+    params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, dash_no + 1)
+    params:set_save("dash_" .. dash_no, false)
+    params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no]) or dash_no + 1)
+    params:set_action("dash_" .. dash_no, 
+      function(val)
+        save_prefs()
+        dash_list[dash_no] = dash_functions[dash_ids[val]]
+      end)
+  end
+
+  -- deprecate!
   params:add_option("chord_readout", "Chords as", {"Name", "Degree"}, 1)
   params:set_save("chord_readout", false)
   params:set("chord_readout", param_option_to_index("chord_readout", prefs.chord_readout) or 1)
@@ -1144,6 +1158,10 @@ function init()
     prefs.last_version = version
     prefs.chord_readout = params:string("chord_readout")
     prefs.default_pset = params:string("default_pset")
+    for dash_no = 1, 5 do
+      local id = "dash_" .. dash_no
+      prefs[id] = params:string(id)
+    end
     prefs.crow_pullup = params:string("crow_pullup")
     prefs.voice_instances = params:get("voice_instances")
     prefs.enc_config_1 = params:get("enc_config_1")
@@ -1619,20 +1637,18 @@ params:set_action("ts_numerator",
   for seq_no = 1, max_seqs do
     -- function init_sprocket_seq_1(div)
     _G["init_sprocket_seq_"..seq_no] = function(div)
-      -- sprocket_seq_1 = seq_lattice:new_sprocket{
       _G["sprocket_seq_"..seq_no] = seq_lattice:new_sprocket{
           action = function(t)
           -- something like this is needed or stop during "pausing" (2x K2) will reset and play sequence again
           -- might be better to include a check in lattice since this probably affects all sprockets (including crow/harm)
           -- if transport_state == "playing" or transport_state == "pausing" then 
-            if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
-              advance_seq_pattern(seq_no)
-              grid_dirty = true   -- todo should check active grid view?
-            elseif play_seq[seq_no] then  -- todo seq2?
-              advance_seq_pattern(seq_no)
-              grid_dirty = true
-            end
-          -- end
+          if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
+            advance_seq_pattern(seq_no)
+            grid_dirty = true   -- todo should check active grid view?
+          elseif play_seq[seq_no] then  -- todo seq2?
+            advance_seq_pattern(seq_no)
+            grid_dirty = true
+          end
         end,
         -- div_action = function(t)  -- call action when div change is processed
         -- end,
@@ -5560,7 +5576,6 @@ end
 
 -- Alternative for more digits up to 9 hours LETSGOOOOOOO
 function s_to_min_sec(seconds)
-  -- local seconds = tonumber(seconds)
     -- hours = (string.format("%02.f", math.floor(seconds/3600));
     hours_raw = math.floor(seconds/3600);
     hours = string.format("%1.f", hours_raw);
@@ -6147,229 +6162,11 @@ function redraw()
       -- screen.fill()
 
 
-      --------------------
-      -- MODULAR DASHBOARD
-      --------------------
-      local width = 29
-      -- dash_x = 97
-
-      -- TRANSPORT STATE/METRONOME
-      function dash_transport()
-        local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
-
-        -- pane
-        screen.level(lvl_pane)
-        screen.rect(dash_x, dash_y, width, 9)
-        screen.fill()
-
-        -- glyph level
-        if transport_state == "playing" then
-          screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_selected) or lvl_pane)
-        else
-          screen.level(lvl_pane_selected)
-        end
-
-        -- glyph
-        for i = 1, #glyphs[transport_state] do
-          -- screen.pixel(dash_x + 12 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
-          screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
-        end
-        screen.fill()
-
-        dash_y = dash_y + 10 -- position for next dash
-      end
-      
-
-      -----------------------------
-      -- CHORD PATTERN PROGRESS BAR
-      -----------------------------
-      function dash_chord_pattern()
-        -- pane
-        screen.level(lvl_pane)
-        screen.rect(dash_x, dash_y, width, 9)
-        screen.fill()
-
-        -- pattern text a-d
-        screen.level(lvl_pane_selected)
-        screen.move(dash_x + 3, dash_y + 7)
-        screen.text(pattern_name[active_chord_pattern])
-
-        -- pattern step progress bar
-        screen.level(lvl_pane_deselected)
-        screen.rect(dash_x + 10, dash_y + 2, chord_pattern_length[active_chord_pattern], 5)
-        screen.fill()
-
-        screen.level(lvl_pane_selected)
-        screen.rect(dash_x + 10, dash_y + 2, chord_pattern_position, 5)
-        screen.fill()
-
-        dash_y = dash_y + 10 -- position for next dash
-      end
-
-
-      ----------------
-      -- CHORD READOUT
-      ----------------
-      function dash_active_chord()
-        -- pane
-        screen.level(lvl_pane)
-        screen.rect(dash_x, dash_y, width, 9)
-        screen.fill()
-
-        screen.level(lvl_pane_selected)
-        if chord_no > 0 then
-          -- screen.move(dash_x + 14, dash_y + 7) -- centered
-          -- screen.text_center(chord_readout)
-          screen.move(dash_x + 3, dash_y + 7)
-          screen.text(chord_readout)
-        end
-
-        dash_y = dash_y + 10 -- position for next dash
-      end
-
-
-      --------------------------------------------
-      -- ARRANGER DASH
-      --------------------------------------------
-      function dash_arranger_chart()
-        local on = params:string("arranger") == "On"
-        local final_seg = arranger_position >= arranger_length
-        local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
-
-        -- ARRANGER PANE
-        screen.level(lvl_pane)
-        screen.rect(dash_x, dash_y, width, 24)
-        screen.fill()
-
-
-        -- ARRANGER POSITION READOUT
-        -- dark = synced with arranger
-        -- dim = arranger off
-        -- pulsing = syncing
-
-        screen.move(dash_x + 3, dash_y + 7)
-        if arranger_active == false then  -- DE-SYNC
-          if on then
-            screen.level(lvl_pane_selected + 2 - led_pulse) -- pulse while waiting to enter arrangement
-          else
-            screen.level(lvl_pane_deselected)
-          end
-
-          if valid_jump then
-            screen.text(arranger_queue)
-          elseif final_seg and params:string("playback") == "1-shot" then
-            screen.text("End") -- indicate we'll hit end, not wrap
-          else
-            screen.text(util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
-          end
-
-        elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
-          screen.level(lvl_pane_selected)
-          if valid_jump then
-            screen.text(arranger_queue)
-          else
-            screen.text(arranger_position == 0 and 1 or arranger_position)
-          end
-        else                                          -- standard playback
-          screen.level(lvl_pane_selected)
-          screen.text(arranger_position)
-
-        end
-        screen.fill()
-
-
-        -- ARRANGER MODE GLYPH
-
-        -- glyph level -- todo see if we should pulse final segment when looping and blink when ending (to match grid led)
-        local lvl = on and lvl_pane_selected or lvl_pane_deselected   -- bright == on/dark == off
-        if final_seg and not valid_jump then                        -- blink final-segment warning
-          if transport_state == "playing" then
-            lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
-          else
-            lvl = fast_blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
-          end
-        end
-        screen.level(lvl)
-
-        -- glyph type: loop or one-shot
-        -- todo norns.ttf
-        if params:string("playback") == "Loop" then
-          for i = 1, #glyphs.loop do
-            screen.pixel(dash_x + 21 + glyphs.loop[i][1], glyphs.loop[i][2] + dash_y + 2)
-          end
-        else
-          for i = 1, #glyphs.one_shot do
-            screen.pixel(dash_x + 21 + glyphs.one_shot[i][1], glyphs.one_shot[i][2] + dash_y + 2)
-          end
-        end
-
-        screen.fill() -- remove when switching to norns.ttf
-
-
-
-        -- ARRANGER CHART
-        -- todo break into sub-function so we can do a variation without this
-
-        -- Axis reference marks
-        screen.level(lvl_pane_deselected)
-        for i = 1, 4 do
-          screen.rect(dash_x + 3, dash_y + 6 + i * 3, 1, 2)
-          -- screen.rect(dash_x + 3, dash_y + 6 + i * 3, 22, 2)
-        end
-
-        screen.pixel(dash_x + 3, dash_y + 21)
-        screen.fill()
-        local reset_shift = arranger_position == 0 and 2 or 0
-        local arranger_dash_x = dash_x + 3 + reset_shift -- If arranger is reset, add an initial gap (and chop off the end)
-        
-        -- todo make these proper globals if we're doing this
-        local dash_patterns = dash_patterns
-        local dash_events = dash_events
-        local dash_levels = dash_levels
-
-        -- Draw arranger patterns and events timeline straight from x_dash_flat
-        for i = 1, #dash_patterns - reset_shift do
-
-          -- arranger segment patterns
-          screen.level(dash_levels[i])
-          screen.rect(arranger_dash_x , dash_y + 6 + (dash_patterns[i] * 3), 1, 2)
-          screen.fill()
-
-          -- events pips
-          screen.level(dash_events[i] or lvl_pane)
-          screen.pixel(arranger_dash_x, dash_y + 21)
-          screen.fill()
-
-          arranger_dash_x = arranger_dash_x + 1
-        end
-        
-        dash_y = dash_y + 25 -- position for next dash
-      end
-
-
-      -----------------------------
-      -- ARRANGER COUNTDOWN
-      -----------------------------
-      function dash_arranger_countdown()
-        -- pane
-        screen.level(lvl_pane)
-        screen.rect(dash_x, dash_y, width, 9)
-        screen.fill()
-
-        -- pattern text a-d
-        screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected)
-        screen.move(dash_x + 3, dash_y + 7)
-        screen.text(seconds_remaining)
-
-        dash_y = dash_y + 10 -- position for next dash
-      end      
-      
+      -- iterate through list of modular dashboard functions
       dash_y = 0
-      dash_transport()
-      dash_chord_pattern()
-      dash_active_chord()
-      dash_arranger_chart()
-      dash_arranger_countdown()
+      for _, func in pairs(dash_list) do
+        func()
+      end
 
     end -- of event vs. non-event check
   end
