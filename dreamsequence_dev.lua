@@ -338,8 +338,8 @@ function init()
 
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
-  params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
-  params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
+  params:add_number("ts_numerator", "TS num", 1, 99, 4) -- Beats per bar
+  params:add_option("ts_denominator", "TS den", {1, 2, 4, 8, 16}, 3) -- Beat length
 
   params:add_option("crow_out_1", "Crow out 1", {"Off", "CV", "Env", "Events"}, 2)
   params:set_action("crow_out_1",function() gen_voice_lookups(); update_voice_params() end)  
@@ -394,7 +394,7 @@ function init()
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
   
-  params:add_option("chord_type","Chord type", {"Triad", "7th"}, 1)
+  params:add_option("chord_type","Type", {"Triad", "7th"}, 1)
   
   params:add_number("chord_range", "Range", 3, 64, 4, function(param) return chord_range_string(param:get()) end) -- intervals
 
@@ -469,10 +469,12 @@ function init()
     )
     
     params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 14, 1) -- to 0??
-    
-    params:add_option("seq_start_on_"..seq_no, "Play", {"in a loop", "every step", "on chord steps", "on blank steps", "on cue/event"}, 1)
 
-    params:add_option("seq_reset_on_"..seq_no, "⏎", {"every step", "on chord steps", "on blank steps", "on stop/event"}, 4)
+    -- params:add_option("seq_start_on_"..seq_no, "Play", {"in a loop", "every step", "on chord steps", "on blank steps", "on cue/event"}, 1)
+    params:add_option("seq_start_on_"..seq_no, "Play", {"repeat", "all steps", "chord steps", "blank steps", "cue/event"}, 1)
+
+    -- params:add_option("seq_reset_on_"..seq_no, "⏎", {"every step", "on chord steps", "on blank steps", "on stop/event"}, 4)
+    params:add_option("seq_reset_on_"..seq_no, "⏎", {"all steps", "chord steps", "blank steps", "stop"}, 4)
     
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start", "trigger")
@@ -496,12 +498,12 @@ function init()
     params:set_action("seq_duration_index_"..seq_no, function(val) seq_duration[seq_no] = val == 0 and division_names[params:get("seq_div_index_"..seq_no)][1] or division_names[val][1] end)
   
     max_seq_pattern_length = 16  
-    params:add_number("seq_rotate_"..seq_no, "Pattern rotate", 0, max_seq_pattern_length - 1, 0, function(param) return param:get() end, true) -- dummy formatter??
+    params:add_number("seq_rotate_"..seq_no, "Pattern ↑↓", 0, max_seq_pattern_length - 1, 0, function(param) return param:get() end, true) -- dummy formatter??
     params:set_action("seq_rotate_"..seq_no, function(val) seq_rotate_abs(seq_no, val) end)
     params:add_number("prev_seq_rotate_"..seq_no, "prev_seq_rotate_"..seq_no, (max_seq_pattern_length * -1), max_seq_pattern_length, 0)
     params:hide("prev_seq_rotate_"..seq_no)
         
-    params:add_number("seq_shift_"..seq_no, "Pattern shift", 0, 13, 0, function(param) return param:get() end, true) -- dummy formatter??
+    params:add_number("seq_shift_"..seq_no, "Pattern ←→", 0, 13, 0, function(param) return param:get() end, true) -- dummy formatter??
     params:set_action("seq_shift_"..seq_no, function(val) seq_shift_abs(seq_no, val) end)
     params:add_number("prev_seq_shift_"..seq_no, "prev_seq_shift_"..seq_no, -14, 14, 0)
     params:hide("prev_seq_shift_"..seq_no)
@@ -5187,6 +5189,9 @@ function enc(n,d)
     else -- standard menus
       menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
       selected_menu = menus[page_index][menu_index]
+      if norns_interaction == "preview_param" and menu_index ~= 0 then
+        preview_param = clone_param(menus[page_index][menu_index])
+      end
     end
     
   else -- n == ENC 3 -------------------------------------------------------------  
@@ -6064,46 +6069,117 @@ function redraw()
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
       local line = 1
 
+      -- -- OG style
+      -- for i = 1, #menus[page_index] do
+      --   local param_id = menus[page_index][i]
+      --   local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
+      --   local param_get = preview_param_q_get[param_id] or params:get(param_id)
+      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
+      --   local y = line * 10 + header_y - menu_offset
+        
+      --   if y > 11 then
+      --     screen.move(0, y)
+          
+      --     -- Generate menu and draw ▶◀ indicators for scroll range
+      --     if menu_index == i then
+      --       screen.level(lvl_menu_selected)
+      --       if norns_interaction then q = "-" end
+      --       local range = params:get_range(param_id)
+      --       local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
+      --       local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
+      --       screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf)
+      --     else  
+      --       screen.level(lvl_menu_deselected)
+      --       screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
+      --     end
+      --   end
+
+      --   line = line + 1
+      -- end
+
+
+      -- lowercase, param stype but with range indicators
+      -- for i = 1, #menus[page_index] do
+      --   local param_id = menus[page_index][i]
+      --   local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
+      --   local param_get = preview_param_q_get[param_id] or params:get(param_id)
+      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
+      --   local y = line * 10 + header_y - menu_offset
+        
+      --   if y > 11 then
+      --     screen.move(0, y)
+
+      --     -- Generate menu and draw ▶◀ indicators for scroll range
+      --     if menu_index == i then
+      --       local range = params:get_range(param_id)
+
+      --       screen.level(lvl_menu_selected)
+      --       if norns_interaction then q = "-" end
+      --       screen.text(q .. string.lower(param_id_to_name(param_id)))
+
+      --       if param_get == range[1] then -- at param min
+      --         screen.move(dash_x - 3, y)
+      --         screen.text_right(string.lower(param_string) .. "►")
+      --       elseif param_get == range[2] then -- at param max
+      --         screen.move(dash_x - 7, y)
+      --         screen.text_right("◀" .. string.lower(param_string))
+      --       else  -- mid range
+      --         screen.move(dash_x - 7, y)
+      --         screen.text_right(string.lower(param_string))
+      --       end
+      --     else
+      --       screen.level(lvl_menu_deselected)
+      --       -- screen.text(q .. string.lower(param_id_to_name(param_id) .. ": " .. param_string))
+      --       screen.text(q .. string.lower(param_id_to_name(param_id)))
+      --       screen.move(dash_x - 7, y)
+      --       screen.text_right(string.lower(param_string))
+
+      --     end
+      --   end
+
+      --   line = line + 1
+      -- end
+
+
+      -- lowercase, no range indicators (todo flash screen?), q indicator at end
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
-        local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
-        local param_get = preview_param_q_get[param_id] or params:get(param_id)
+        local q = preview_param_q_get[param_id] and "*" or "" -- indicates if delta is waiting on param_q
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
         local y = line * 10 + header_y - menu_offset
         
         if y > 11 then
           screen.move(0, y)
           screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
-          
-          -- Generate menu and draw ▶◀ indicators for scroll range
-          if menu_index == i then
-            if norns_interaction then q = "-" end
-            local range = params:get_range(param_id)
-            local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
-            local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
-            local session_menu_txt = q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf
-            
-            screen.text(session_menu_txt)
-          else  
-            screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
-          end
+          screen.text(string.lower(param_id_to_name(param_id)))
+          screen.move(dash_x - 5, y)
+          screen.text_right(string.lower(param_string) .. q)
         end
 
         line = line + 1
       end
 
-      -- -- mask the area to the right of main menu since we can't rely on screen.text_extents
-      -- screen.level(0)
-      -- screen.rect(91, 0, 37, 64)
-      -- screen.fill()
-      
+
       -- main menu scrollbar
-      -- todo extend full height probably
       if not paging then
+        -- -- scrollbar background
+        -- screen.level(lvl_menu_deselected)
+        -- -- screen.rect(dash_x - 2, 0, 1, 64) -- full
+        -- screen.rect(dash_x - 2, 12, 1, 52) -- full
+        -- screen.fill()
+
         screen.level(lvl_menu_selected)
+
+        -- under header/first row
         local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
         screen.rect(dash_x - 2, offset, 1, bar_height)
+
+        -- full height
+        -- local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 64) -- (index, total, in_view, locked_row, screen_height)
+        -- local bar_height = 5 / #menus[page_index] * 64
+        -- screen.rect(dash_x - 2, offset - 12, 1, bar_height)
+
         screen.fill()
       end
       
@@ -6114,7 +6190,7 @@ function redraw()
       if paging then  -- if we want it to only appear when changing pages
         for i = 1, #pages do
           screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
-          screen.rect(35 + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
+          screen.rect(38 + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
           screen.fill()
         end
       end
