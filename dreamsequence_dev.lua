@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240614 @modularbeat
+-- 240616 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -236,7 +236,6 @@ function init()
   -- PREFERENCES PARAMS --
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
-
   params:add_group("preferences", "PREFERENCES", 6 + 16 + 5)
 
   params:add_trigger("save_template", "Save template")
@@ -5696,23 +5695,26 @@ end
 function redraw()
   -- screen.font_face(tab.key(screen.font_face_names, "norns"))
 
-  -- x origin of chord and arranger dashes
-  local dash_x = 99
+  local dash_x = 99   -- x origin of chord and arranger dashes
   local header_x = 0
-  local header_y = 10
+  local header_y = 11  -- divider
+  
+  -- in dashboards
+  -- local lvl_pane = 15
+  -- local lvl_pane_selected = 1
+  -- local lvl_pane_deselected = 3
 
-  local lvl_pane = 15
-  local lvl_pane_selected = 1
-  local lvl_pane_deselected = 3
-  local lvl_menu_deselected = 3
+  local lvl_menu_deselected = 4
   local lvl_menu_selected = 15
   local lvl_divider = 4 -- +1 for horizontal dividers to match lvl_menu_deselected
 
   if norns_interaction == "event_actions" then
-    lvl_pane = 4
-    lvl_pane_selected = 7
-    lvl_pane_deselected = 2
-    lvl_pane_selected = 1
+
+    -- not used presently
+    -- lvl_pane = 4
+    -- lvl_pane_selected = 7
+    -- lvl_pane_deselected = 2
+
     lvl_menu_deselected = 1
     lvl_menu_selected = 3
     lvl_divider = 3
@@ -5721,27 +5723,63 @@ function redraw()
   screen.clear()
 
   local function footer(k2, k3)
-    -- mask any partial menu items
-    screen.level(0)
-    screen.rect(0, 54, 128, 11)
-    screen.fill()
     
-    -- divider
-    screen.level(lvl_divider)
-    screen.move(0, 56)
-    screen.line(128, 55)
-    screen.stroke()
+    -- -- divider
+    -- screen.level(lvl_divider)
+    -- screen.move(0, 55)
+    -- screen.line(128, 55)
+    -- screen.stroke()
 
-    -- K2/K3 text
-    screen.level(lvl_menu_deselected)
+    -- -- K2/K3 text
+    -- screen.level(lvl_menu_deselected)
+    -- if k2 then
+    --   screen.move(0, 63)
+    --   screen.text("(K2) ".. k2)
+    -- end
+    -- if k3 then
+    --   screen.move(128, 63)
+    --   screen.text_right("(K3) " .. k3)
+    -- end
+
+
+    -- rectangles and K2/K3 text
     if k2 then
-      screen.move(0, 64)
-      screen.text("(K2) ".. k2)
+      screen.level(7)
+
+      screen.rect(0, 55, 63, 9)
+      screen.fill()
+
+      -- -- bubble style
+      -- screen.rect(2, 55, 59, 9)
+      -- screen.rect(0, 57, 1, 5)
+      -- screen.rect(1, 56, 1, 7)
+      -- screen.rect(61, 56, 1, 7)
+      -- screen.rect(62, 57, 1, 5)
+      -- screen.fill()
+
+      screen.level(1)
+      screen.move(31, 62)
+      screen.text_center("K2 ".. k2)
     end
     if k3 then
-      screen.move(128, 64)
-      screen.text_right("(K3) " .. k3)
+      screen.level(7)
+
+      screen.rect(65, 55, 63, 9)
+      screen.fill()
+
+      -- -- bubble
+      -- screen.rect(67, 55, 59, 9)
+      -- screen.rect(65, 57, 1, 5)
+      -- screen.rect(66, 56, 1, 7)
+      -- screen.rect(126, 56, 1, 7)
+      -- screen.rect(127, 57, 1, 5)
+      -- screen.fill()
+
+      screen.level(1)
+      screen.move(96, 62)
+      screen.text_center("K3 " .. k3)
     end
+
   end
 
   -- Screens that pop up when g.keys are being held down take priority--------
@@ -5755,7 +5793,7 @@ function redraw()
       screen.text("E2: rotate ↑↓")
       screen.move(2,38)
       screen.text("E3: transpose ←→")
-      footer("GEN PATTERNS")   
+      footer("GENERATE") --GEN PATTERNS")   
     elseif grid_view_name == "Arranger" then
       screen.level(15)
       screen.move(2,8)
@@ -5772,7 +5810,7 @@ function redraw()
       screen.text("E3: transpose ←→")
       screen.move(2,48)
       screen.text("Tap pattern A-D: mute")
-      footer("GEN PATTERN")
+      footer("GENERATE")
         
     elseif grid_view_name == "Seq" then
       screen.level(15)
@@ -5788,7 +5826,7 @@ function redraw()
       screen.move(2,48)
       screen.text("Tap SEQ 1-" .. max_seqs .. ": mute")
       
-      footer("GEN PATTERN")
+      footer("GENERATE")
       end
       
   -- Arranger shift interaction
@@ -5839,7 +5877,7 @@ function redraw()
     -- NOTE: UI elements placed here appear in all views
 
     -- screen.level(lvl_divider)
-    -- screen.rect(0, 10, dash_x - 2, 1) -- alignment check
+    -- screen.rect(0, 12, dash_x - 2, 1) -- alignment check
     -- screen.fill()
 
     ----------------
@@ -5860,6 +5898,11 @@ function redraw()
         local event_def = events_lookup[events_lookup_index[lane_id]]
 
         -- LANE EDITOR HEADER/GLYPHS
+        screen.level(lvl_menu_selected)
+        screen.move(header_x, header_y)
+        screen.text("LANE " .. lane)
+
+
         for i = 1, 15 do
           local type = event_lanes[i].type
           local glyph = type == "Single" and "⏹" or type == "Multi" and "☰" or "☐" --☑ -- todo norns.ttf
@@ -5869,10 +5912,11 @@ function redraw()
           screen.text(glyph)
         end
 
-        -- lane summary top
-        screen.level(lvl_menu_selected)
-        screen.move(header_x, header_y)
-        screen.text("LANE " .. lane)
+        -- -- divider
+        -- screen.level(lvl_menu_selected)
+        -- screen.rect(0, header_y + 3, 128, 1) -- underline entire header
+        -- screen.fill()
+
         screen.level(lvl_menu_deselected)
         screen.move(0, 10 + header_y)
         -- screen.text((lane_type and (lane_type .. "-event") or "Empty"))
@@ -5910,95 +5954,7 @@ function redraw()
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
         local line = 1
         
-        for i = 1, #events_menus do -- event hierarchy, op, probability, etc...
-          local debug = false
-          local menu_id = events_menus[i]
-          local menu_index = params:get(menu_id)
-          local event_val_string = params:string(menu_id)
-          local y = line * 10 + header_y - menu_offset
-
-            if y > 11 then
-            screen.move(0, y) --line * 10 + 9 - menu_offset)
-            screen.level(events_index == i and lvl_menu_selected or lvl_menu_deselected)
-
-            -- use event_value to format values
-            -- values are already set on var event_val_string so if no conditions are met they pass through raw
-            -- >> "Set" operation should do .options lookup where possible
-            -- >> functions are raw
-            -- >> inc, random, wander are raw but ranges have been formatted above
-            if menu_id == "event_value" then
-              if debug then print("-------------------") end
-              if debug then print("formatting event_value menu") end
-              local operation = params:string("event_operation")
-              
-              if operation == "Set" then
-                if debug then print("Set operator") end
-                -- if event_def.event_type == "param" then  -- move above operation check?
-                if event_type == "param" then  -- move above operation check?
-                  preview_event:set(event_val_string)
-                  event_val_string = preview_event:string()
-                end
-                if debug then print("Nil formatter: skipping") end
-              elseif operation == "Wander" then
-                event_val_string = "\u{0b1}" .. event_val_string
-              end
-              if debug then print("Value passed raw") end
-            
-              -- hack to use preview to get formatting for min/max
-              -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
-            elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
-              -- print("DEBUG menu_id = " .. menu_id) 
-              -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
-              local actual_val = preview_event:get()
-              preview_event:set(event_val_string)
-              event_val_string = preview_event:string()
-              preview_event:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
-            end -- end of event_value stuff
-        
-            ------------------------------------------------
-            -- Draw menu and <> indicators for scroll range
-            ------------------------------------------------
-            -- Leaving in param formatter and some code for truncating string in case we want to eventually add system param events that require formatting.
-            local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
-
-            if events_index == i then
-              local range =
-                (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
-                and params:get_range(menu_id)
-                or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
-                or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
-
-              local single = menu_index == range[1] and (range[1] == range[2]) or false
-              local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
-              local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
-              local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
-
-              if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-              if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
-
-              screen.text(events_menu_txt)
-
-            else            
-              if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-              if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
-              
-              screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
-            end
-
-          end
-          line = line + 1
-        end
-        
-        -- events editor scrollbar
-        screen.level(lvl_menu_selected)
-        local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
-        local bar_height = 4 / #events_menus * 40
-        screen.rect(127, offset, 1, bar_height)
-        screen.fill()
-      
         -- EVENT EDITOR HEADER
-        -- header(0, 0, 128)
-        
         -- lane_glyph (with dynamic preview)
         if lane_glyph_preview == "Single" then
           screen.level(lvl_menu_deselected)
@@ -6020,8 +5976,136 @@ function redraw()
         screen.move(128 - header_x, header_y)
         screen.text_right(event_edit_status)
         footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
-      end
         
+        -- -- divider
+        -- screen.level(lvl_menu_deselected)
+        -- screen.rect(0, header_y + 3, 128, 1) -- underline entire header
+        -- screen.fill()
+
+        for i = 1, #events_menus do -- event hierarchy, op, probability, etc...
+          local debug = false
+          local menu_id = events_menus[i]
+          local menu_index = params:get(menu_id)
+          local event_val_string = params:string(menu_id)
+          local y = line * 10 + header_y - menu_offset
+
+          if y > header_y and y < 52 then
+          screen.move(0, y) --line * 10 + 9 - menu_offset)
+          screen.level(events_index == i and lvl_menu_selected or lvl_menu_deselected)
+
+          -- use event_value to format values
+          -- values are already set on var event_val_string so if no conditions are met they pass through raw
+          -- >> "Set" operation should do .options lookup where possible
+          -- >> functions are raw
+          -- >> inc, random, wander are raw but ranges have been formatted above
+          if menu_id == "event_value" then
+            if debug then print("-------------------") end
+            if debug then print("formatting event_value menu") end
+            local operation = params:string("event_operation")
+            
+            if operation == "Set" then
+              if debug then print("Set operator") end
+              -- if event_def.event_type == "param" then  -- move above operation check?
+              if event_type == "param" then  -- move above operation check?
+                preview_event:set(event_val_string)
+                event_val_string = preview_event:string()
+              end
+              if debug then print("Nil formatter: skipping") end
+            elseif operation == "Wander" then
+              event_val_string = "\u{0b1}" .. event_val_string
+            end
+
+            if debug then print("Value passed raw") end
+              
+              -- hack to use preview to get formatting for min/max
+              -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
+            elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
+              -- print("DEBUG menu_id = " .. menu_id) 
+              -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
+              local actual_val = preview_event:get()
+              preview_event:set(event_val_string)
+              event_val_string = preview_event:string()
+              preview_event:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
+            end -- end of event_value stuff
+        
+            ------------------------------------------------
+            -- Draw menu and <> indicators for scroll range
+            ------------------------------------------------
+            -- Leaving in param formatter and some code for truncating string in case we want to eventually add system param events that require formatting.
+            local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
+
+            -- if events_index == i then
+            --   local range =
+            --     (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
+            --     and params:get_range(menu_id)
+            --     or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
+            --     or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
+
+            --   local single = menu_index == range[1] and (range[1] == range[2]) or false
+            --   local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
+            --   local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
+            --   local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+
+            --   if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+            --   if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+
+            --   screen.text(events_menu_txt)
+
+            -- else            
+            --   if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+            --   if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+              
+            --   screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+            -- end
+
+            screen.text(string.lower(param_id_to_name(menu_id)))
+            screen.move(124, y)
+            screen.text_right((string.lower(string.sub(event_val_string, 1, events_menu_trunc))))
+
+          end
+          line = line + 1
+        end
+        
+        -- events editor scrollbar
+        screen.level(lvl_menu_selected)
+        local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
+        local bar_height = 4 / #events_menus * 40
+        screen.rect(127, offset, 1, bar_height)
+        screen.fill()
+
+        -- footer
+        footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
+
+      end
+
+      --   -- EVENT EDITOR HEADER
+      --   -- lane_glyph (with dynamic preview)
+      --   if lane_glyph_preview == "Single" then
+      --     screen.level(lvl_menu_deselected)
+      --     lane_glyph = "⏹"--"☑" -- probably no need to blink if we're going down to Single event lane
+      --   elseif lane_glyph_preview == "Multi" then
+      --     screen.level(fast_blinky == 0 and lvl_menu_deselected or lvl_menu_selected) --(lvl_menu_deselected + 2))
+      --     lane_glyph = "☰"
+      --   else
+      --     screen.level(lvl_menu_deselected)
+      --   end
+
+      --   screen.move(header_x, header_y)
+      --   screen.text(lane_glyph)
+      --   screen.move(header_x + 6, header_y)
+      --   screen.level(lvl_menu_deselected)
+      --   screen.text(" LANE " .. event_edit_lane .. ", STEP " .. event_edit_step) -- add event_edit_segment?
+
+      --   -- event save status
+      --   screen.move(128 - header_x, header_y)
+      --   screen.text_right(event_edit_status)
+      --   footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
+      -- end
+        
+      -- -- divider
+      -- screen.level(lvl_menu_deselected)
+      -- screen.rect(0, 12, 128, 1) -- underline entire header
+      -- screen.fill()
 
       -- K1 event actions pop-up quick-menu
       if norns_interaction == "event_actions_done" then -- flash "DONE!" message
@@ -6144,16 +6228,16 @@ function redraw()
       -- lowercase, no range indicators (todo flash screen?), q indicator at end
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
-        local q = preview_param_q_get[param_id] and "*" or "" -- indicates if delta is waiting on param_q
+        local q = preview_param_q_get[param_id] and "•" or "" -- indicates if delta is waiting on param_q -- req norns.ttf
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
-        local y = line * 10 + header_y - menu_offset
+        local y = line * 10 + header_y  - menu_offset
         
-        if y > 11 then
+        if y > header_y  and y < 64 then
           screen.move(0, y)
           screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
-          screen.text(string.lower(param_id_to_name(param_id)))
+          screen.text(q .. string.lower(param_id_to_name(param_id)))
           screen.move(dash_x - 5, y)
-          screen.text_right(string.lower(param_string) .. q)
+          screen.text_right(string.lower(param_string))
         end
 
         line = line + 1
@@ -6195,12 +6279,17 @@ function redraw()
         end
       end
 
-      screen.move(header_x, header_y) -- 5 + 2px gap above
+      screen.move(header_x, header_y)
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
 
+      -- -- screen.level(lvl_divider)
+      -- screen.rect(0, header_y + 3, dash_x - 1, 1) -- underline entire header
+      -- screen.fill()
+
+
       -- iterate through list of modular dashboard functions
-      dash_y = 0
+      dash_y = 4
       for _, func in pairs(dash_list) do
         func()
       end
