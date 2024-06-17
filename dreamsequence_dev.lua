@@ -21,13 +21,44 @@
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
+
+
+-- layout and palette
+xy = {
+  dash_x = 99,
+  header_x = 0,
+  header_y = 7,
+  menu_y = 9,
+  scrollbar_y = 12
+}
+
+local lvl_normal = {
+  menu_selected = 15,
+  menu_deselected = 4,
+  pane = 15,
+  pane_selected = 1,
+  pane_deselected = 3,
+  pane_dark = 7,
+}
+
+local lvl_dimmed = {
+  menu_selected = 7,
+  menu_deselected = 2,
+  pane = 15, -- not dimmed
+  pane_selected = 1, -- not dimmed
+  pane_deselected = 3, -- not dimmed
+  pane_dark = 3
+}
+
+lvl = lvl_normal -- required for includes:dashboards.lua
+
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
 max_seqs = 2
 
--- locals
+-- pre-init locals
 local latest_strum_coroutine = coroutine.running()
 
 function init()
@@ -173,8 +204,8 @@ function init()
     end
 
   end
-  
-  
+
+
   -------------
   -- Read prefs
   -------------
@@ -236,7 +267,8 @@ function init()
   -- PREFERENCES PARAMS --
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
-  params:add_group("preferences", "PREFERENCES", 6 + 16 + 5)
+
+  params:add_group("preferences", "PREFERENCES", 6 + 15 + 5)
 
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
@@ -247,24 +279,18 @@ function init()
   params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
-  local dash_name = {"Off", "Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown"} -- sync with dash_ids
 
-  for dash_no = 1, 5 do
-    params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, dash_no + 1)
+  local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown", nil}
+  for dash_no = 1, 6 do
+    params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, 1)
     params:set_save("dash_" .. dash_no, false)
-    params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no]) or dash_no + 1)
+    params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no] or defaults[dash_no]) or 1 )
     params:set_action("dash_" .. dash_no, 
       function(val)
         save_prefs()
         dash_list[dash_no] = dash_functions[dash_ids[val]]
       end)
   end
-
-  -- deprecate!
-  params:add_option("chord_readout", "Chords as", {"Name", "Degree"}, 1)
-  params:set_save("chord_readout", false)
-  params:set("chord_readout", param_option_to_index("chord_readout", prefs.chord_readout) or 1)
-  params:set_action("chord_readout", function() save_prefs() end)
   
   params:add_option("crow_pullup", "Crow pullup", {"Off", "On"}, 2)
   params:set_save("crow_pullup", false)
@@ -325,7 +351,7 @@ function init()
   local modes = {
     "Major", -- "Ionian", 
     "Natural minor", -- "Aeolian", 
-    "Harmonic min.", 
+    "Harmonic minor", 
     "Melodic minor", 
     "Dorian", 
     "Phrygian", 
@@ -337,8 +363,8 @@ function init()
 
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
-  params:add_number("ts_numerator", "TS num", 1, 99, 4) -- Beats per bar
-  params:add_option("ts_denominator", "TS den", {1, 2, 4, 8, 16}, 3) -- Beat length
+  params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
+  params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
 
   params:add_option("crow_out_1", "Crow out 1", {"Off", "CV", "Env", "Events"}, 2)
   params:set_action("crow_out_1",function() gen_voice_lookups(); update_voice_params() end)  
@@ -469,11 +495,9 @@ function init()
     
     params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 14, 1) -- to 0??
 
-    -- params:add_option("seq_start_on_"..seq_no, "Play", {"in a loop", "every step", "on chord steps", "on blank steps", "on cue/event"}, 1)
-    params:add_option("seq_start_on_"..seq_no, "Play", {"repeat", "all steps", "chord steps", "blank steps", "cue/event"}, 1)
+    params:add_option("seq_start_on_"..seq_no, "Play", {"Loop", "All steps", "Chord steps", "Blank steps", "Cue/event"}, 1)
 
-    -- params:add_option("seq_reset_on_"..seq_no, "⏎", {"every step", "on chord steps", "on blank steps", "on stop/event"}, 4)
-    params:add_option("seq_reset_on_"..seq_no, "⏎", {"all steps", "chord steps", "blank steps", "stop"}, 4)
+    params:add_option("seq_reset_on_"..seq_no, "Reset", {"All steps", "Chord steps", "Blank steps", "Stop/event"}, 4)
     
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start", "trigger")
@@ -780,7 +804,11 @@ function init()
   -----------------------------
   -- POST-PARAM INIT STUFF
   -----------------------------
-  -- globals
+  -- init locals
+  -- local active_chord_name = ""
+  -- local active_chord_degree = ""
+
+  -- init globals
   
   function grid_size()
     if g.cols >= 16 then
@@ -1157,7 +1185,7 @@ function init()
     local prefs = {}
     prefs.timestamp = os.date()
     prefs.last_version = version
-    prefs.chord_readout = params:string("chord_readout")
+    -- prefs.chord_readout = params:string("chord_readout")
     prefs.default_pset = params:string("default_pset")
     for dash_no = 1, 5 do
       local id = "dash_" .. dash_no
@@ -1377,15 +1405,19 @@ params:set_action("ts_numerator",
             -- hard stop since we can't do continue (https://github.com/monome/norns/issues/1756)
             transport_multi_stop()
             transport_active = false
-            transport_state = "stopped"
-            print(transport_state)
+
             -- link_stop_source = nil
 
-            if arranger_active then
-              reset_arrangement()
-            else
-              reset_pattern()
-            end
+            -- if arranger_active then --or transport_state == "stopped" then
+            --   reset_arrangement()
+            -- else
+            --   reset_pattern()
+            -- end
+  
+            reset_arrangement() -- always reset arrangement since link negative beat clock is broken
+
+            transport_state = "stopped"
+            print(transport_state)
 
             stop = false
             start = false
@@ -1424,9 +1456,7 @@ params:set_action("ts_numerator",
           --   stop = false
           -- end
         
-          -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-          -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-          -- todo p1 also use this when running off norns link beat_count
+        -- since we don't support incoming SPP, treat as reset
         elseif clock_source == "midi" then
           -- transport_multi_stop() -- won't propagate to downstream devices
           transport_active = false
@@ -1434,11 +1464,8 @@ params:set_action("ts_numerator",
           print(transport_state)
           clock_start_method = "start"
 
-          if params:get("arranger") == 2 then
-            reset_arrangement()
-          else
-            reset_pattern()
-          end
+          -- always reset pattern AND arranger
+          reset_arrangement()
 
           -- seq_lattice.transport = -1 -- something is overwriting this
           -- print("DEBUG setting transport = -1")
@@ -1721,6 +1748,7 @@ end -- end of init
 -- Assorted functions junkdrawer
 -----------------------------------------------
 
+
 function screenshot(name)
   local filepath = norns.state.data .. (name or "screenshot") .. ".png"
   _norns.screen_export_png(filepath)
@@ -1793,6 +1821,7 @@ function reset_norns_interaction(interaction)
     countdown = countdown - 1
     if countdown == 0 then
       norns_interaction = interaction or nil
+      lvl = lvl_normal
       break
     end
     clock.sleep(.1)
@@ -3264,11 +3293,8 @@ end
 
 function gen_chord_readout()
   if chord_no > 0 then
-    if params:string("chord_readout") == "Degree" then
-      chord_readout = chord_lookup[params:get("mode")]["chords"][chord_no]
-    else -- chord name
-      chord_readout = modes.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
-    end
+    active_chord_name = modes.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
+    active_chord_degree = chord_lookup[params:get("mode")]["chords"][chord_no]
   end
 end
 
@@ -4595,6 +4621,7 @@ function key(n,z)
         -- if event_edit_active == false then -- maybe
         params:set("event_quick_actions", 1)
         norns_interaction = "event_actions"
+        lvl = lvl_dimmed
         -- end
       else
         norns_interaction = "preview_param"
@@ -4717,6 +4744,8 @@ function key(n,z)
             print(transport_state)        
             clock_start_method = "continue"
             send_continue = true
+          elseif transport_state == "stopped" then -- second press of K2 while stopped will always reset arranger now
+            reset_arrangement()
           else
             reset_external_clock()
             if params:get("arranger") == 2 then
@@ -5138,6 +5167,7 @@ function key(n,z)
           delete_events_in_segment() -- no arg so window will close after
         else -- if "Quick actions:" faux title, close window
           norns_interaction = nil
+          lvl = lvl_normal
         end
 
       end
@@ -5600,9 +5630,9 @@ function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
   local stop = 23 -- width of chart
-  local lvl_pane = 15 -- gotta update if lvl_xxx change or do a proper palette
-  local lvl_pane_selected = 1
-  local lvl_pane_deselected = 3
+  local lvl_pane = lvl.pane
+  local lvl_pane_selected = lvl.pane_selected
+  local lvl_pane_deselected = lvl.pane_deselected
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
@@ -5688,6 +5718,45 @@ function gen_arranger_dash_data(source)
 end
 
 
+
+
+
+-- pop-up tooltips when certain grid keys are held down
+local function tooltips(header, strings)
+  local strings = strings or ""
+  screen.level(lvl.menu_selected)
+  screen.move(xy.header_x, xy.header_y)
+  screen.text(header)
+  screen.level(lvl.menu_deselected)
+  for i = 1, #strings do
+    screen.move(0, xy.menu_y + (i * 10))
+    screen.text(strings[i])
+  end
+end
+
+
+-- rectangles and K2/K3 text
+local function footer(k2, k3) -- todo move out of redraw loop and pass lvl_pane_dark
+  local lvl_pane_dark = lvl.pane_dark
+  if k2 then
+    screen.level(lvl_pane_dark)
+    screen.rect(0, 55, 63, 9)
+    screen.fill()
+    screen.level(1)
+    screen.move(31, 62)
+    screen.text_center("K2 ".. k2)
+  end
+  if k3 then
+    screen.level(lvl_pane_dark)
+    screen.rect(65, 55, 63, 9)
+    screen.fill()
+    screen.level(1)
+    screen.move(96, 62)
+    screen.text_center("K3 " .. k3)
+  end
+end
+
+
 --------------------------
 -- REDRAW
 -------------------------
@@ -5695,190 +5764,43 @@ end
 function redraw()
   -- screen.font_face(tab.key(screen.font_face_names, "norns"))
 
-  local dash_x = 99   -- x origin of chord and arranger dashes
-  local header_x = 0
-  local header_y = 11  -- divider
-  
-  -- in dashboards
-  -- local lvl_pane = 15
-  -- local lvl_pane_selected = 1
-  -- local lvl_pane_deselected = 3
-
-  local lvl_menu_deselected = 4
-  local lvl_menu_selected = 15
-  local lvl_divider = 4 -- +1 for horizontal dividers to match lvl_menu_deselected
-
-  if norns_interaction == "event_actions" then
-
-    -- not used presently
-    -- lvl_pane = 4
-    -- lvl_pane_selected = 7
-    -- lvl_pane_deselected = 2
-
-    lvl_menu_deselected = 1
-    lvl_menu_selected = 3
-    lvl_divider = 3
-  end
+  local dash_x = xy.dash_x   -- x origin of chord and arranger dashes
+  local header_x = xy.header_x
+  local header_y = xy.header_y
+  local menu_y = xy.menu_y
+  local scrollbar_y = xy.scrollbar_y
+  local lvl_menu_selected = lvl.menu_selected
+  local lvl_menu_deselected = lvl.menu_deselected
 
   screen.clear()
 
-  local function footer(k2, k3)
-    
-    -- -- divider
-    -- screen.level(lvl_divider)
-    -- screen.move(0, 55)
-    -- screen.line(128, 55)
-    -- screen.stroke()
-
-    -- -- K2/K3 text
-    -- screen.level(lvl_menu_deselected)
-    -- if k2 then
-    --   screen.move(0, 63)
-    --   screen.text("(K2) ".. k2)
-    -- end
-    -- if k3 then
-    --   screen.move(128, 63)
-    --   screen.text_right("(K3) " .. k3)
-    -- end
-
-
-    -- rectangles and K2/K3 text
-    if k2 then
-      screen.level(7)
-
-      screen.rect(0, 55, 63, 9)
-      screen.fill()
-
-      -- -- bubble style
-      -- screen.rect(2, 55, 59, 9)
-      -- screen.rect(0, 57, 1, 5)
-      -- screen.rect(1, 56, 1, 7)
-      -- screen.rect(61, 56, 1, 7)
-      -- screen.rect(62, 57, 1, 5)
-      -- screen.fill()
-
-      screen.level(1)
-      screen.move(31, 62)
-      screen.text_center("K2 ".. k2)
-    end
-    if k3 then
-      screen.level(7)
-
-      screen.rect(65, 55, 63, 9)
-      screen.fill()
-
-      -- -- bubble
-      -- screen.rect(67, 55, 59, 9)
-      -- screen.rect(65, 57, 1, 5)
-      -- screen.rect(66, 56, 1, 7)
-      -- screen.rect(126, 56, 1, 7)
-      -- screen.rect(127, 57, 1, 5)
-      -- screen.fill()
-
-      screen.level(1)
-      screen.move(96, 62)
-      screen.text_center("K3 " .. k3)
-    end
-
-  end
-
-  -- Screens that pop up when g.keys are being held down take priority--------
-  -- POP-up g.key tip always takes priority
+  -- POP-up g.key tooltips always takes priority
   if view_key_count > 0 then
     if screen_view_name == "Chord+seq" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      screen.move(2,28)
-      screen.text("E2: rotate ↑↓")
-      screen.move(2,38)
-      screen.text("E3: transpose ←→")
-      footer("GENERATE") --GEN PATTERNS")   
-    elseif grid_view_name == "Arranger" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID")   
-      -- footer()
-        
-    elseif grid_view_name == "Chord" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      screen.move(2,28)
-      screen.text("E2: rotate ↑↓")
-      screen.move(2,38)
-      screen.text("E3: transpose ←→")
-      screen.move(2,48)
-      screen.text("Tap pattern A-D: mute")
+      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→"})
       footer("GENERATE")
-        
+    elseif grid_view_name == "Arranger" then
+      tooltips(string.upper(grid_view_name) .. " GRID")
+    elseif grid_view_name == "Chord" then
+      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
+      footer("GENERATE")
     elseif grid_view_name == "Seq" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      
-      screen.move(2,28)
-      screen.text("E2: rotate ↑↓")
-      
-      screen.move(2,38)
-      screen.text("E3: transpose ←→")
-
-      screen.move(2,48)
-      screen.text("Tap SEQ 1-" .. max_seqs .. ": mute")
-      
+      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
       footer("GENERATE")
       end
-      
+
   -- Arranger shift interaction
   elseif interaction == "arranger_shift" then
-    screen.level(15)
-    screen.move(2,8)
-    screen.text("ARRANGER SEGMENT " .. event_edit_segment)
-
-    screen.move(2,38)
-    screen.text("E3: shift segments ←→")
-    screen.level(4)
-    screen.move(1,54)
-    screen.line(128,54)
-    screen.stroke()    
-  
-    
+    tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→"})
   -- Arranger events timeline held down
   elseif arranger_loop_key_count > 0 then
-    screen.level(15)
-    screen.move(2,8)
-    screen.text("ARRANGER SEGMENT " .. event_edit_segment)
-    screen.move(2,28)
-    screen.text("Hold+tap: paste events")
-    screen.move(2,38)
-    screen.text("E3: shift segments ←→")
+    tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→", "Hold+tap: paste events"})
     footer("JUMP", "EVENTS")
-          
   -- tooltips for interacting with chord patterns      
-  elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this
-    screen.level(15)
-    screen.move(2,8)
-    screen.text("CHORD PATTERN " .. pattern_name[pattern_copy_source])
-    screen.move(2,28)
-    -- screen.text("Tap a pattern to paste")
-    screen.text("Hold+tap: paste pattern") --. " .. pattern_name[pattern_copy_source])
-    screen.move(2,38)
-    screen.text("Release: queue pattern")
-    screen.move(2,48)
-    -- screen.text("Tap again to force jump")
-    screen.text("Tap 2x while stopped: jump")
-    screen.level(4)
-    screen.move(1,54)
-    screen.line(128,54)
-    screen.stroke()    
-  
+  elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this 
+    tooltips("CHORD PATTERN " .. pattern_name[pattern_copy_source], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
   else -- Standard priority (not momentary) menus
-  
     -- NOTE: UI elements placed here appear in all views
-
-    -- screen.level(lvl_divider)
-    -- screen.rect(0, 12, dash_x - 2, 1) -- alignment check
-    -- screen.fill()
 
     ----------------
     -- EVENTS SCREEN
@@ -5887,10 +5809,8 @@ function redraw()
       local lane = params:get("event_lane")
       local lane_id = event_lanes[lane].id
       local lane_type = event_lanes[lane].type -- or "Empty"
-      local lane_glyph = lane_type == "Single" and "⏹" or lane_type == "Multi" and "☰" or "☐" -- ☑  -- todo norns.ttf
+      local lane_glyph = lane_type == "Single" and "☑" or lane_type == "Multi" and "☰" or "☐" -- ☑  -- todo norns.ttf
 
-      screen.level(lvl_menu_selected)
-      screen.move(2, 8)
       if event_edit_active == false then -- lane-level preview
         --------------------------
         -- Event lanes preview
@@ -5902,48 +5822,30 @@ function redraw()
         screen.move(header_x, header_y)
         screen.text("LANE " .. lane)
 
-
         for i = 1, 15 do
           local type = event_lanes[i].type
-          local glyph = type == "Single" and "⏹" or type == "Multi" and "☰" or "☐" --☑ -- todo norns.ttf
+          local glyph = type == "Single" and "☑" or type == "Multi" and "☰" or "☐" --☑ -- todo norns.ttf
 
           screen.level(lane == i and lvl_menu_selected or lvl_menu_deselected) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
-          screen.move((header_x + 39 + (i - 1) * 6), header_y)
+          screen.move((header_x + 35 + (i - 1) * 6), header_y)
           screen.text(glyph)
         end
 
-        -- -- divider
-        -- screen.level(lvl_menu_selected)
-        -- screen.rect(0, header_y + 3, 128, 1) -- underline entire header
-        -- screen.fill()
-
-        screen.level(lvl_menu_deselected)
-        screen.move(0, 10 + header_y)
-        -- screen.text((lane_type and (lane_type .. "-event") or "Empty"))
-        if lane_type == "Single" then
-          screen.text("Single event:")
-        elseif lane_type == "Multi" then
-          screen.text("Multiple events. Last:")
+        -- simplified description of lane. multi-event lanes show last-saved event
+        if event_def then
+          screen.move(0, menu_y + 10)
+          screen.text("Category: " .. first_to_upper(event_def["category"]))
+          screen.move(0, menu_y + 20)
+          screen.text("Subcategory: " .. first_to_upper(event_def["subcategory"]))
+          screen.move(0, menu_y + 30)
+          screen.text("Event: " .. first_to_upper(event_def["name"]))
         else
-          screen.text("No events")
+          screen.move(0, menu_y + 10)
+          screen.level(lvl_menu_deselected)
+          screen.text("No events in lane")
         end
 
-        local line = 1
-        local event_fields = {"category", "subcategory", "name"}  -- variant of what we store in events_menus (omits "event_")
-
-        -- lane event summary
-        for i = 1, 3 do -- only do category, subcategory, event from event_fields
-          local menu_id = event_fields[i]
-
-          if event_def ~= nil then
-            screen.move(((line - 1) * 4), (line + 1) * 10 + header_y) -- staggered
-            screen.text(("-") .. first_to_upper(event_def[menu_id]))
-            line = line + 1
-          end
-
-        end
-
-        footer("ARRANGER", nil) -- K3 also goes back to arranger 🤫
+        footer("EXIT", nil) -- K3 also goes back to arranger 🤫
 
       else -- EVENT EDITOR MENUS
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
@@ -5960,7 +5862,7 @@ function redraw()
           screen.level(lvl_menu_deselected)
           lane_glyph = "⏹"--"☑" -- probably no need to blink if we're going down to Single event lane
         elseif lane_glyph_preview == "Multi" then
-          screen.level(fast_blinky == 0 and lvl_menu_deselected or lvl_menu_selected) --(lvl_menu_deselected + 2))
+          screen.level(fast_blinky == 0 and lvl_menu_deselected or lvl_menu_selected)
           lane_glyph = "☰"
         else
           screen.level(lvl_menu_deselected)
@@ -5973,23 +5875,18 @@ function redraw()
         screen.text(" LANE " .. event_edit_lane .. ", STEP " .. event_edit_step) -- add event_edit_segment?
 
         -- event save status
-        screen.move(128 - header_x, header_y)
+        screen.move(128 - 4, header_y)
         screen.text_right(event_edit_status)
         footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
-        
-        -- -- divider
-        -- screen.level(lvl_menu_deselected)
-        -- screen.rect(0, header_y + 3, 128, 1) -- underline entire header
-        -- screen.fill()
 
         for i = 1, #events_menus do -- event hierarchy, op, probability, etc...
-          local debug = false
+          -- local debug = false
           local menu_id = events_menus[i]
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
-          local y = line * 10 + header_y - menu_offset
+          local y = line * 10 + menu_y - menu_offset
 
-          if y > header_y and y < 52 then
+          if y > 11 and y < 52 then
           screen.move(0, y) --line * 10 + 9 - menu_offset)
           screen.level(events_index == i and lvl_menu_selected or lvl_menu_deselected)
 
@@ -5999,23 +5896,23 @@ function redraw()
           -- >> functions are raw
           -- >> inc, random, wander are raw but ranges have been formatted above
           if menu_id == "event_value" then
-            if debug then print("-------------------") end
-            if debug then print("formatting event_value menu") end
+            -- if debug then print("-------------------") end
+            -- if debug then print("formatting event_value menu") end
             local operation = params:string("event_operation")
             
             if operation == "Set" then
-              if debug then print("Set operator") end
+              -- if debug then print("Set operator") end
               -- if event_def.event_type == "param" then  -- move above operation check?
               if event_type == "param" then  -- move above operation check?
                 preview_event:set(event_val_string)
                 event_val_string = preview_event:string()
               end
-              if debug then print("Nil formatter: skipping") end
+              -- if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
               event_val_string = "\u{0b1}" .. event_val_string
             end
 
-            if debug then print("Value passed raw") end
+            -- if debug then print("Value passed raw") end
               
               -- hack to use preview to get formatting for min/max
               -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
@@ -6034,33 +5931,36 @@ function redraw()
             -- Leaving in param formatter and some code for truncating string in case we want to eventually add system param events that require formatting.
             local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
 
-            -- if events_index == i then
-            --   local range =
-            --     (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
-            --     and params:get_range(menu_id)
-            --     or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
-            --     or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
+            if events_index == i then
+              local range =
+                (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
+                and params:get_range(menu_id)
+                or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
+                or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
 
-            --   local single = menu_index == range[1] and (range[1] == range[2]) or false
-            --   local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
-            --   local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
-            --   local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+              local single = menu_index == range[1] and (range[1] == range[2]) or false
+              local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
+              local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
+              -- local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
 
-            --   if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-            --   if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+              -- if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+              -- if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
 
-            --   screen.text(events_menu_txt)
+              -- screen.text(events_menu_txt)
 
-            -- else            
-            --   if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-            --   if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+              screen.text(first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf)
+
+            else            
+              -- if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+              -- if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
               
-            --   screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
-            -- end
+              screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+            end
 
-            screen.text(string.lower(param_id_to_name(menu_id)))
-            screen.move(124, y)
-            screen.text_right((string.lower(string.sub(event_val_string, 1, events_menu_trunc))))
+            -- simplified option (perhaps alternate view via prefs?)
+            -- screen.text(string.lower(param_id_to_name(menu_id)))
+            -- screen.move(124, y)
+            -- screen.text_right((string.lower(string.sub(event_val_string, 1, events_menu_trunc))))
 
           end
           line = line + 1
@@ -6068,49 +5968,21 @@ function redraw()
         
         -- events editor scrollbar
         screen.level(lvl_menu_selected)
-        local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
-        local bar_height = 4 / #events_menus * 40
+        local offset = scrollbar_y + scrollbar(events_index, #events_menus, 4, 2, 41) -- (index, total, in_view, locked_row, screen_height)
+        local bar_height = 4 / #events_menus * 41
         screen.rect(127, offset, 1, bar_height)
         screen.fill()
 
         -- footer
         footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
-
       end
 
-      --   -- EVENT EDITOR HEADER
-      --   -- lane_glyph (with dynamic preview)
-      --   if lane_glyph_preview == "Single" then
-      --     screen.level(lvl_menu_deselected)
-      --     lane_glyph = "⏹"--"☑" -- probably no need to blink if we're going down to Single event lane
-      --   elseif lane_glyph_preview == "Multi" then
-      --     screen.level(fast_blinky == 0 and lvl_menu_deselected or lvl_menu_selected) --(lvl_menu_deselected + 2))
-      --     lane_glyph = "☰"
-      --   else
-      --     screen.level(lvl_menu_deselected)
-      --   end
-
-      --   screen.move(header_x, header_y)
-      --   screen.text(lane_glyph)
-      --   screen.move(header_x + 6, header_y)
-      --   screen.level(lvl_menu_deselected)
-      --   screen.text(" LANE " .. event_edit_lane .. ", STEP " .. event_edit_step) -- add event_edit_segment?
-
-      --   -- event save status
-      --   screen.move(128 - header_x, header_y)
-      --   screen.text_right(event_edit_status)
-      --   footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
-      -- end
-        
-      -- -- divider
-      -- screen.level(lvl_menu_deselected)
-      -- screen.rect(0, 12, 128, 1) -- underline entire header
-      -- screen.fill()
 
       -- K1 event actions pop-up quick-menu
       if norns_interaction == "event_actions_done" then -- flash "DONE!" message
-        local border = 13
-        local rect = {1 + border, 1 + border, 127 - (border * 2), 63 - (border * 2)}
+        local border = 10 -- portion of lower layer still shown
+        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+
         screen.level(0)
         screen.rect(table.unpack(rect))
         screen.fill()
@@ -6123,8 +5995,9 @@ function redraw()
         screen.text_center("DONE!")
 
       elseif norns_interaction == "event_actions" then
-        local border = 13
-        local rect = {1 + border, 1 + border, 127 - (border * 2), 63 - (border * 2)}
+        local border = 10 -- portion of lower layer still shown
+        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+        
         screen.level(0)
         screen.rect(table.unpack(rect))
         screen.fill()
@@ -6153,117 +6026,60 @@ function redraw()
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
       local line = 1
 
-      -- -- OG style
-      -- for i = 1, #menus[page_index] do
-      --   local param_id = menus[page_index][i]
-      --   local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
-      --   local param_get = preview_param_q_get[param_id] or params:get(param_id)
-      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
-      --   local y = line * 10 + header_y - menu_offset
-        
-      --   if y > 11 then
-      --     screen.move(0, y)
-          
-      --     -- Generate menu and draw ▶◀ indicators for scroll range
-      --     if menu_index == i then
-      --       screen.level(lvl_menu_selected)
-      --       if norns_interaction then q = "-" end
-      --       local range = params:get_range(param_id)
-      --       local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
-      --       local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
-      --       screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf)
-      --     else  
-      --       screen.level(lvl_menu_deselected)
-      --       screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
-      --     end
-      --   end
-
-      --   line = line + 1
-      -- end
-
-
-      -- lowercase, param stype but with range indicators
-      -- for i = 1, #menus[page_index] do
-      --   local param_id = menus[page_index][i]
-      --   local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
-      --   local param_get = preview_param_q_get[param_id] or params:get(param_id)
-      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
-      --   local y = line * 10 + header_y - menu_offset
-        
-      --   if y > 11 then
-      --     screen.move(0, y)
-
-      --     -- Generate menu and draw ▶◀ indicators for scroll range
-      --     if menu_index == i then
-      --       local range = params:get_range(param_id)
-
-      --       screen.level(lvl_menu_selected)
-      --       if norns_interaction then q = "-" end
-      --       screen.text(q .. string.lower(param_id_to_name(param_id)))
-
-      --       if param_get == range[1] then -- at param min
-      --         screen.move(dash_x - 3, y)
-      --         screen.text_right(string.lower(param_string) .. "►")
-      --       elseif param_get == range[2] then -- at param max
-      --         screen.move(dash_x - 7, y)
-      --         screen.text_right("◀" .. string.lower(param_string))
-      --       else  -- mid range
-      --         screen.move(dash_x - 7, y)
-      --         screen.text_right(string.lower(param_string))
-      --       end
-      --     else
-      --       screen.level(lvl_menu_deselected)
-      --       -- screen.text(q .. string.lower(param_id_to_name(param_id) .. ": " .. param_string))
-      --       screen.text(q .. string.lower(param_id_to_name(param_id)))
-      --       screen.move(dash_x - 7, y)
-      --       screen.text_right(string.lower(param_string))
-
-      --     end
-      --   end
-
-      --   line = line + 1
-      -- end
-
-
-      -- lowercase, no range indicators (todo flash screen?), q indicator at end
+      -- OG style
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
-        local q = preview_param_q_get[param_id] and "•" or "" -- indicates if delta is waiting on param_q -- req norns.ttf
+        local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
+        local param_get = preview_param_q_get[param_id] or params:get(param_id)
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
-        local y = line * 10 + header_y  - menu_offset
+        local y = line * 10 + menu_y - menu_offset
         
-        if y > header_y  and y < 64 then
+        if y > 11 and y < 64 then
           screen.move(0, y)
-          screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
-          screen.text(q .. string.lower(param_id_to_name(param_id)))
-          screen.move(dash_x - 5, y)
-          screen.text_right(string.lower(param_string))
+       
+          if menu_index == i then  -- Generate menu and draw ▶◀ indicators for scroll range
+            screen.level(lvl_menu_selected)
+            if norns_interaction then q = "-" end
+            local range = params:get_range(param_id)
+            local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
+            local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
+            screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf)
+          else  
+            screen.level(lvl_menu_deselected)
+            screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
+          end
+
         end
 
         line = line + 1
       end
 
+      -- -- alternate param menu-style. may add as pref option
+      -- -- lowercase, no range indicators (todo flash screen?), q indicator at end
+      -- for i = 1, #menus[page_index] do
+      --   local param_id = menus[page_index][i]
+      --   local q = preview_param_q_get[param_id] and "•" or "" -- indicates if delta is waiting on param_q -- req norns.ttf
+      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
+      --   local y = line * 10 + header_y  - menu_offset
+        
+      --   if y > header_y  and y < 64 then
+      --     screen.move(0, y)
+      --     screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
+      --     screen.text(q .. string.lower(param_id_to_name(param_id)))
+      --     screen.move(dash_x - 5, y)
+      --     screen.text_right(string.lower(param_string))
+      --   end
+
+      --   line = line + 1
+      -- end
+
 
       -- main menu scrollbar
       if not paging then
-        -- -- scrollbar background
-        -- screen.level(lvl_menu_deselected)
-        -- -- screen.rect(dash_x - 2, 0, 1, 64) -- full
-        -- screen.rect(dash_x - 2, 12, 1, 52) -- full
-        -- screen.fill()
-
         screen.level(lvl_menu_selected)
-
-        -- under header/first row
-        local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
+        local offset = scrollbar_y + scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
         screen.rect(dash_x - 2, offset, 1, bar_height)
-
-        -- full height
-        -- local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 64) -- (index, total, in_view, locked_row, screen_height)
-        -- local bar_height = 5 / #menus[page_index] * 64
-        -- screen.rect(dash_x - 2, offset - 12, 1, bar_height)
-
         screen.fill()
       end
       
@@ -6283,13 +6099,8 @@ function redraw()
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
 
-      -- -- screen.level(lvl_divider)
-      -- screen.rect(0, header_y + 3, dash_x - 1, 1) -- underline entire header
-      -- screen.fill()
-
-
       -- iterate through list of modular dashboard functions
-      dash_y = 4
+      dash_y = 0
       for _, func in pairs(dash_list) do
         func()
       end
