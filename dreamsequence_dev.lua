@@ -1,18 +1,18 @@
 -- Dreamsequence
--- 240525 @modularbeat
+-- 240616 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
 -- arpeggiator, and harmonizer 
 -- for Monome Norns+Grid
 -- 
--- K1: Cue edits (hold)
+-- K1: Alt (hold)
 -- K2: Pause/Stop(2x)
 -- K3: Play
 --
 -- E1: Scroll (16x8 Grid)
 -- E2: Select
--- E3: Edit (hold K1 to cue)
+-- E3: Edit (+K1 to defer)
 --
 -- Crow IN 1: CV in
 -- Crow IN 2: Trigger in
@@ -21,13 +21,44 @@
 -- Crow OUT 3: Events out
 -- Crow OUT 4: Clock out
 
-norns.version.required = 231114 -- rolling back for fates but 240221 required for link support
+
+
+-- layout and palette
+xy = {
+  dash_x = 99,
+  header_x = 0,
+  header_y = 7,
+  menu_y = 9,
+  scrollbar_y = 12
+}
+
+local lvl_normal = {
+  menu_selected = 15,
+  menu_deselected = 4,
+  pane = 15,
+  pane_selected = 1,
+  pane_deselected = 3,
+  pane_dark = 7,
+}
+
+local lvl_dimmed = {
+  menu_selected = 7,
+  menu_deselected = 2,
+  pane = 15, -- not dimmed
+  pane_selected = 1, -- not dimmed
+  pane_deselected = 3, -- not dimmed
+  pane_dark = 3
+}
+
+lvl = lvl_normal -- required for includes:dashboards.lua
+
+norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
-max_seqs = 3
+max_seqs = 2
 
--- locals
+-- pre-init locals
 local latest_strum_coroutine = coroutine.running()
 
 function init()
@@ -173,8 +204,8 @@ function init()
     end
 
   end
-  
-  
+
+
   -------------
   -- Read prefs
   -------------
@@ -194,12 +225,12 @@ function init()
   function init_events()
     events_lookup_names = {}  -- locals defined outside of function
     events_lookup_ids = {}
+
     for i = 1, #events_lookup do
       events_lookup_names[i] = events_lookup[i].name
       events_lookup_ids[i] = events_lookup[i].id
     end
-    
-    -- key = event_id, value = index
+
     events_lookup_index = tab.invert(events_lookup_ids)
     
     -- Used to derive the min and max indices for the selected event category (Song, Chord, Seq, etc...)
@@ -237,7 +268,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 6 + 16)
+  params:add_group("preferences", "PREFERENCES", 6 + 15 + 5)
 
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
@@ -248,10 +279,18 @@ function init()
   params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
-  params:add_option("chord_readout", "Chords as", {"Name", "Degree"}, 1)
-  params:set_save("chord_readout", false)
-  params:set("chord_readout", param_option_to_index("chord_readout", prefs.chord_readout) or 1)
-  params:set_action("chord_readout", function() save_prefs() end)
+
+  local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown", nil}
+  for dash_no = 1, 6 do
+    params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, 1)
+    params:set_save("dash_" .. dash_no, false)
+    params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no] or defaults[dash_no]) or 1 )
+    params:set_action("dash_" .. dash_no, 
+      function(val)
+        save_prefs()
+        dash_list[dash_no] = dash_functions[dash_ids[val]]
+      end)
+  end
   
   params:add_option("crow_pullup", "Crow pullup", {"Off", "On"}, 2)
   params:set_save("crow_pullup", false)
@@ -312,7 +351,7 @@ function init()
   local modes = {
     "Major", -- "Ionian", 
     "Natural minor", -- "Aeolian", 
-    "Harmonic min.", 
+    "Harmonic minor", 
     "Melodic minor", 
     "Dorian", 
     "Phrygian", 
@@ -380,7 +419,7 @@ function init()
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
   
-  params:add_option("chord_type","Chord type", {"Triad", "7th"}, 1)
+  params:add_option("chord_type","Type", {"Triad", "7th"}, 1)
   
   params:add_number("chord_range", "Range", 3, 64, 4, function(param) return chord_range_string(param:get()) end) -- intervals
 
@@ -455,10 +494,10 @@ function init()
     )
     
     params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 14, 1) -- to 0??
-    
-    params:add_option("seq_start_on_"..seq_no, "Play", {"in a loop", "every step", "on chord steps", "on blank steps", "on cue/event"}, 1)
 
-    params:add_option("seq_reset_on_"..seq_no, "⏎", {"every step", "on chord steps", "on blank steps", "on stop/event"}, 4)
+    params:add_option("seq_start_on_"..seq_no, "Play", {"Loop", "All steps", "Chord steps", "Blank steps", "Cue/event"}, 1)
+
+    params:add_option("seq_reset_on_"..seq_no, "Reset", {"All steps", "Chord steps", "Blank steps", "Stop/event"}, 4)
     
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start", "trigger")
@@ -482,12 +521,12 @@ function init()
     params:set_action("seq_duration_index_"..seq_no, function(val) seq_duration[seq_no] = val == 0 and division_names[params:get("seq_div_index_"..seq_no)][1] or division_names[val][1] end)
   
     max_seq_pattern_length = 16  
-    params:add_number("seq_rotate_"..seq_no, "Pattern rotate", 0, max_seq_pattern_length - 1, 0, function(param) return param:get() end, true) -- dummy formatter??
+    params:add_number("seq_rotate_"..seq_no, "Pattern ↑↓", 0, max_seq_pattern_length - 1, 0, function(param) return param:get() end, true) -- dummy formatter??
     params:set_action("seq_rotate_"..seq_no, function(val) seq_rotate_abs(seq_no, val) end)
     params:add_number("prev_seq_rotate_"..seq_no, "prev_seq_rotate_"..seq_no, (max_seq_pattern_length * -1), max_seq_pattern_length, 0)
     params:hide("prev_seq_rotate_"..seq_no)
         
-    params:add_number("seq_shift_"..seq_no, "Pattern shift", 0, 13, 0, function(param) return param:get() end, true) -- dummy formatter??
+    params:add_number("seq_shift_"..seq_no, "Pattern ←→", 0, 13, 0, function(param) return param:get() end, true) -- dummy formatter??
     params:set_action("seq_shift_"..seq_no, function(val) seq_shift_abs(seq_no, val) end)
     params:add_number("prev_seq_shift_"..seq_no, "prev_seq_shift_"..seq_no, -14, 14, 0)
     params:hide("prev_seq_shift_"..seq_no)
@@ -686,6 +725,22 @@ function init()
   params:add_option("event_name", "Event", events_lookup_names, 1) -- Default value overwritten later in Init
   params:hide("event_name")
   
+  params:add_number("event_lane", "Lane", 1, 15, 1) -- Selected event lane in event editor. 16 == all
+  params:hide("event_lane")
+
+  -- event quick action ideas:
+  -- copy pattern forward/back
+  -- apply to pattern A/B/C/D
+  -- pattern defaults
+  -- apply single pattern default
+  -- apply all pattern defaults
+  -- Reset lane (all segments)
+  -- copy/paste lane (need to think about steps tho)
+  -- etc...
+  event_quick_actions = {"Quick actions:", "Clear segment events"}
+  params:add_option("event_quick_actions", "Event actions", event_quick_actions, 1)
+  params:hide("event_quick_actions")
+
   -- options will be dynamically swapped out based on the current event_name param
   -- one side-effect of this approach is that param actions won't fire unless the index changes (not string).
   event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
@@ -749,7 +804,11 @@ function init()
   -----------------------------
   -- POST-PARAM INIT STUFF
   -----------------------------
-  -- globals
+  -- init locals
+  -- local active_chord_name = ""
+  -- local active_chord_degree = ""
+
+  -- init globals
   
   function grid_size()
     if g.cols >= 16 then
@@ -769,6 +828,7 @@ function init()
   grid_size()
 
   start = false
+  metro_measure = false
   send_continue = false
   transport_state = "stopped"
   clock_start_method = "start"
@@ -790,14 +850,14 @@ function init()
   led_pulse = 0
   fast_blinky = 0
   screen_view_name = "Session"
-
+  dash_y = 0
   -- initialize pages
-  pages = {"SONG►", "CHORD"}
+  pages = {"SONG", "CHORD"}
   for i = 1, max_seqs do
     table.insert(pages, "SEQ " .. i)
   end
-  table.insert(pages, "MIDI HARMONIZER")
-  table.insert(pages, "◀CV HARMONIZER")
+  table.insert(pages, "MIDI IN")
+  table.insert(pages, "CV IN")
 
   page_index = 1
   page_name = pages[page_index]
@@ -805,7 +865,6 @@ function init()
   gen_menu()
   menu_index = 0
   selected_menu = menus[page_index][menu_index]
-  -- preview_param_queue = {}
   preview_param_q_get = {}
   preview_param_q_string = {}
   transport_active = false
@@ -830,14 +889,19 @@ function init()
   interaction = nil
   norns_interaction = nil
   event_lanes = {}
+  for i = 1, 15 do
+    event_lanes[i] = {} --{type = "single", id = nil}
+  end
+  -- event_ghosting = {0, 0, 0}
   events = {}
   events_length = {}
+  
+  -- init events table and events_length table
   for segment = 1, max_arranger_length do
     events[segment] = {}
     for step = 1, max_chord_pattern_length do
       events[segment][step] = {}
     end
-
     events_length[segment] = max_chord_pattern_length
   end
   
@@ -849,7 +913,7 @@ function init()
   change_subcategory()
   change_event()
   gen_menu_events()
-  
+  events_menus =  {"event_category", "event_subcategory", "event_name", "event_probability"}
   event_edit_segment = 0 --todo p1 rename to event_edit_segment
   event_edit_step = 0
   event_edit_lane = 0
@@ -862,7 +926,6 @@ function init()
   pattern_keys = {} -- indicates if pattern key is held down or queued pattern
   arranger_pattern_key_first = nil -- simpler way to identify the first key held down so we can handle this as a "copy" action and know when to act on it or ignore it. don't need a whole table.
   arranger_loop_key_count = 0 -- rename arranger_events_strip_key_count?
-  key_countdown = 4
   pattern_key_count = 0
   chord_key_count = 0
   view_key_count = 0
@@ -909,7 +972,7 @@ function init()
   chord_raw = next_chord
 
   -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
+  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
   
   
   -----------------------------
@@ -929,7 +992,15 @@ function init()
     -- need to save and restore nb voices which can change based on what mods are enabled
     -- reworked for seq2 but haven't tested
     voice = {}
-    local sources = {"chord_voice", "seq_voice_1", "seq_voice_2", "crow_voice", "midi_voice"}
+
+    local sources = {}
+    table.insert(sources, "chord_voice")
+    for seq_no = 1, max_seqs do
+      table.insert(sources, "seq_voice_"..seq_no)
+    end
+    table.insert(sources, "crow_voice")
+    table.insert(sources, "midi_voice")
+
     for i = 1, #sources do
       -- local param_string = sources[i].."_voice"
       -- local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
@@ -969,7 +1040,14 @@ function init()
       params:set("clock_tempo", misc.clock_tempo or params:get("clock_tempo"))
 
       -- restore nb voices based on string
-      local sources = {"chord_voice", "seq_voice_1", "seq_voice_2", "crow_voice", "midi_voice"}
+      local sources = {}
+      table.insert(sources, "chord_voice")
+      for seq_no = 1, max_seqs do
+        table.insert(sources, "seq_voice_"..seq_no)
+      end
+      table.insert(sources, "crow_voice")
+      table.insert(sources, "midi_voice")
+
       for i = 1, #sources do
         -- local param_string = sources[i].."_voice"
         -- local param_string = param_string == "seq_voice" and "seq_voice_1" or param_string
@@ -1002,9 +1080,7 @@ function init()
       params:set("event_value", get_default_event_value())
       events_index = 1
       selected_events_menu = events_menus[events_index]
-      gen_menu_events()
-      event_edit_active = false
-  
+      gen_menu_events()  
       -- todo p2 loading pset while transport is active gets a little weird with Link and MIDI but I got other stuff to deal with
       if params:get("clock_source") == "internal" then 
         reset_lattice() -- reset_clock() -- untested
@@ -1038,7 +1114,7 @@ function init()
       chord_raw = next_chord
       chord_no = 0 -- wipe chord readout
       gen_chord_readout()
-      gen_dash("params.action_read")
+      gen_arranger_dash_data("params.action_read")
       read_prefs()
       -- if transport_active, reset and continue playing so user can demo psets from the system menu
       -- todo p2 need to send different sync values depending on clock source.
@@ -1109,8 +1185,12 @@ function init()
     local prefs = {}
     prefs.timestamp = os.date()
     prefs.last_version = version
-    prefs.chord_readout = params:string("chord_readout")
+    -- prefs.chord_readout = params:string("chord_readout")
     prefs.default_pset = params:string("default_pset")
+    for dash_no = 1, 5 do
+      local id = "dash_" .. dash_no
+      prefs[id] = params:string(id)
+    end
     prefs.crow_pullup = params:string("crow_pullup")
     prefs.voice_instances = params:get("voice_instances")
     prefs.enc_config_1 = params:get("enc_config_1")
@@ -1155,6 +1235,7 @@ params:set_action("ts_numerator",
   function(val) 
     if transport_state == "stopped" then
       sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
+      sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
     end
   end
 )
@@ -1237,6 +1318,7 @@ params:set_action("ts_numerator",
 
   function disable_sprockets()
     sprocket_measure.enabled = false -- should we let this sprocket's phase be advanced when pausing?
+    sprocket_metro.enabled = false
     sprocket_16th.enabled = false   -- should we let this sprocket's phase be advanced when pausing?
     sprocket_chord.enabled = false
     sprocket_crow_clock.enabled = false
@@ -1248,6 +1330,7 @@ params:set_action("ts_numerator",
 
   function enable_sprockets()
     sprocket_measure.enabled = true
+    sprocket_metro.enabled = true
     sprocket_16th.enabled = true
     sprocket_chord.enabled = true
     sprocket_crow_clock.enabled = true
@@ -1322,15 +1405,19 @@ params:set_action("ts_numerator",
             -- hard stop since we can't do continue (https://github.com/monome/norns/issues/1756)
             transport_multi_stop()
             transport_active = false
-            transport_state = "stopped"
-            print(transport_state)
+
             -- link_stop_source = nil
 
-            if arranger_active then
-              reset_arrangement()
-            else
-              reset_pattern()
-            end
+            -- if arranger_active then --or transport_state == "stopped" then
+            --   reset_arrangement()
+            -- else
+            --   reset_pattern()
+            -- end
+  
+            reset_arrangement() -- always reset arrangement since link negative beat clock is broken
+
+            transport_state = "stopped"
+            print(transport_state)
 
             stop = false
             start = false
@@ -1369,9 +1456,7 @@ params:set_action("ts_numerator",
           --   stop = false
           -- end
         
-          -- For internal, midi, and crow clock source, stop is quantized to occur at the end of the chord step.
-          -- todo p1 currently a stop received from midi will result in quantized stop, unlike link. May just have it do an immediate stop for consistency
-          -- todo p1 also use this when running off norns link beat_count
+        -- since we don't support incoming SPP, treat as reset
         elseif clock_source == "midi" then
           -- transport_multi_stop() -- won't propagate to downstream devices
           transport_active = false
@@ -1379,11 +1464,8 @@ params:set_action("ts_numerator",
           print(transport_state)
           clock_start_method = "start"
 
-          if params:get("arranger") == 2 then
-            reset_arrangement()
-          else
-            reset_pattern()
-          end
+          -- always reset pattern AND arranger
+          reset_arrangement()
 
           -- seq_lattice.transport = -1 -- something is overwriting this
           -- print("DEBUG setting transport = -1")
@@ -1497,8 +1579,7 @@ params:set_action("ts_numerator",
         end
 
       end,
-      -- div_action = function(t)  -- call action when div change is processed
-      -- end,
+      -- div_action = function(t)  -- call action when div change is processed -- todo along with measure
       division = div, -- params:get("ts_numerator") / params:string("ts_denominator"),
       order = 2,
       enabled = true
@@ -1508,6 +1589,25 @@ params:set_action("ts_numerator",
   init_sprocket_measure(params:get("ts_numerator") / params:string("ts_denominator"))
 
 
+  -- runs at 2x time signature to turn metronome on/off
+  -- can also be used to calculate beats if needed
+  function init_sprocket_metro(div)
+    sprocket_metro = seq_lattice:new_sprocket{
+      action = function(t)
+        -- metro_measure = util.wrap(metro_measure + 1, 1, params:get("ts_numerator") * 2) -- alternative for actual 1/2 beats
+        metro_measure = sprocket_measure.phase == 1
+      end,
+      -- div_action = function(t)  -- call action when div change is processed
+      -- end,
+      division = div,
+      order = 2, -- todo see where this needs to come relative to sprocket_measure for metronome
+      enabled = true
+    }
+  end
+  -- some weirdness around order in which param actions fire. So we do via a function the first time.
+  init_sprocket_metro(1 / params:string("ts_denominator") / 2)
+  
+  
   function init_sprocket_chord(div)
     sprocket_chord = seq_lattice:new_sprocket{
       pre_action = function(t)  -- handle div-quantized pause and div changes
@@ -1565,20 +1665,18 @@ params:set_action("ts_numerator",
   for seq_no = 1, max_seqs do
     -- function init_sprocket_seq_1(div)
     _G["init_sprocket_seq_"..seq_no] = function(div)
-      -- sprocket_seq_1 = seq_lattice:new_sprocket{
       _G["sprocket_seq_"..seq_no] = seq_lattice:new_sprocket{
           action = function(t)
           -- something like this is needed or stop during "pausing" (2x K2) will reset and play sequence again
           -- might be better to include a check in lattice since this probably affects all sprockets (including crow/harm)
           -- if transport_state == "playing" or transport_state == "pausing" then 
-            if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
-              advance_seq_pattern(seq_no)
-              grid_dirty = true   -- todo should check active grid view?
-            elseif play_seq[seq_no] then  -- todo seq2?
-              advance_seq_pattern(seq_no)
-              grid_dirty = true
-            end
-          -- end
+          if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
+            advance_seq_pattern(seq_no)
+            grid_dirty = true   -- todo should check active grid view?
+          elseif play_seq[seq_no] then  -- todo seq2?
+            advance_seq_pattern(seq_no)
+            grid_dirty = true
+          end
         end,
         -- div_action = function(t)  -- call action when div change is processed
         -- end,
@@ -1649,7 +1747,178 @@ end -- end of init
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
-  
+
+
+function screenshot(name)
+  local filepath = norns.state.data .. (name or "screenshot") .. ".png"
+  _norns.screen_export_png(filepath)
+  print("screenshot saved to " .. filepath)
+end
+
+
+-- function dump_params()
+--   local filepath = norns.state.data
+--
+--   paramdump = {}
+--   for i = 1, #params.params do
+--     table.insert(paramdump, params.params[i].name)
+--   end
+
+--   tab.save(paramdump, filepath .. "paramdump.data")
+--   print("table >> write: " .. filepath.."paramdump.data")
+-- end
+
+
+-- function dump_events()
+--   local filepath = norns.state.data
+
+--   eventdump = {}
+--   for i = 1, #events_lookup do
+--     table.insert(eventdump, events_lookup[i].category .. "/" .. events_lookup[i].subcategory)
+--   end
+
+--   tab.save(eventdump, filepath .. "eventdump.data")
+--   print("table >> write: " .. filepath.."eventdump.data")
+-- end
+
+
+-- -- absolutely ridiculous method to clean up ghosting in event lane view
+-- function fix_ghosting_events()
+--   local row = {0, 0, 0}
+--   for i = 1, 15 do
+--     local type = event_lanes[i].type
+
+--     for j = 1, 2 do
+--       if j == 1 then -- rows 1 and 3 are the same
+--         if type == "Single" then
+--           row[j] = row[j] + 5
+--         elseif type == nil then -- "Empty"
+--           row[j] = row[j] + 2
+--         end -- nothing for 'Multi'!
+--       else -- row 2
+--         if type then -- Single and Multi have 5 dark pixels
+--           row[2] = row[2] + 5
+--         else
+--           row[2] = row[2] + 2
+--         end
+--       end
+--     end
+
+--   end
+
+--   row[3] = row[1]
+--   -- print(row[1], row[2], row[3]) -- debug if reducing glyph level
+
+--   for i = 1, 3 do
+--     event_ghosting[i] = (row[i] > 62) and 2 or (row[i] > 21) and 1 or 0
+--   end
+-- end
+
+
+function reset_norns_interaction(interaction)
+  local countdown = 3
+  while true do
+    countdown = countdown - 1
+    if countdown == 0 then
+      norns_interaction = interaction or nil
+      lvl = lvl_normal
+      break
+    end
+    clock.sleep(.1)
+  end
+end
+
+
+function delete_events_in_segment(new_action)
+  print("Deleting all events in segment " .. event_edit_segment)
+  for step = 1, max_chord_pattern_length do
+    events[event_edit_segment][step] = {}
+  end
+  events[event_edit_segment].populated = 0
+  update_lanes()
+  event_edit_step = 0
+  event_edit_active = false
+  reset_grid_led_phase()
+  grid_dirty = true
+  norns_interaction = "event_actions_done"
+  clock.run(reset_norns_interaction, new_action)
+end
+
+
+function count_keys(tbl)
+  local count = 0
+  for _ in pairs(tbl) do
+      count = count + 1
+  end
+  return count
+end
+
+
+-- generates list of distinct events for event lanes, updates lane type/id
+-- operates on single lane arg if present. otherwise, all lanes
+function update_lanes(lane)
+  for lane = lane or 1, lane or 15 do
+    local lane_path = event_lanes[lane]
+    local id = nil
+    -- local event_count = 0
+
+    lane_path.events = {}
+    for segment = 1, max_arranger_length do
+      for step = 1, max_chord_pattern_length do
+        if events[segment][step][lane] ~= nil then
+          id = events[segment][step][lane].id
+          lane_path["events"][id] = (lane_path["events"][id] or 0) + 1 -- store event count for update_lane_glyph()
+        end
+      end
+    end
+
+    local event_countd = count_keys(lane_path.events) -- distinct
+
+    if event_countd == 0 then -- initialize lane
+      event_lanes[lane] = {}
+    elseif event_countd == 1 then -- set to Single lane with single event ID
+      lane_path.type = "Single"
+      lane_path.id = id
+    else -- set type to Multi if it was changed via, e.g. addition or copy+paste
+      lane_path.type = "Multi"
+    end
+
+    lane_path.countd = event_countd -- store distinct event count for update_lane_glyph()
+
+  end
+end
+
+
+-- sets lane glyph preview if the impending event change is going to change lane type
+function update_lane_glyph()
+  local lane_path = event_lanes[event_edit_lane]
+  local saved_event = events[event_edit_segment][event_edit_step][event_edit_lane]
+
+  if lane_path.type == "Single" then
+    if preview_event.id ~= lane_path.id then            -- if the new event is different than the lane id
+      if saved_event == nil then                        -- and it's a new event slot
+        lane_glyph_preview = "Multi"
+      elseif lane_path["events"][lane_path.id] > 1 then -- if editing a saved event but it's not the last of its type in the lane
+        lane_glyph_preview = "Multi"
+      else
+        lane_glyph_preview = nil
+      end
+    else
+      lane_glyph_preview = nil
+    end
+
+  elseif lane_path.countd == 2                      -- if there's a possibility of going from 2 to 1 event
+  and saved_event                                   -- and it's an existing saved event, not a new one
+  and (preview_event.id ~= saved_event.id)          -- and the event is changing
+  and lane_path["events"][preview_event.id] ~= nil  -- and the event type we're changing to is in use
+  and lane_path["events"][saved_event.id] == 1 then -- and we're releasing the last of this event type in the slot
+  lane_glyph_preview = "Single"                     -- update the lane preview glyph to Single
+  else
+    lane_glyph_preview = nil
+  end
+
+end
+
 
 -- returns a dummy version of param with action stripped out 
 -- used to delta events, get min/max, and cue param changes with K1 held down
@@ -1838,7 +2107,15 @@ end
 
 -- updates voice selector options and sets (or resets) new param index after custom crow_out param changes
 function update_voice_params()
-  local sources = {"chord_voice", "seq_voice_1", "seq_voice_2", "crow_voice", "midi_voice"}
+  
+  local sources = {}
+  table.insert(sources, "chord_voice")
+  for seq_no = 1, max_seqs do
+    table.insert(sources, "seq_voice_"..seq_no)
+  end
+  table.insert(sources, "crow_voice")
+  table.insert(sources, "midi_voice")
+
   for i = 1, #sources do
     local param_string = sources[i]
     local prev_param_name = params:string(param_string)
@@ -1881,8 +2158,9 @@ end
 function reset_sprockets(from)
   -- print("b. reset_sprockets called by " .. from)
   -- seq_lattice.transport = 0  -- wag moving this elsewhere. depends on the situation
-  reset_sprocket_16th("reset_sprockets")  
-  reset_sprocket_measure("reset_sprockets")  
+  reset_sprocket_16th("reset_sprockets")
+  reset_sprocket_measure("reset_sprockets")
+  reset_sprocket_metro("reset_sprockets")
   reset_sprocket_chord("reset_sprockets")
   reset_sprocket_crow_clock("reset_sprockets")
   for seq_no = 1, max_seqs do
@@ -1904,6 +2182,16 @@ function reset_sprocket_measure(from)
   sprocket_measure.division = params:get("ts_numerator") / params:string("ts_denominator")
   sprocket_measure.phase = sprocket_measure.division * seq_lattice.ppqn * 4 * (1 - sprocket_measure.delay)
   sprocket_measure.downbeat = false
+end
+
+
+
+function reset_sprocket_metro(from)
+  -- print("reset_sprocket_metro() called by " .. from)
+  sprocket_metro.division = 1 / params:string("ts_denominator") / 2
+  sprocket_metro.phase = sprocket_metro.division * seq_lattice.ppqn * 4 * (1 - sprocket_metro.delay)
+  sprocket_metro.downbeat = false
+  metro_measure = false
 end
 
 
@@ -2308,13 +2596,12 @@ function gen_arranger_padded()
       arranger_padded[i] = (patt or active_chord_pattern)
     end
   end
-  gen_dash("gen_arranger_padded")
+  gen_arranger_dash_data("gen_arranger_padded")
 end
 
 
 function calc_seconds_remaining()
   if arranger_active then
-    -- percent_step_elapsed = arranger_position == 0 and 0 or (math.max(clock_step,0) % chord_div / (chord_div-1)) -- todo kill chord_div?
     percent_step_elapsed = (arranger_position == 0 and 0 or sprocket_chord.phase) / (sprocket_chord.division * 4 * seq_lattice.ppqn) -- ppc
     seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
   else
@@ -2461,7 +2748,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   reset_lattice() -- reset_clock()
   get_next_chord()
   chord_raw = next_chord
-  gen_dash("reset_pattern")
+  gen_arranger_dash_data("reset_pattern")
   grid_dirty = true
 end
 
@@ -2566,7 +2853,7 @@ function advance_chord_pattern()
 
     if arranger_active then
       do_events()
-      gen_dash("advance_chord_pattern")
+      gen_arranger_dash_data("advance_chord_pattern")
     end
 
     -- Play the chord
@@ -2622,7 +2909,7 @@ end
 
 
 -- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false
--- arranger_active will be false until Arranger is re-synched/resumed
+-- Does not flip to true until Arranger is re-synced upon advance_chord_pattern (or transport reset)
 -- Also updates pattern_queue
 function update_arranger_active()
   if params:string("arranger") == "Off" then
@@ -2633,8 +2920,8 @@ function update_arranger_active()
     if chord_pattern_position == 0 then arranger_active = true end
     update_pattern_queue()
   end
-  gen_dash("update_arranger_active")
-end  
+  gen_arranger_dash_data("update_arranger_active")
+end
 
 
 -- variant of do_events specifically for handling chord division changes BEFORE chord plays
@@ -3006,11 +3293,8 @@ end
 
 function gen_chord_readout()
   if chord_no > 0 then
-    if params:string("chord_readout") == "Degree" then
-      chord_readout = chord_lookup[params:get("mode")]["chords"][chord_no]
-    else -- chord name
-      chord_readout = modes.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
-    end
+    active_chord_name = modes.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
+    active_chord_degree = chord_lookup[params:get("mode")]["chords"][chord_no]
   end
 end
 
@@ -3482,62 +3766,80 @@ function grid_redraw()
   -- EVENT EDITOR
   if screen_view_name == "Events" then
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
-    local lanes = 14
-    local saved_led = 7
-    local editing_led = 15
-    local playhead_led = 2
-    local length_led = 2
-    
-    -- Temporarily, just fix the loop length to underlying pattern (g.key disabled, too)
-    events_length[event_edit_segment] = length
+    local lanes = 15
+    local saved_level = 8         -- can layer playhead(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
+    local editing_level = 15
+    local playhead_level = 3
+    local lane_configured_led = 2 -- not layered and of secondary importance as screen is primary
+    local editing_lane_level = 4  -- min of 1 (4 - max led_pulse) so we don't completely lose the led when on unconfigured lanes.
+
+    -- For now, just fixing the loop length to underlying pattern (g.key disabled, too)
+    -- events_length[event_edit_segment] = length
 
     -- Draw grid with [lanes] (columns) for each step in the selected pattern    
-    for x = 1, lanes do -- event lanes
+    for x = 1, lanes do  -- event lanes
       for y = 1, rows do -- pattern steps
         local y_offset = y + pattern_grid_offset
-        local pattern_led = y_offset > length and 0 or length_led -- start out dimly highlighting in-range steps
 
-        -- set pattern levels, -2 from what we want shown due to layering
-        if y_offset == event_edit_step and x == event_edit_lane then
-          -- selected step pulses if not saved, otherwise, solid
-          pattern_led = pattern_led + (event_edit_status ~= "(Saved)" and (editing_led - length_led - (fast_blinky * 4)) or (editing_led - length_led))-- - (led_pulse))
-        elseif events[event_edit_segment][y_offset][x] ~= nil then
-          -- populated steps are medium brighness
-          pattern_led = pattern_led + saved_led - length_led
+        -- saved events are medium brightness, configured lanes are low, otherwise 0
+        if events[event_edit_segment][y_offset][x] ~= nil then
+          pattern_led = saved_level
+        elseif event_lanes[x].id ~= nil then
+          pattern_led = lane_configured_led
+        else
+          pattern_led = 0
         end
 
-        -- playhead might work two ways
-        -- a: show any time the edited arranger segment matches the chord pattern (A-D)
-        -- b: show only when this exact arranger segment is being played
-        if arranger_padded[event_edit_segment] == active_chord_pattern then
-          -- option a:
-          if y_offset == chord_pattern_position then
-            pattern_led = math.min(pattern_led + playhead_led, 15)
-          end
+        -- playhead can work two ways. todo global pref?
+        --
+        -- OPTION A: show only when this exact arranger segment is being played
+        if arranger_position == event_edit_segment and y_offset == chord_pattern_position then
+          pattern_led = pattern_led + playhead_level
+        end
+        -- OPTION B: show any time the edited arranger segment matches the chord pattern (A-D)
+        -- if arranger_padded[event_edit_segment] == active_chord_pattern and y_offset == chord_pattern_position then
+        --   pattern_led = pattern_led + playhead_level
+        -- end
+
+        -- pulse selected event_lane when not editing event slot
+        if not event_edit_active and x == params:get("event_lane") then
+          pattern_led = pattern_led + editing_lane_level - led_pulse
+        end
+
+        -- selected event supercedes all layers
+        -- saved pulses, unsaved/new flickers
+        if y_offset == event_edit_step and x == event_edit_lane then
+          pattern_led = (event_edit_status ~= "(Saved)" and (editing_level - (fast_blinky * 3)) or (editing_level - led_pulse))
         end
 
         g:led(x, y, pattern_led)
 
       end
+
     end
 
-    -- loop indicator
-    local loop_length = events_length[event_edit_segment]
+    -- pattern length indicator
+    -- loop_length is for sub-loop within even
+    -- local loop_length = events_length[event_edit_segment]
     for y = 1, rows do
       local y_offset = y + pattern_grid_offset
-      local loop_led = (y_offset <= (loop_length or 0) and 15 or 3)
+      -- local loop_led = (y_offset <= (loop_length or 0) and 15 or 3)
+      local loop_led = (y_offset <= (length or 0) and 15 or 3)
+      
 
       -- blink the first row if we've scrolled down  
       if y == 1 and pattern_grid_offset > 0 then
         loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
 
       -- blink the last row if min of underlying pattern or event loop length extends below grid view
-      elseif y == rows and (math.min(length, loop_length) - pattern_grid_offset) > rows then
-        loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
+      -- elseif y == rows and (math.min(length, loop_length) - pattern_grid_offset) > rows then
+    elseif y == rows and (length - pattern_grid_offset) > rows then
+      loop_led = loop_led - (fast_blinky * (loop_led == 15 and 4 or 1))
       end
 
       g:led(16, y, loop_led)
     end
+    
 
   else -- ARRANGER, GRID, SEQ views
     -- draw dim keys for arranger/grid/seq selector
@@ -3553,6 +3855,40 @@ function grid_redraw()
     if grid_view_name == "Arranger" then
       g:led(16, 6 + extra_rows, 15)
       
+      -- final function for drawing arranger patterns + playhead
+      -- used by regular or shifted arranger (latter will pass modified x_offset depending on section)
+      local function draw_patterns_playheads(x, y, x_offset, arranger_led)
+
+        -- q jump supercedes all
+        if x_offset == arranger_queue then
+          arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+
+        -- loop or end of arranger  
+        elseif (arranger_position >= arranger_length) and (not arranger_queue) then
+
+          -- pulse 1st seg at end of loop
+          if params:string("playback") == "Loop" then
+            if x_offset == 1 then
+              arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+            elseif x_offset == arranger_position and arranger_led ~= 15 then
+              arranger_led = (arranger_led or 0) + 3
+            end
+          
+          -- flicker at end of arrangement     
+          elseif x_offset == arranger_position and arranger_led ~= 15 then
+            arranger_led = (arranger_led or 0) + 3 - (fast_blinky * 3)
+          end
+
+        -- regular segments  
+        elseif x_offset == arranger_position and arranger_led ~= 15 then
+          arranger_led = (arranger_led or 0) + 3
+        end
+
+        if arranger_led then
+          g:led(x, y, arranger_led)
+        end
+      end
+
       ----------------------
       -- Arranger shifting 
       ------------------------
@@ -3570,19 +3906,6 @@ function grid_redraw()
             arranger_led = 3   -- dim padded segments
           end
           return(arranger_led)
-        end
-        
-        -- needs to be passed x_offset which can be modified by each section 
-        local function draw_patterns_playheads(x, y, x_offset, arranger_led)
-          if x_offset == arranger_position and arranger_led ~= 15 then
-            arranger_led = (arranger_led or 0) + 3
-          elseif x_offset == arranger_queue then
-            arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
-          end
-
-          if arranger_led then
-            g:led(x, y, arranger_led)
-          end
         end
 
         local function draw_events(x, x_offset)
@@ -3673,16 +3996,7 @@ function grid_redraw()
             local arranger_led = nil
 
             arranger_led = y == arranger[x_offset] and 15 or (y == arranger_padded[x_offset] and 3) -- actual/padded segments
-          
-            if x_offset == arranger_position and arranger_led ~= 15 then  -- playhead and queued position pulses
-              arranger_led = (arranger_led or 0) + 3
-            elseif x_offset == arranger_queue then
-              arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
-            end
-
-            if arranger_led then
-              g:led(x, y, arranger_led)
-            end
+            draw_patterns_playheads(x, y, x_offset, arranger_led)
 
           end
 
@@ -3865,28 +4179,24 @@ function g.key(x,y,z)
         -- temporarily disabled as event loop length needs implementation
         -- events_length[event_edit_segment] = y + pattern_grid_offset
       else
-        -- Setting of events past the pattern length is permitted
+        lane_glyph_preview = nil
+        local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
+
+        -- Setting of events beyond the pattern length is permitted
         event_key_count = event_key_count + 1
       
         -- function g.key events loading
         -- First touched event is the one we edit, effectively resetting on key_count = 0
         if event_key_count == 1 then
           event_edit_step = y + pattern_grid_offset
+          params:set("event_lane", x) -- todo can this replace event_lane??
           event_edit_lane = x
           event_saved = false
 
-          local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
-          if events[event_edit_segment][y + pattern_grid_offset][x] == nil then
-            event_edit_status = "(New)"
-            -- print("setting event_edit_status to " .. event_edit_status)
-          else
-            event_edit_status = "(Saved)"
-            -- print("setting event_edit_status to " .. event_edit_status)
-          end
+          local event_edit_lane_id = event_lanes[x].id -- used to determine if lane is configured or not
 
-          -- If the event is populated, Load the Event vars back to the displayed param. Otherwise keep the last touched event's settings so we can iterate quickly.
-          if events[event_edit_segment][y + pattern_grid_offset][x] ~= nil then
-            
+          -- If the event is populated, Load the Event vars back to the displayed param.
+          if events_path ~= nil then
             events_index = 1
             selected_events_menu = events_menus[events_index]
 
@@ -3895,6 +4205,8 @@ function g.key(x,y,z)
             local value = events_path.value
             local operation = events_path.operation
             local limit = events_path.limit or "Off"
+
+            event_edit_status = "(Saved)"
 
             params:set("event_category", param_option_to_index("event_category", events_lookup[index].category))
             change_category()
@@ -3918,14 +4230,36 @@ function g.key(x,y,z)
             end
             if value ~= nil then params:set("event_value", value) end -- triggers don't save
             params:set("event_probability", events_path.probability)
+
+
+          elseif event_edit_lane_id ~= nil then -- load default event for locked lane
+
+            events_index = 1
+            selected_events_menu = events_menus[1]
+
+            local index = events_lookup_index[event_edit_lane_id]
+            local event = events_lookup[index] -- with unconfigured lanes, use event instead of event_path
+
+            event_edit_status = "(New)"
+
+            params:set("event_category", param_option_to_index("event_category", event.category)) -- see if this change can be applied above, too
+            change_category()
+            
+            params:set("event_subcategory", param_option_to_index("event_subcategory", event.subcategory))
+            change_subcategory()
+            
+            params:set("event_name", index)
+            change_event()
+
+          else -- what to load for unconfigured lanes?
+            event_edit_status = "(New)"
           end
           gen_menu_events()
           event_edit_active = true
           
         else -- Subsequent keys down paste event
-          local events_path = events[event_edit_segment][y + pattern_grid_offset][x]
           -- But first check if the events we're working with are populated
-          local og_event_populated = events[event_edit_segment][y + pattern_grid_offset][x] ~= nil
+          local og_event_populated = events_path ~= nil
           local copied_event_populated = events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil
 
           -- Then copy
@@ -3948,8 +4282,10 @@ function g.key(x,y,z)
               events[event_edit_segment].populated = (events[event_edit_segment].populated or 0) + 1
             end
           end
-          
+
           print("Copy+paste event from segment " .. event_edit_segment .. "." .. event_edit_step .. " lane " .. event_edit_lane  .. " to " .. event_edit_segment .. "." .. (y + pattern_grid_offset) .. " lane " .. x)
+
+          update_lanes(x) -- update the lanes we've pasted into
         end
       end
 
@@ -4008,7 +4344,7 @@ function g.key(x,y,z)
         if interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
           print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
-          gen_dash("Event copy+paste")
+          gen_arranger_dash_data("Event copy+paste")
         end
         
       -- ARRANGER EVENTS TIMELINE KEY DOWN
@@ -4026,7 +4362,7 @@ function g.key(x,y,z)
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
             print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
-            gen_dash("Event copy+paste")
+            gen_arranger_dash_data("Event copy+paste")
           end
         end
       end
@@ -4054,7 +4390,7 @@ function g.key(x,y,z)
       -- set chord_pattern_length  
       elseif x == 15 then
         params:set("chord_pattern_length", y + pattern_grid_offset)
-        gen_dash("g.key chord_pattern_length")
+        gen_arranger_dash_data("g.key chord_pattern_length")
       
 
       elseif x == 16 and y <5 then  --Key DOWN events for pattern switcher.
@@ -4236,7 +4572,6 @@ function g.key(x,y,z)
     end
 
   end
-  -- screen_dirty = true -- redraw()
   grid_dirty = true
 end
 
@@ -4281,8 +4616,22 @@ function key(n,z)
     -- keys[n] = 1
     key_count = (key_count or 0) + 1
 
-
     if n == 1 then -- Key 1 is used to preview param changes before applying them on release
+      if screen_view_name == "Events" then
+        -- if event_edit_active == false then -- maybe
+        params:set("event_quick_actions", 1)
+        norns_interaction = "event_actions"
+        lvl = lvl_dimmed
+        -- end
+      else
+        norns_interaction = "preview_param"
+        if menu_index ~= 0 then
+          preview_param = clone_param(menus[page_index][menu_index])
+        end
+        redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
+      end
+
+    elseif n == 2 then -- KEY 2
       if view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -4303,32 +4652,14 @@ function key(n,z)
      
         elseif grid_view_name == "Chord" then      
           chord_generator_lite()
-          -- gen_dash("chord_generator_lite") -- will run when called from event but not from keys
+          -- gen_arranger_dash_data("chord_generator_lite") -- will run when called from event but not from keys
         elseif grid_view_name == "Seq" then       
           seq_generator("run")
         end
         grid_dirty = true
-      -- if view_key_count == 0 and screen_view_name ~= "Events" then
-      elseif screen_view_name ~= "Events" then
-        local param_id = menus[page_index][menu_index]
-        norns_interaction = "preview_param"
-        if menu_index ~= 0 then
-          preview_param = clone_param(menus[page_index][menu_index])
-        end
-        redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
-      end
-
-      -- KEY 2  
-    elseif n == 2 then
-      -- if view_key_count > 0 then -- Grid view key held down
-      --   if screen_view_name == "Chord+seq" then
-      --   elseif grid_view_name == "Chord" then      
-      --   elseif grid_view_name == "Seq" then       
-      --   end
-      --   grid_dirty = true
       
-      -- Arranger Events strip held down
-      if arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
+        -- Arranger Events strip held down
+      elseif arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
         local current_arranger_queue = arranger_queue
         
         arranger_queue = event_edit_segment
@@ -4342,54 +4673,59 @@ function key(n,z)
       
       elseif screen_view_name == "Events" then
        
-       
-        ------------------------
-        -- K2 DELETE EVENT
-        ------------------------
-        if event_edit_active then
+        if norns_interaction ~= "event_actions" then
+          ------------------------
+          -- K2 DELETE EVENT
+          ------------------------
+          if event_edit_active then
 
-          -- Record the count of events on this step
-          local event_count = events[event_edit_segment][event_edit_step].populated or 0
-          
-          -- Check if event is populated and needs to be deleted
-          if events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil then
+            -- Record the count of events on this step
+            local event_count = events[event_edit_segment][event_edit_step].populated or 0
             
-            -- Decrement populated count at the step level
-            events[event_edit_segment][event_edit_step].populated = event_count - 1
-            
-            -- If the step's new populated count == 0, update the segment level populated count
-            if events[event_edit_segment][event_edit_step].populated == 0 then 
-              events[event_edit_segment].populated = events[event_edit_segment].populated - 1 
+            -- Check if event is populated and needs to be deleted
+            if events[event_edit_segment][event_edit_step][event_edit_lane] ~= nil then
+              
+              -- Decrement populated count at the step level
+              events[event_edit_segment][event_edit_step].populated = event_count - 1
+              
+              -- If the step's new populated count == 0, update the segment level populated count
+              if events[event_edit_segment][event_edit_step].populated == 0 then 
+                events[event_edit_segment].populated = events[event_edit_segment].populated - 1 
+              end
+              
+              -- Delete the event
+              events[event_edit_segment][event_edit_step][event_edit_lane] = nil
             end
+
+            update_lanes(event_edit_lane)
+
+            -- Back to event overview
+            event_edit_active = false
+            reset_grid_led_phase()
+            -- fix_ghosting_events()
             
-            -- Delete the event
-            events[event_edit_segment][event_edit_step][event_edit_lane] = nil
+            -- If the event key is still being held (so user can copy and paste immediatly after saving it), preserve these vars, otherwise zero
+            if event_key_count == 0 then
+              event_edit_step = 0
+              event_edit_lane = 0
+            end
+            event_saved = true
+                        
+            
+            -------------------------------------------
+            -- K2 BACK TO ARRANGER VIEW
+            -------------------------------------------
+          else -- exit back to Arranger
+            screen_view_name = "Session"
+            event_key_count = 0
+            gen_arranger_dash_data("K3 events saved") -- update events strip in dash after making changes in events editor        
+            grid_dirty = true
           end
-          
-          -- Back to event overview
-          event_edit_active = false
-          
-          -- If the event key is still being held (so user can copy and paste immediatly after saving it), preserve these vars, otherwise zero
-          if event_key_count == 0 then
-            event_edit_step = 0
-            event_edit_lane = 0
-          end
-          event_saved = true
-          
-          -- screen_dirty = true -- redraw()
-          
-          
-        -------------------------------------------
-        -- K2 DELETE ALL EVENTS IN SEGMENT
-        -------------------------------------------
-        else
-          event_k2 = true
-          clock.run(delete_all_events_segment)
         end
         
-        gen_dash("K2 events editor closed") -- update events strip in dash after making changes in events editor
+        gen_arranger_dash_data("K2 events editor closed") -- update events strip in dash after making changes in events editor
         grid_dirty = true
-        
+    
         
       ----------------------------------------
       -- K2 Transport controls K2 - STOP/RESET --
@@ -4408,6 +4744,8 @@ function key(n,z)
             print(transport_state)        
             clock_start_method = "continue"
             send_continue = true
+          elseif transport_state == "stopped" then -- second press of K2 while stopped will always reset arranger now
+            reset_arrangement()
           else
             reset_external_clock()
             if params:get("arranger") == 2 then
@@ -4496,11 +4834,8 @@ function key(n,z)
         end
         
       end
-  
-      -----------------------  
-      -- KEY 3  
-      -----------------------
-    elseif n == 3 then
+
+    elseif n == 3 then -- KEY 3
       -- if keys[1] == 1 then
       -- rework to enter chord/scale editor, maybe
       -- if view_key_count > 0 then -- Grid view key held down
@@ -4519,18 +4854,26 @@ function key(n,z)
         event_edit_step = 0
         event_edit_lane = 0
         event_edit_active = false
+        reset_grid_led_phase()
         screen_view_name = "Events"
         interaction = nil
         grid_dirty = true
-  
-      -- K3 saves event to events
+
+        update_lanes() -- in case arranger shift has changed lane config
+        -- fix_ghosting_events()
+
+
       elseif screen_view_name == "Events" then
+        if norns_interaction == "event_actions" then
+          local action = params:string("event_quick_actions")
 
-        ---------------------------------------
-        -- K3 TO SAVE EVENT
-        ---------------------------------------
-        if event_edit_active then
-
+          if action == "Clear segment events" then
+            delete_events_in_segment("event_actions") -- pass arg to keep window open
+          end
+          ---------------------------------------
+          -- K3 TO SAVE EVENT
+          ---------------------------------------
+        elseif event_edit_active then
           local event_index = params:get("event_name")
           local id = events_lookup[event_index].id
           local order = tonumber(events_lookup[event_index].order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
@@ -4543,7 +4886,7 @@ function key(n,z)
           local limit_min = params:get("event_op_limit_min")
           local limit_max = params:get("event_op_limit_max")
           local probability = params:get("event_probability") -- todo p1 convert to 0-1 float?
-          
+
           -- Keep track of how many events are populated in this step so we don't have to iterate through them all later
           local step_event_count = events[event_edit_segment][event_edit_step].populated or 0
 
@@ -4638,10 +4981,10 @@ function key(n,z)
               print(">> limit_max = " .. limit_max)
             end
             print(">> probability = " .. probability)
-           
+          
               
           else --operation == "Increment" or "Wander"
-           if limit == "Off" then -- so clunky yikes
+          if limit == "Off" then -- so clunky yikes
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
                 id = id, 
@@ -4689,9 +5032,14 @@ function key(n,z)
             events[event_edit_segment][event_edit_step][event_edit_lane].action = action
             print(">> action = " .. action)
           end
-          
+
+          event_lanes[event_edit_lane].id = id -- always set last-saved event id as lane type
+          update_lanes(event_edit_lane)
+
           -- Back to event overview
           event_edit_active = false
+          reset_grid_led_phase()
+          -- fix_ghosting_events()
           
           -- If the event key is still being held (so user can copy and paste immediatly after saving it), preserve these vars, otherwise zero
           if event_key_count == 0 then
@@ -4702,19 +5050,18 @@ function key(n,z)
           
           grid_dirty = true
         
-        else
+        else -- exit back to Arranger
           screen_view_name = "Session"
           event_key_count = 0
-          gen_dash("K3 events saved") -- update events strip in dash after making changes in events editor
-          grid_dirty = true
+          gen_arranger_dash_data("K3 events saved") -- update events strip in dash after making changes in events editor        
+          grid_dirty = true  
         end
-
+        
         ----------------------------------
         -- Transport controls K3 - PLAY --
         ----------------------------------
         -- Todo p1 need to have a way of canceling a pending pause once transport controls are reworked
       elseif interaction == nil then
-        
         if params:string("clock_source") == "internal" then
           -- todo p0 evaluate this vs transport_state
           if transport_active == false then
@@ -4803,6 +5150,7 @@ function key(n,z)
     -- keys[n] = nil
     key_count = key_count - 1
     if n == 1 then
+
       if norns_interaction == "preview_param" then
         for k, v in pairs(preview_param_q_get) do
           params:set(k, v)
@@ -4811,14 +5159,23 @@ function key(n,z)
         preview_param_q_get = {}
         preview_param_q_string = {}
         norns_interaction = nil
+      elseif norns_interaction == "event_actions" then
+
+        -- make function if this ends up being used by K1 release as well as K3 down
+        local action = params:string("event_quick_actions")
+        if action == "Clear segment events" then
+          delete_events_in_segment() -- no arg so window will close after
+        else -- if "Quick actions:" faux title, close window
+          norns_interaction = nil
+          lvl = lvl_normal
+        end
+
       end
-    
-    elseif n == 2 then
-      -- reset this for event segment delete countdown
-      event_k2 = false
+
+    -- elseif n == 3 then
+
     end
   end
-  -- screen_dirty = true -- redraw()
 end
 
 
@@ -4847,24 +5204,28 @@ function enc(n,d)
         grid_dirty = true            
       end
    
-    elseif screen_view_name == "Events" and event_saved == false then
-      -- Scroll through the Events menus (name, type, val)
-      events_index = util.clamp(events_index + d, 1, #events_menus)
-      
-      selected_events_menu = events_menus[events_index]
-      
-    else
-      menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
-      selected_menu = menus[page_index][menu_index]
-
-      if norns_interaction == "preview_param" and menu_index ~= 0 then
-        preview_param = clone_param(selected_menu)
+    elseif screen_view_name == "Events" then
+      if norns_interaction == "event_actions" then
+        params:delta("event_quick_actions", d) -- change focus on event_quick_actions
+      elseif event_edit_active == false then -- lane view
+        params:delta("event_lane", d) -- for now, change lane. Redundant with E3
+        grid_dirty = true
+      elseif event_saved == false then -- Scroll through the Events menus
+        events_index = util.clamp(events_index + d, 1, #events_menus)      
+        selected_events_menu = events_menus[events_index]
       end
 
+    else -- standard menus
+      menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
+      selected_menu = menus[page_index][menu_index]
+      if norns_interaction == "preview_param" and menu_index ~= 0 then
+        preview_param = clone_param(menus[page_index][menu_index])
+      end
     end
     
   else -- n == ENC 3 -------------------------------------------------------------  
   
+    -- Grid-view custom encoder actions
     if view_key_count > 0 then
       local d = util.clamp(d, -1, 1)
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
@@ -4876,55 +5237,66 @@ function enc(n,d)
     -- Event editor menus
     ----------------------    
     -- Not using param actions on these since some use dynamic .options which don't reliably fire on changes. Also we want to fire edit_status_edited() on encoder changes but not when params are set elsewhere (loading events etc)
-    elseif screen_view_name == "Events" and event_saved == false then
+    elseif screen_view_name == "Events" then
+      if norns_interaction == "event_actions" then
+        params:delta("event_quick_actions", d) -- change focus on event_quick_actions
+            
+      elseif event_edit_active == false then -- event lane view
+        params:delta("event_lane", d)
+        grid_dirty = true
 
-      if selected_events_menu == "event_category" then
-        if delta_menu(d) then
-          change_category()
-        end
-        
-      elseif selected_events_menu == "event_subcategory" then
-        if delta_menu(d) then
-          change_subcategory()
-        end
-        
-      elseif selected_events_menu == "event_name" then
-        if delta_menu(d, event_subcategory_index_min, event_subcategory_index_max) then
-          change_event()
-        end
-        
-      elseif selected_events_menu == "event_operation" then
-        if delta_menu(d) then
-          change_operation()
-        end
-        
-      elseif selected_events_menu == "event_value" then
-        if params:string("event_operation") == "Set" then
-          -- alternate function to process via preview
-          delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
+      elseif event_saved == false then -- event edit menus
+        if selected_events_menu == "event_category" then
+          if delta_menu(d) then
+            change_category()
+            update_lane_glyph()
+          end
 
-        elseif params:string("event_operation") == "Wander" then
-          delta_menu(d, 1) -- nil max defaults to 9999
+        elseif selected_events_menu == "event_subcategory" then
+          if delta_menu(d) then
+            change_subcategory()
+            update_lane_glyph()
+          end
+          
+        elseif selected_events_menu == "event_name" then
+          if delta_menu(d, event_subcategory_index_min, event_subcategory_index_max) then
+            change_event()
+            update_lane_glyph()
+          end
+
+        elseif selected_events_menu == "event_operation" then
+          if delta_menu(d) then
+            change_operation()
+          end
+          
+        elseif selected_events_menu == "event_value" then
+          if params:string("event_operation") == "Set" then
+            -- alternate function to process via preview
+            delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
+
+          elseif params:string("event_operation") == "Wander" then
+            delta_menu(d, 1) -- nil max defaults to 9999
+          else
+            params:delta(selected_events_menu, d)
+            edit_status_edited()
+          end
+        
+        elseif selected_events_menu == "event_op_limit_min" then
+          delta_menu_range(d, event_range[1], params:get("event_op_limit_max"))
+
+        elseif selected_events_menu == "event_op_limit_max" then
+          delta_menu_range(d, params:get("event_op_limit_min"), event_range[2])
+    
+        -- this should work for the remaining event menus that don't need to fire functions: probability, limit, limit_random
         else
-          params:delta(selected_events_menu, d)
-          edit_status_edited()
+          delta_menu(d)
         end
-      
-      elseif selected_events_menu == "event_op_limit_min" then
-        delta_menu_range(d, event_range[1], params:get("event_op_limit_max"))
 
-      elseif selected_events_menu == "event_op_limit_max" then
-        delta_menu_range(d, params:get("event_op_limit_min"), event_range[2])
-  
-      -- this should work for the remaining event menus that don't need to fire functions: probability, limit, limit_random
-      else
-        delta_menu(d)
-        
       end
       
-    --------------------
-    -- Arranger shift --  
-    --------------------
+      --------------------
+      -- Arranger shift --  
+      --------------------
     elseif grid_view_name == "Arranger" and arranger_loop_key_count > 0 then
       local d = util.clamp(d, -1, 1)
       -- Arranger segment detail options are on-screen
@@ -4951,7 +5323,6 @@ function enc(n,d)
     end
   
   end -- n
-  -- screen_dirty = true -- redraw()
 end
 
 
@@ -5235,7 +5606,6 @@ end
 
 -- Alternative for more digits up to 9 hours LETSGOOOOOOO
 function s_to_min_sec(seconds)
-  local seconds = tonumber(seconds)
     -- hours = (string.format("%02.f", math.floor(seconds/3600));
     hours_raw = math.floor(seconds/3600);
     hours = string.format("%1.f", hours_raw);
@@ -5243,18 +5613,29 @@ function s_to_min_sec(seconds)
     secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
     -- Modify hours if it's 2+ digits
     -- hours = hours < 10 and string.format("%2.f",hours) or ">";
-    if hours_raw < 10 then
-      return hours..":"..mins..":"..secs
+    if hours_raw < 1 then
+      return mins .. ":" .. secs
+    elseif hours_raw < 10 then
+      return hours .. "h:" .. mins .. "m"
     else
-      return hours.." hrs"
+      return hours .. "h+"
     end
 end
 
 
 -- generates truncated flat tables at the chord step level for the arranger mini dashboard
 -- runs any time the arranger changes (generator, events, pattern changes, length changes, key pset load, arranger/pattern reset, event edits)
-function gen_dash(source)
-  -- print("gen_dash called by " .. (source or "?"))
+-- holy shit this needs a refactor. really awful
+function gen_arranger_dash_data(source)
+  local on = params:string("arranger") == "On"
+  local dash_steps = 0
+  local stop = 23 -- width of chart
+  local lvl_pane = lvl.pane
+  local lvl_pane_selected = lvl.pane_selected
+  local lvl_pane_deselected = lvl.pane_deselected
+  local steps_remaining_in_pattern = nil
+
+  -- print("gen_arranger_dash_data called by " .. (source or "?"))
   dash_patterns = {}
   -- dash_levels correspond to 3 arranger states:
   -- 1. Arranger was disabled then re-enabled mid-segment so current segment should be dimmed
@@ -5262,16 +5643,14 @@ function gen_dash(source)
   -- 3. Arranger is disabled completely and should be dimmed  
   dash_levels = {}
   dash_events = {}
-  dash_steps = 0
-  steps_remaining_in_active_pattern = 0
-  steps_remaining_in_arrangement = 0
+  steps_remaining_in_active_pattern = 0 -- used to calculate timer as well. todo look at updating in advance_chord_pattern
+  steps_remaining_in_arrangement = 0 -- same
 
   ---------------------------------------------------------------------------------------------------
   -- iterate through all steps in arranger so we can get a total for steps_remaining_in_arrangement
   -- then build the arranger dash charts, limited to area drawn on screen (~30px)
   ---------------------------------------------------------------------------------------------------
-  for i = math.max(arranger_position, 1), arranger_length do
-    
+  for i = math.max(arranger_position, 1), arranger_length do    
   -- _sticky vars handle instances when the active arranger segment is interrupted, in which case we want to freeze its vars to stop the segment from updating on the dash (while still allowing upcoming segments to update)
   -- Scenarios to test for:
     -- 1. User changes the current arranger segment pattern while on that segment. In this case we want to keep displaying the currently *playing* chord pattern
@@ -5279,16 +5658,18 @@ function gen_dash(source)
     -- 3. Current arranger segment is turned off, resulting in it picking up a different pattern (either the previous pattern or wrapping around to grab the last pattern. arranger_padded shenanigans)
     -- 4. We DO want this to update if the arranger is reset (arranger_position = 0, however)
     
+    local segment_level = on and lvl_pane_selected or lvl_pane_deselected --and 15 or 2 WAG moving this up here
+
     -- Note: arranger_position == i idenifies if we're on the active segment. Implicitly false when arranger is reset (arranger_position 0) todo p2 make local
     if arranger_position == i then
       -- todo p2 would be nice to rewrite this so these can be local
-      if arranger_active == true then
+      if arranger_active then
         active_pattern = active_chord_pattern
         active_chord_pattern_length = chord_pattern_length[active_pattern]
         active_chord_pattern_position = math.max(chord_pattern_position, 1)
-        segment_level = 15
+        segment_level = lvl_pane_selected -- 15
       else
-        segment_level = 2 -- interrupted segment pattern, redraw will add +1 for better contrast only on events
+        segment_level = lvl_pane_deselected -- interrupted segment
       end
       pattern_sticky = active_pattern
       chord_pattern_length_sticky = active_chord_pattern_length
@@ -5303,32 +5684,76 @@ function gen_dash(source)
       chord_pattern_length_sticky = chord_pattern_length[pattern_sticky]
       chord_pattern_position_sticky = 1
       steps_remaining_in_pattern = chord_pattern_length[pattern_sticky]
-      segment_level = params:get("arranger") == 2 and 15 or 2
+      -- segment_level = params:string("arranger") == "On" and 0 or 3 --and 15 or 2
     end
     
     -- used to total remaining time in arrangement (beyond what is drawn in the dash)  
     steps_remaining_in_arrangement = steps_remaining_in_arrangement + steps_remaining_in_pattern
     
     -- todo p3 some sort of weird race condition is happening at init that requires nil check on events
-    if events ~= nil and dash_steps < 30 then -- capped so we only store what is needed for the dash (including inserted blanks)
-      for s = chord_pattern_position_sticky, chord_pattern_length_sticky do -- todo debug this was letting 0 values through at some point. Debug if errors surface.
-        -- if s == 0 then print("s == 0 " .. chord_pattern_position_sticky .. "  " .. chord_pattern_length_sticky) end -- p0 debug looking for 0000s
-        if dash_steps == 30 then
-         break 
+    if events ~= nil and dash_steps < stop then -- capped so we only store what is needed for the dash (including inserted blanks)
+      
+      for s = chord_pattern_position_sticky, chord_pattern_length_sticky do -- todo debug this was letting 0 values through at some point. Debug if errors surface.  
+        if dash_steps == stop then
+          break 
         end -- second length check for each step iteration cuts down on what is saved for long segments
+
         table.insert(dash_patterns, pattern_sticky)
         table.insert(dash_levels, segment_level)
-        table.insert(dash_events, ((events[i][s].populated or 0) > 0) and math.min(segment_level + 1, 15) or 1)
+        table.insert(dash_events, ((events[i][s].populated or 0) > 0) and segment_level or lvl_pane_deselected)
         dash_steps = dash_steps + 1
       end
-    -- insert blanks between segments
-    table.insert(dash_patterns, 0)
-    table.insert(dash_events, 0) 
-    table.insert(dash_levels, 0)
-    dash_steps = dash_steps + 1 -- and 1 to grow on!
+
+      -- insert blanks between segments
+      if dash_steps < stop then
+        table.insert(dash_patterns, lvl_pane)
+        table.insert(dash_events, lvl_pane)
+        table.insert(dash_levels, lvl_pane)
+        dash_steps = dash_steps + 1 -- and 1 to grow on!
+      end
+
     end
   end
   calc_seconds_remaining() -- firing before lattice is running which causes error
+end
+
+
+
+
+
+-- pop-up tooltips when certain grid keys are held down
+local function tooltips(header, strings)
+  local strings = strings or ""
+  screen.level(lvl.menu_selected)
+  screen.move(xy.header_x, xy.header_y)
+  screen.text(header)
+  screen.level(lvl.menu_deselected)
+  for i = 1, #strings do
+    screen.move(0, xy.menu_y + (i * 10))
+    screen.text(strings[i])
+  end
+end
+
+
+-- rectangles and K2/K3 text
+local function footer(k2, k3) -- todo move out of redraw loop and pass lvl_pane_dark
+  local lvl_pane_dark = lvl.pane_dark
+  if k2 then
+    screen.level(lvl_pane_dark)
+    screen.rect(0, 55, 63, 9)
+    screen.fill()
+    screen.level(1)
+    screen.move(31, 62)
+    screen.text_center("K2 ".. k2)
+  end
+  if k3 then
+    screen.level(lvl_pane_dark)
+    screen.rect(65, 55, 63, 9)
+    screen.fill()
+    screen.level(1)
+    screen.move(96, 62)
+    screen.text_center("K3 " .. k3)
+  end
 end
 
 
@@ -5337,532 +5762,349 @@ end
 -------------------------
 -- todo p1: this can be improved quite a bit by just having these custom screens be generated at the key/g.key level. Should be a fun refactor.
 function redraw()
-  -- if transport_active then
-    -- redraw_count = redraw_count + 1
-    -- print("redraw_count = "..redraw_count)
-  -- end
-  
+  -- screen.font_face(tab.key(screen.font_face_names, "norns"))
+
+  local dash_x = xy.dash_x   -- x origin of chord and arranger dashes
+  local header_x = xy.header_x
+  local header_y = xy.header_y
+  local menu_y = xy.menu_y
+  local scrollbar_y = xy.scrollbar_y
+  local lvl_menu_selected = lvl.menu_selected
+  local lvl_menu_deselected = lvl.menu_deselected
+
   screen.clear()
-  local dash_x = 94
-      
-  -- Screens that pop up when g.keys are being held down take priority--------
-  -- POP-up g.key tip always takes priority
+
+  -- POP-up g.key tooltips always takes priority
   if view_key_count > 0 then
     if screen_view_name == "Chord+seq" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      screen.move(2,28)
-      screen.text("E2: rotate ↑↓")
-      screen.move(2,38)
-      screen.text("E3: transpose ←→")
-      screen.level(4)
-      screen.move(1,54)
-      screen.line(128,54)
-      screen.stroke()
-      screen.level(3)      
-      screen.move(2,62)
-      screen.text("(K1) NEW PATTERNS")  
-      -- screen.move(128,62)
-      -- screen.text_right("(K3) GEN. CHORDS+SEQ")      
-
+      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→"})
+      footer("GENERATE")
     elseif grid_view_name == "Arranger" then
-      screen.level(15)
-      screen.move(2,8)
-      -- Placeholder
-      -- screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      screen.text(string.upper(grid_view_name) .. " GRID")
-      -- screen.move(2,28)
-      -- screen.text("E2: Rotate ↑↓")
-      -- screen.move(2,38)
-      -- screen.text("E3: Transpose ←→")
-      screen.level(4)
-      screen.move(1,54)
-      screen.line(128,54)
-      screen.stroke()
-      screen.level(3)      
-        
+      tooltips(string.upper(grid_view_name) .. " GRID")
     elseif grid_view_name == "Chord" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      screen.move(2,28)
-      screen.text("E2: rotate ↑↓")
-      screen.move(2,38)
-      screen.text("E3: transpose ←→")
-      screen.move(2,48)
-      screen.text("Tap pattern A-D: mute")
-      screen.level(4)
-      screen.move(1,54)
-      screen.line(128,54)
-      screen.stroke()
-      screen.level(3)      
-      screen.move(2,62)
-      screen.text("(K1) NEW PATTERN")    
-      -- screen.move(128,62)
-      -- screen.text_right("(K3) GEN. CHORDS")     
-        
-     elseif grid_view_name == "Seq" then
-      screen.level(15)
-      screen.move(2,8)
-      screen.text(string.upper(grid_view_name) .. " GRID FUNCTIONS")
-      
-      screen.move(2,28)
-      screen.text("E2: rotate ↑↓")
-      
-      screen.move(2,38)
-      screen.text("E3: transpose ←→")
-
-      screen.move(2,48)
-      screen.text("Tap SEQ 1-2: mute")
-      
-      screen.level(4)  
-      screen.move(1,54)
-      screen.line(128,54)
-      screen.stroke()
-      screen.level(3)      
-      screen.move(2,62)
-      screen.text("(K1) NEW PATTERN")  
-      -- screen.move(128,62)
-      -- screen.text_right("(K3) GEN. SEQ")  
+      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
+      footer("GENERATE")
+    elseif grid_view_name == "Seq" then
+      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
+      footer("GENERATE")
       end
-      
+
   -- Arranger shift interaction
   elseif interaction == "arranger_shift" then
-    screen.level(15)
-    screen.move(2,8)
-    screen.text("ARRANGER SEGMENT " .. event_edit_segment)
-    -- todo: might be cool to add a scrollable (K2) list of events in this segment here
-    screen.move(2,38)
-    screen.text("E3: shift segments ←→")
-    screen.level(4)
-    screen.move(1,54)
-    screen.line(128,54)
-    screen.stroke()    
-  
-    
+    tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→"})
   -- Arranger events timeline held down
   elseif arranger_loop_key_count > 0 then
-    screen.level(15)
-    screen.move(2,8)
-    screen.text("ARRANGER SEGMENT " .. event_edit_segment)
-    -- todo: might be cool to add a scrollable (K2) list of events in this segment here
-    screen.move(2,28)
-    screen.text("Hold+tap: paste events")
-    screen.move(2,38)
-    screen.text("E3: shift segments ←→")
-    screen.level(4)
-    screen.move(1,54)
-    screen.line(128,54)
-    screen.stroke()
-    screen.level(3)
-    screen.move(1,62)
-    screen.text("(K2) CUE SEG.")    
-    screen.move(82,62)
-    screen.text("(K3) EVENTS")
-          
+    tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→", "Hold+tap: paste events"})
+    footer("JUMP", "EVENTS")
   -- tooltips for interacting with chord patterns      
-  elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this
-    screen.level(15)
-    screen.move(2,8)
-    screen.text("CHORD PATTERN " .. pattern_name[pattern_copy_source])
-    screen.move(2,28)
-    -- screen.text("Tap a pattern to paste")
-    screen.text("Hold+tap: paste pattern") --. " .. pattern_name[pattern_copy_source])
-    screen.move(2,38)
-    screen.text("Release: queue pattern")
-    screen.move(2,48)
-    -- screen.text("Tap again to force jump")
-    screen.text("Tap 2x while stopped: jump")
-    screen.level(4)
-    screen.move(1,54)
-    screen.line(128,54)
-    screen.stroke()    
-  
-  -- Standard priority (not momentary) menus---------------------------------  
-  else
-    ---------------------------
-    -- UI elements placed here will persist in all views including Events editor
-    ---------------------------
+  elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this 
+    tooltips("CHORD PATTERN " .. pattern_name[pattern_copy_source], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
+  else -- Standard priority (not momentary) menus
+    -- NOTE: UI elements placed here appear in all views
 
     ----------------
-    -- Events screen (function redraw events)
-    ----------------    
+    -- EVENTS SCREEN
+    ----------------
     if screen_view_name == "Events" then
-      screen.level(15)
-      screen.move(2,8)
-      if event_edit_active == false then
-        if key_countdown == 4 then
-          screen.text("ARRANGER SEGMENT " .. event_edit_segment .. " EVENTS")
-          screen.level(15)
-          screen.move(2,23)
-          screen.text("Grid: select event slot")
-          screen.move(2,33)
-          screen.text("1↓16: chord pattern step")
-          screen.move(2,43)
-          screen.text("1→16: event order")
-          screen.level(4)
-          screen.move(1,54)
-          screen.line(128,54)
-          screen.stroke()
-          screen.level(3)      
-          screen.move(1,62)
-          screen.text("(K1 HOLD) DEL.")
-          screen.move(128,62)
-          screen.text_right("(K3) ARRANGER")
-        else
-          screen.level(15)      
-          screen.move(36,33)
-          screen.text("DELETING IN " .. key_countdown)
+      local lane = params:get("event_lane")
+      local lane_id = event_lanes[lane].id
+      local lane_type = event_lanes[lane].type -- or "Empty"
+      local lane_glyph = lane_type == "Single" and "☑" or lane_type == "Multi" and "☰" or "☐" -- ☑  -- todo norns.ttf
+
+      if event_edit_active == false then -- lane-level preview
+        --------------------------
+        -- Event lanes preview
+        --------------------------
+        local event_def = events_lookup[events_lookup_index[lane_id]]
+
+        -- LANE EDITOR HEADER/GLYPHS
+        screen.level(lvl_menu_selected)
+        screen.move(header_x, header_y)
+        screen.text("LANE " .. lane)
+
+        for i = 1, 15 do
+          local type = event_lanes[i].type
+          local glyph = type == "Single" and "☑" or type == "Multi" and "☰" or "☐" --☑ -- todo norns.ttf
+
+          screen.level(lane == i and lvl_menu_selected or lvl_menu_deselected) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
+          screen.move((header_x + 35 + (i - 1) * 6), header_y)
+          screen.text(glyph)
         end
-      else
-   
-   
-        --------------------------
-        -- Scrolling events menu
-        --------------------------
+
+        -- simplified description of lane. multi-event lanes show last-saved event
+        if event_def then
+          screen.move(0, menu_y + 10)
+          screen.text("Category: " .. first_to_upper(event_def["category"]))
+          screen.move(0, menu_y + 20)
+          screen.text("Subcategory: " .. first_to_upper(event_def["subcategory"]))
+          screen.move(0, menu_y + 30)
+          screen.text("Event: " .. first_to_upper(event_def["name"]))
+        else
+          screen.move(0, menu_y + 10)
+          screen.level(lvl_menu_deselected)
+          screen.text("No events in lane")
+        end
+
+        footer("EXIT", nil) -- K3 also goes back to arranger 🤫
+
+      else -- EVENT EDITOR MENUS
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
         -- todo p2 this mixes events_index and menu_index. Redundant?
-        local lookup = events_lookup[params:get("event_name")]  -- todo global + change_event()
+
+        -- local event_def = events_lookup[params:get("event_name")]  -- todo global + change_event()
+        local event_type = events_lookup[params:get("event_name")].event_type
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
         local line = 1
-        for i = 1, #events_menus do
-          local debug = false
-          
-          screen.move(2, line * 10 + 8 - menu_offset)
-          screen.level(events_index == i and 15 or 3)
+        
+        -- EVENT EDITOR HEADER
+        -- lane_glyph (with dynamic preview)
+        if lane_glyph_preview == "Single" then
+          screen.level(lvl_menu_deselected)
+          lane_glyph = "⏹"--"☑" -- probably no need to blink if we're going down to Single event lane
+        elseif lane_glyph_preview == "Multi" then
+          screen.level(fast_blinky == 0 and lvl_menu_deselected or lvl_menu_selected)
+          lane_glyph = "☰"
+        else
+          screen.level(lvl_menu_deselected)
+        end
 
+        screen.move(header_x, header_y)
+        screen.text(lane_glyph)
+        screen.move(header_x + 6, header_y)
+        screen.level(lvl_menu_deselected)
+        screen.text(" LANE " .. event_edit_lane .. ", STEP " .. event_edit_step) -- add event_edit_segment?
+
+        -- event save status
+        screen.move(128 - 4, header_y)
+        screen.text_right(event_edit_status)
+        footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
+
+        for i = 1, #events_menus do -- event hierarchy, op, probability, etc...
+          -- local debug = false
           local menu_id = events_menus[i]
           local menu_index = params:get(menu_id)
           local event_val_string = params:string(menu_id)
-          
+          local y = line * 10 + menu_y - menu_offset
+
+          if y > 11 and y < 52 then
+          screen.move(0, y) --line * 10 + 9 - menu_offset)
+          screen.level(events_index == i and lvl_menu_selected or lvl_menu_deselected)
+
           -- use event_value to format values
           -- values are already set on var event_val_string so if no conditions are met they pass through raw
           -- >> "Set" operation should do .options lookup where possible
           -- >> functions are raw
           -- >> inc, random, wander are raw but ranges have been formatted above
           if menu_id == "event_value" then
-            if debug then print("-------------------") end
-            if debug then print("formatting event_value menu") end
+            -- if debug then print("-------------------") end
+            -- if debug then print("formatting event_value menu") end
             local operation = params:string("event_operation")
             
             if operation == "Set" then
-              if debug then print("Set operator") end
-              if lookup.event_type == "param" then  -- move above operation check?
-                
+              -- if debug then print("Set operator") end
+              -- if event_def.event_type == "param" then  -- move above operation check?
+              if event_type == "param" then  -- move above operation check?
                 preview_event:set(event_val_string)
                 event_val_string = preview_event:string()
-                
-              -- and params:t(lookup.id) == 2 then -- params:t == 2 means it's an add_options type param
-                -- if debug then print("Setting string val from options") end
-                -- print("value set options")
-                -- Uses event index to look up all the options for that param, then select using index
-                -- event_val_string = options[menu_index]
               end
-              if debug then print("Nil formatter: skipping") end
+              -- if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
               event_val_string = "\u{0b1}" .. event_val_string
             end
-            if debug then print("Value passed raw") end
-          
-          -- hack to use preview to get formatting for min/max
-          -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
-          elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
-            -- print("DEBUG menu_id = " .. menu_id) 
-            -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
-            local actual_val = preview_event:get()
-            preview_event:set(event_val_string)
-            event_val_string = preview_event:string()
-            preview_event:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
-          end -- end of event_value stuff
-      
-          ------------------------------------------------
-          -- Draw menu and <> indicators for scroll range
-          ------------------------------------------------
-          -- Leaving in param formatter and some code for truncating string in case we want to eventually add system param events that require formatting.
-          local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
-          if events_index == i then
-            local range =
-              (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
-              and params:get_range(menu_id)
-              or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
-              or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
 
-            local single = menu_index == range[1] and (range[1] == range[2]) or false
-            local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
-            local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
-            local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+            -- if debug then print("Value passed raw") end
+              
+              -- hack to use preview to get formatting for min/max
+              -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
+            elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
+              -- print("DEBUG menu_id = " .. menu_id) 
+              -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
+              local actual_val = preview_event:get()
+              preview_event:set(event_val_string)
+              event_val_string = preview_event:string()
+              preview_event:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
+            end -- end of event_value stuff
+        
+            ------------------------------------------------
+            -- Draw menu and <> indicators for scroll range
+            ------------------------------------------------
+            -- Leaving in param formatter and some code for truncating string in case we want to eventually add system param events that require formatting.
+            local events_menu_trunc = 22 -- WAG Un-local if limiting using the text_extents approach below
 
-            if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-            if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+            if events_index == i then
+              local range =
+                (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
+                and params:get_range(menu_id)
+                or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
+                or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
 
-            screen.text(events_menu_txt)
-          else
-            
-            if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
-            if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
-            
-            screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+              local single = menu_index == range[1] and (range[1] == range[2]) or false
+              local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
+              local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
+              -- local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
+
+              -- if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+              -- if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+
+              -- screen.text(events_menu_txt)
+
+              screen.text(first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf)
+
+            else            
+              -- if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end
+              -- if debug and menu_id == "event_value" then print("event_val_string = " .. (event_val_string or "nil")) end
+              
+              screen.text(first_to_upper(param_id_to_name(menu_id)) .. ": " .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)))
+            end
+
+            -- simplified option (perhaps alternate view via prefs?)
+            -- screen.text(string.lower(param_id_to_name(menu_id)))
+            -- screen.move(124, y)
+            -- screen.text_right((string.lower(string.sub(event_val_string, 1, events_menu_trunc))))
+
           end
-
           line = line + 1
         end
         
-        -- scrollbar
-        screen.level(10)
-        local offset = scrollbar(events_index, #events_menus, 4, 2, 40) -- (index, total, in_view, locked_row, screen_height)
-        local bar_height = 4 / #events_menus * 40
+        -- events editor scrollbar
+        screen.level(lvl_menu_selected)
+        local offset = scrollbar_y + scrollbar(events_index, #events_menus, 4, 2, 41) -- (index, total, in_view, locked_row, screen_height)
+        local bar_height = 4 / #events_menus * 41
         screen.rect(127, offset, 1, bar_height)
         screen.fill()
-      
-     -- Events editor sticky header
-        screen.level(4)
-        screen.rect(0,0,128,11)
-        screen.fill()
-        screen.move(2,8)
+
+        -- footer
+        footer("DELETE", event_edit_status == "(Saved)" and "DONE" or "SAVE") -- todo revisit delete/cancel logic
+      end
+
+
+      -- K1 event actions pop-up quick-menu
+      if norns_interaction == "event_actions_done" then -- flash "DONE!" message
+        local border = 10 -- portion of lower layer still shown
+        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+
         screen.level(0)
-        screen.text("SEG " .. event_edit_segment .. "." .. event_edit_step .. ", EVENT " .. event_edit_lane .. "/16")
-        screen.move(126,8)
-        screen.text_right(event_edit_status)           
-      
-    -- Events editor footer
-        -- not needed if we use static events editor rather than scrolling
-        screen.level(0)
-        screen.rect(0,54,128,11)
+        screen.rect(table.unpack(rect))
         screen.fill()
-        
-        screen.level(4)
-        screen.move(1,54)
-        screen.line(128,54)
+        screen.level(15)
+        screen.rect(table.unpack(rect))
         screen.stroke()
-        screen.level(3)
-        screen.move(1,62)
-        screen.text("(K2) DELETE")
-        screen.move(128,62)
-        if event_edit_status == "(Saved)" then
-          screen.text_right("(K3) EVENTS")
-        else
-          screen.text_right("(K3) SAVE")
+
+        screen.level(15)
+        screen.move(64, 34)
+        screen.text_center("DONE!")
+
+      elseif norns_interaction == "event_actions" then
+        local border = 10 -- portion of lower layer still shown
+        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+        
+        screen.level(0)
+        screen.rect(table.unpack(rect))
+        screen.fill()
+        screen.level(15)
+        screen.rect(table.unpack(rect))
+        screen.stroke()
+
+        for row = 1, #event_quick_actions do
+          screen.level(params:get("event_quick_actions") == row and 15 or 3)
+          screen.move(border + 6, row * 10 + 14)  -- exaggerate border a bit
+          screen.text(event_quick_actions[row])
         end
       end
-        
+
         
     -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
     else
-      ---------------------------
-      -- UI elements placed here appear in all non-Events views
-      ---------------------------
+      -- NOTE: UI elements placed here appear in all non-Events views
       
-      --------------------------------------------
-      -- Scrolling menus
-      --------------------------------------------
+      --------------------
+      -- MAIN MENUS, PAGES
+      --------------------
       -- todo p1 move calcs out of redraw
+      -- todo don't draw offscreen
+      local paging = menu_index == 0
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
       local line = 1
+
+      -- OG style
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
         local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
         local param_get = preview_param_q_get[param_id] or params:get(param_id)
-        -- local param_string = (preview_param_q_string[param_id] and preview_param_q_string[param_id].."*") or params:string(param_id)
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
-
-        screen.move(2, line * 10 + 8 - menu_offset)
-        screen.level(menu_index == i and 15 or 3)
+        local y = line * 10 + menu_y - menu_offset
         
-        -- Generate menu and draw ▶◀ indicators for scroll range
-        if menu_index == i then
-          if norns_interaction then q = "-" end
-          local range = params:get_range(param_id)
-          local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
-          local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
-          local session_menu_txt = q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf
-          
-          screen.text(session_menu_txt)
-        else  
-          screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
+        if y > 11 and y < 64 then
+          screen.move(0, y)
+       
+          if menu_index == i then  -- Generate menu and draw ▶◀ indicators for scroll range
+            screen.level(lvl_menu_selected)
+            if norns_interaction then q = "-" end
+            local range = params:get_range(param_id)
+            local menu_value_pre = param_get == range[2] and "\u{25c0}" or " "
+            local menu_value_suf = param_get == range[1] and "\u{25ba}" or ""
+            screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ":" .. menu_value_pre .. param_string .. menu_value_suf)
+          else  
+            screen.level(lvl_menu_deselected)
+            screen.text(q .. first_to_upper(param_id_to_name(param_id)) .. ": " .. param_string)
+          end
+
         end
+
         line = line + 1
       end
 
-      -- -- mask the area to the right of main menu since we can't rely on screen.text_extents
-      -- screen.level(0)
-      -- screen.rect(91, 0, 37, 64)
-      -- screen.fill()
-      
-      -- scrollbar
-      screen.level(10)
-      local offset = scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
-      local bar_height = 5 / #menus[page_index] * 52
-      screen.rect(91, offset, 1, bar_height)
-      screen.fill()
-      
-      
-      --Sticky header
-      screen.level(menu_index == 0 and 15 or 4)
-      screen.rect(0,0,92,11)
-      screen.fill()
-      screen.move(2,8)
-      screen.level(0)
-      screen.text(page_name)
-      screen.fill()
- 
+      -- -- alternate param menu-style. may add as pref option
+      -- -- lowercase, no range indicators (todo flash screen?), q indicator at end
+      -- for i = 1, #menus[page_index] do
+      --   local param_id = menus[page_index][i]
+      --   local q = preview_param_q_get[param_id] and "•" or "" -- indicates if delta is waiting on param_q -- req norns.ttf
+      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
+      --   local y = line * 10 + header_y  - menu_offset
+        
+      --   if y > header_y  and y < 64 then
+      --     screen.move(0, y)
+      --     screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
+      --     screen.text(q .. string.lower(param_id_to_name(param_id)))
+      --     screen.move(dash_x - 5, y)
+      --     screen.text_right(string.lower(param_string))
+      --   end
 
-      --------------------------------------------
-      -- Transport state, pattern, chord readout
-      --------------------------------------------
+      --   line = line + 1
+      -- end
 
-      screen.level(9)
-      screen.rect(dash_x+1,11,33,12)
-      screen.stroke()
-      
-      screen.level(menu_index == 0 and 15 or 13)
-      screen.rect(dash_x,0,34,11)
-      screen.fill()
 
-      -- Draw transport status glyph
-      screen.level(((transport_state == "starting" or transport_state == "pausing") and fast_blinky or 0) * 2)
-      local x_offset = dash_x + 27
-      local y_offset = 3
-
-      -- simplify intermediate states for the glyph selection
-      local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state
-      for i = 1, #glyphs[transport_state] do
-        screen.pixel(glyphs[transport_state][i][1] + x_offset, glyphs[transport_state][i][2] + y_offset)
-      end
-      screen.fill()
-    
-      --------------------------------------------    
-      -- Pattern position readout
-      --------------------------------------------      
-      screen.level(0)
-      screen.move(dash_x + 2, y_offset + 5)
-      if chord_pattern_position == 0 then
-        screen.text(pattern_name[active_chord_pattern].. ".RST")
-      else
-        screen.text(pattern_name[active_chord_pattern] ..".".. chord_pattern_position)
-        -- screen.text(pattern_name[active_chord_pattern] ..".".. chord_pattern_position .. "/" .. chord_pattern_length[active_chord_pattern])
+      -- main menu scrollbar
+      if not paging then
+        screen.level(lvl_menu_selected)
+        local offset = scrollbar_y + scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
+        local bar_height = 5 / #menus[page_index] * 52
+        screen.rect(dash_x - 2, offset, 1, bar_height)
+        screen.fill()
       end
       
-      --------------------------------------------
-      -- Chord readout
-      --------------------------------------------
-      screen.level(15)
-      if chord_no > 0 then
-        screen.move(dash_x + 17,y_offset + 16)
-        screen.text_center(chord_readout)
-      end
-      
-      
-      --------------------------------------------
-      -- Arranger dash
-      --------------------------------------------
-      local arranger_dash_y = 24
-      
-      -- Axis reference marks
-      for i = 1,4 do
-        screen.level(1)
-        screen.rect(dash_x + 3, arranger_dash_y + 12 + i * 3, 1, 2)
-      end
-      screen.pixel(dash_x + 3, arranger_dash_y + 27)
-      screen.fill()
-      
-      local arranger_dash_x = dash_x + (arranger_position == 0 and 5 or 3) -- If arranger is reset, add an initial gap to the x position
-      
-      -- Draw arranger patterns and events timeline straight from x_dash_flat
-      for i = 1, dash_steps do -- alternative to #dash_patterns. This is faster at the cost of a global var which I guess is okay?
-        screen.level(dash_levels[i] or 1)
-        -- arranger segment patterns
-        if dash_patterns[i] ~= 0 then
-          screen.rect(arranger_dash_x, arranger_dash_y + 12 + (dash_patterns[i] * 3), 1, 2)
+
+      -- MAIN MENU HEADER/PAGE SELECTOR
+      -- horizontal main menu pagination
+      -- todo adapt to max_seqs
+      if paging then  -- if we want it to only appear when changing pages
+        for i = 1, #pages do
+          screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
+          screen.rect(38 + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
           screen.fill()
         end
-        -- events pips
-        screen.level(dash_events[i] or 0)
-        screen.pixel(arranger_dash_x, 51)
-        screen.fill()
-
-        arranger_dash_x = arranger_dash_x + 1
       end
 
-      -- Arranger dash rect (rendered after chart to cover chart edge overlap)
-      screen.level(params:get("arranger") == 2 and 9 or 2)
-      
-      screen.rect(dash_x+1, arranger_dash_y+2,33,38)
-      screen.stroke()
-      
-      -- Header
-      screen.level(params:get("arranger") == 2 and 10 or 2)
-      screen.rect(dash_x, arranger_dash_y+1,34,11)
-      screen.fill()
+      screen.move(header_x, header_y)
+      screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      screen.text(page_name)
 
-      --------------------------------------------
-      -- Arranger countdown timer readout
-      --------------------------------------------
-    
-      -- Arranger time
-      screen.level(params:get("arranger") == 2 and 15 or 3)
-
-      -- Bottom left
-      screen.move(dash_x +3, arranger_dash_y + 36)
-      screen.text(seconds_remaining)
-      
-      -- Arranger mode glyph
-      local x_offset = dash_x + 27
-      local y_offset = arranger_dash_y + 4
-
-      if params:string("playback") == "Loop" then
-        screen.level(((
-          arranger_position == arranger_length 
-          and (arranger_queue == nil or arranger_queue > arranger_length)) -- if arranger is jumped on the last seg
-        and fast_blinky or 0) * 2)
-        for i = 1, #glyphs.loop do
-          screen.pixel(glyphs.loop[i][1] + x_offset, glyphs.loop[i][2] + y_offset)
-        end
-      else 
-        screen.level(((arranger_position == arranger_length 
-          and arranger_one_shot_last_pattern) -- if arranger is jumped on the last seg
-        and fast_blinky or 0) * 2)
-
-        for i = 1, #glyphs.one_shot do
-          screen.pixel(glyphs.one_shot[i][1] + x_offset, glyphs.one_shot[i][2] + y_offset)
-        end
+      -- iterate through list of modular dashboard functions
+      dash_y = 0
+      for _, func in pairs(dash_list) do
+        func()
       end
-      screen.fill()
-      
-      --------------------------------------------
-      -- Arranger position readout
-      --------------------------------------------      
-      screen.level(0)
-      screen.move(dash_x + 2,arranger_dash_y + 9)
 
-      local steps = math.min(chord_pattern_position - chord_pattern_length[active_chord_pattern], 0)
-      if arranger_position == 0 then
-        if arranger_queue == nil then
-          screen.text("RST")
-        elseif arranger_active == false then
-          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
-        else
-          screen.text(arranger_queue .. ".0")
-        end
-      elseif arranger_active == false then
-        if chord_pattern_position == 0 then -- condition for when pattern is reset to position 0 and is in-between segments
-          screen.text(arranger_position .. ".0")
-        elseif arranger_position == arranger_length then
-          if params:string("playback") == "Loop" then
-            screen.text("LP." .. steps)  -- todo font enhancement: use loop glyph
-          else
-            screen.text("EN." .. steps)  -- todo font enhancement: use loop glyph
-          end
-        else
-          screen.text((arranger_queue or util.wrap(arranger_position + 1, 1, arranger_length)) .. ".".. steps)
-        end
-      else
-        screen.text(arranger_position .. "." .. chord_pattern_position)
-        
-      end      
-      screen.fill()
-      
-      
     end -- of event vs. non-event check
   end
   screen.update()
