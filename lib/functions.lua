@@ -302,6 +302,6 @@ function scrollbar(index, total, in_view, locked_row, screen_height)
   local bar_size = in_view / total * screen_height
   local increment = (screen_height - bar_size) / (total - locked_row)
   index = math.max(index - locked_row, 0)
-  local offset = 12 + (index * increment)
+  local offset = (index * increment)
   return(offset)
 end

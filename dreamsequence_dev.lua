@@ -23,6 +23,9 @@
 
 
 
+
+-- stuff needed by includes
+
 -- layout and palette
 xy = {
   dash_x = 99,
@@ -51,12 +54,12 @@ local lvl_dimmed = {
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
+max_seqs = 2
 
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
-max_seqs = 2
 
 -- pre-init locals
 local latest_strum_coroutine = coroutine.running()
@@ -268,7 +271,9 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 6 + 15 + 5)
+  params:add_group("preferences", "PREFERENCES", 15 + 16) -- 16 midi ports
+
+  -- params:add_separator("pset","pset")
 
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
@@ -279,6 +284,14 @@ function init()
   params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
+  -- params:add_separator("interaction","interaction")
+
+  params:add_option("sync_grid_norns", "Sync Grid/Norns", {"Off", "On"}, 2)
+  params:set_save("sync_grid_norns", false)
+  params:set("sync_grid_norns", param_option_to_index("sync_grid_norns", prefs.sync_grid_norns) or 2)
+  params:set_action("sync_grid_norns", function() save_prefs() end)
+
+  -- params:add_separator("dashboard","dashboard")
 
   local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown", nil}
   for dash_no = 1, 6 do
@@ -311,7 +324,7 @@ function init()
   end
 
   for i = 1, 3 do
-    params:add_option("enc_config_" .. i, "Enc " .. i, {"Slower -accel","Slower +accel","Slow, -accel","Slow +accel","Normal -accel","Normal +accel","Fast -accel","Fast +accel"}, 6)
+    params:add_option("enc_config_" .. i, "Enc " .. i, {"Slower -accel", "Slower +accel", "Slow, -accel", "Slow +accel", "Normal -accel", "Normal +accel", "Fast -accel", "Fast +accel"}, 6)
     params:set_save("enc_config_" .. i, false)
     params:set("enc_config_" .. i, ((prefs["enc_config_" .. i]) or 6))
     params:set_action("enc_config_" .. i, function(val) save_prefs(); enc_config(i, val) end)
@@ -336,7 +349,7 @@ function init()
   params:add_group("arranger_group", "ARRANGER", 2)
 
   params:add_option("arranger", "Arranger", {"Off", "On"}, 1)
-  -- params:set_action("arranger", function() update_arranger_active() end) setting post-bang
+  -- params:set_action("arranger", function() update_arranger_active() end) post-bang action set
   
   params:add_option("playback", "Playback", {"1-shot","Loop"}, 2)
   params:set_action("playback", function() arranger_ending() end)
@@ -845,7 +858,7 @@ function init()
   -- grid "views" are decoupled from screen "pages"  
   grid_views = {"Arranger","Chord","Seq"}
   grid_view_keys = {}
-  grid_view_name = grid_views[2]
+  grid_view_name = grid_views[1]
   cycle_1_16 = 1
   led_pulse = 0
   fast_blinky = 0
@@ -1018,7 +1031,7 @@ function init()
   end
 
 
-  function params.action_read(filename,silent,number)
+  function params.action_read(filename, silent, number)
     local number = number or "00" -- template
     nb:stop_all()
     local filepath = norns.state.data..number.."/"
@@ -4144,13 +4157,33 @@ function reset_grid_led_phase()
 end
 
 
-function set_grid_view(new_view)
-  local current_view = grid_view_name
-  grid_view_name = new_view
-  if current_view ~= new_view then -- actions to take if view changed
-    if new_view == "Chord" then
-      reset_grid_led_phase()
+function set_grid_view(new_view, new_pattern) -- optional 2nd arg for seq pattern
+  local new_pattern = new_pattern or active_seq_pattern
+
+  if (grid_view_name ~= new_view) or (active_seq_pattern ~= new_pattern) then
+    reset_grid_led_phase() -- reset led pulse phase so it's most visible
+    grid_view_name = new_view
+    active_seq_pattern = new_pattern
+    grid_dirty = true
+
+    if params:string("sync_grid_norns") == "On" then -- sync norns screen view with grid view
+      local new_page = nil
+
+      if new_view == "Arranger" then
+        new_page = "SONG"
+      elseif new_view == "Chord" then
+        new_page = "CHORD"
+      elseif new_view == "Seq" then
+        new_page = "SEQ " .. new_pattern
+      end
+
+      page_index = tab.key(pages, new_page)
+      page_name = new_page
+
+      menu_index = 0
+      selected_menu = menus[page_index][menu_index]
     end
+
   end
 end
 
@@ -4169,9 +4202,8 @@ function update_pattern_queue() -- run after changes are made to arranger or arr
 end
 
 -- GRID KEYS
--- todo p1 put in some top level checks so we can break this up into functions or something navigatable
 ---@diagnostic disable-next-line: duplicate-set-field
-function g.key(x,y,z)
+function g.key(x, y, z)
   if z == 1 then
 
     if screen_view_name == "Events" then
@@ -4396,11 +4428,8 @@ function g.key(x,y,z)
 
       elseif x == 16 and y <5 then  --Key DOWN events for chord pattern switcher
       
-        if grid_interaction == "view_switcher" then -- mute/unmute. Prev: --grid_view_keys[1] == 7 then -- mute/unmute
-          -- grid_interaction = "mute" -- checked on view_switcher key up
+        if grid_interaction == "view_switcher" then -- mute/unmute
           params:set("chord_mute", 3 - params:get("chord_mute")) -- toggle mute state
-          -- to sync phase of slow_pulse on keypress
-          -- this might cause other issues depending on where else slow_pulse is used
         else
 
           grid_interaction = "chord_pattern_copy"
@@ -4454,11 +4483,11 @@ function g.key(x,y,z)
         end
       elseif x == 15 then
         params:set("seq_pattern_length_" .. active_seq_pattern, y + pattern_grid_offset)
-      elseif y <= max_seqs then -- pattern selector
-        if grid_view_keys[1] == 8 then -- mute/unmute
+      elseif y <= max_seqs then -- seq pattern selector
+        if grid_interaction == "view_switcher" then -- mute/unmute
           params:set("seq_mute_"..y, 3 - params:get("seq_mute_"..y))
         else -- switch seq grid view
-          active_seq_pattern = y
+          set_grid_view("Seq", y)
         end
       end
     end
@@ -5308,25 +5337,29 @@ function enc(n,d)
 
       end
       
-      --------------------
-      -- Arranger shift --  
-      --------------------
-    elseif grid_view_name == "Arranger" and arranger_loop_key_count > 0 then
+    elseif grid_interaction == "event_copy" or grid_interaction == "arranger_shift" then -- arranger shift
       local d = util.clamp(d, -1, 1)
-      -- Arranger segment detail options are on-screen
-      -- block event copy+paste, K2 and K3 (arranger jump and event editor)
-      -- new global to identify types of user interactions that should block certain other interactions e.g. copy+paste, arranger jump, and entering event editor
       grid_interaction = "arranger_shift"
       d_cuml = util.clamp(d_cuml + d, -64, 64)
       
       grid_dirty = true
   
-    elseif (not grid_interaction) and screen_view_name == "Session" then
+    elseif (not grid_interaction) and screen_view_name == "Session" then -- 
       if menu_index == 0 then
         menu_index = 0
         page_index = util.clamp(page_index + d, 1, #pages)
         page_name = pages[page_index]
-        selected_menu = menus[page_index][menu_index] -- redundant?
+
+        if params:string("sync_grid_norns") == "On" then
+          if page_name == "SONG" then
+            set_grid_view("Arranger")
+          elseif page_name == "CHORD" then
+            set_grid_view("Chord")
+          elseif string.sub(page_name, 1, 3) == "SEQ" then
+            set_grid_view("Seq", tonumber(string.sub(page_name, 4)))
+          end
+        end
+
       elseif norns_interaction == "preview_param" then
         preview_param:delta(d)
         preview_param_q_get[preview_param.id] = preview_param:get()
@@ -5799,7 +5832,7 @@ function redraw()
     --   tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", line3})
     --   footer("GENERATE") -- technically this should indicate generating patterns for chord+seq
     if grid_view_name == "Arranger" then
-      tooltips("ARRANGER GRID")
+      tooltips("SONG ARRANGER GRID")
     elseif grid_view_name == "Chord" then
       tooltips("CHORD GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
       footer("GENERATE")
@@ -5845,7 +5878,7 @@ function redraw()
           local type = event_lanes[i].type
           local glyph = type == "Single" and "☑" or type == "Multi" and "☰" or "☐" --☑ -- todo norns.ttf
 
-          screen.level(lane == i and lvl_menu_selected or lvl_menu_deselected) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
+          screen.level(lane == i and lvl_menu_selected or lvl_menu_deselected)
           screen.move((header_x + 35 + (i - 1) * 6), header_y)
           screen.text(glyph)
         end
@@ -6103,13 +6136,13 @@ function redraw()
       end
       
 
-      -- MAIN MENU HEADER/PAGE SELECTOR
-      -- horizontal main menu pagination
-      -- todo adapt to max_seqs
+      -- MAIN MENUPAGE SELECTOR
       if paging then  -- if we want it to only appear when changing pages
+        local width = (4 * #pages) - 1
+        local x = math.ceil((dash_x - width) / 2)
         for i = 1, #pages do
           screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
-          screen.rect(38 + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
+          screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
           screen.fill()
         end
       end
