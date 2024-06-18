@@ -4351,8 +4351,8 @@ function g.key(x,y,z)
       -- ARRANGER EVENTS TIMELINE KEY DOWN
       elseif y == 5 then
         arranger_loop_key_count = arranger_loop_key_count + 1
-        if grid_interaction ~= "arranger_shift" then -- nil then
-          grid_interaction = "event_copy"  
+        if (grid_interaction or "event_copy") == "event_copy" then -- if no interaction or already in event_copy
+          grid_interaction = "event_copy"
           -- First touched pattern is the one we edit, effectively resetting on key_count = 0
           if arranger_loop_key_count == 1 then
             event_edit_segment = x_offset
@@ -4366,10 +4366,10 @@ function g.key(x,y,z)
             gen_arranger_dash_data("Event copy+paste")
           end
         end
+      
       end
       
-    --CHORD PATTERN KEYS
-    elseif grid_view_name == "Chord" then
+    elseif grid_view_name == "Chord" then --CHORD PATTERN KEYS
 
       if x < 15 then -- chord pattern
         chord_key_count = chord_key_count + 1
@@ -4569,15 +4569,19 @@ function g.key(x,y,z)
       -- ARRANGER EVENTS TIMELINE KEY UP
       if y == 5 then
         arranger_loop_key_count = math.max(arranger_loop_key_count - 1, 0)
-        
-        -- Insert/remove patterns/events after arranger shift with K3
+
+
         if arranger_loop_key_count == 0 then
-          if grid_interaction == "arranger_shift" then
+          if grid_interaction == "arranger_shift" then -- Insert/remove patterns/events after arranger shift with E3
             apply_arranger_shift()
             update_pattern_queue()
+            grid_interaction = nil
+          elseif grid_interaction == "event_copy" then
+            grid_interaction = nil
           end
-          grid_interaction = nil
         end
+
+
       end
     end
 
@@ -5207,11 +5211,11 @@ function enc(n,d)
 
   -- n == ENC 2 ------------------------------------------------
   elseif n == 2 then
-    if view_key_count > 0 then
-      local d = util.clamp(d, -1, 1)
+    if grid_interaction == "view_switcher" then
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
+        local d = util.clamp(d, -1, 1) -- no acceleration
         rotate_pattern(grid_view_name, d)
-        grid_dirty = true            
+        grid_dirty = true
       end
    
     elseif screen_view_name == "Events" then
@@ -5225,7 +5229,7 @@ function enc(n,d)
         selected_events_menu = events_menus[events_index]
       end
 
-    else -- standard menus
+    elseif not grid_interaction then -- standard menus
       menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
       selected_menu = menus[page_index][menu_index]
       if norns_interaction == "preview_param" and menu_index ~= 0 then
@@ -5236,9 +5240,9 @@ function enc(n,d)
   else -- n == ENC 3 -------------------------------------------------------------  
   
     -- Grid-view custom encoder actions
-    if view_key_count > 0 then
-      local d = util.clamp(d, -1, 1)
-      if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
+    if grid_interaction == "view_switcher" then
+      if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq
+        local d = util.clamp(d, -1, 1)
         transpose_pattern(grid_view_name, d)
         grid_dirty = true
       end
@@ -5317,7 +5321,7 @@ function enc(n,d)
       
       grid_dirty = true
   
-    elseif screen_view_name == "Session" then
+    elseif (not grid_interaction) and screen_view_name == "Session" then
       if menu_index == 0 then
         menu_index = 0
         page_index = util.clamp(page_index + d, 1, #pages)
