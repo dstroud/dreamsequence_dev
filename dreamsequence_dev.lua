@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240616 @modularbeat
+-- 240618 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -22,6 +22,9 @@
 -- Crow OUT 4: Clock out
 
 
+
+
+-- stuff needed by includes
 
 -- layout and palette
 xy = {
@@ -51,12 +54,12 @@ local lvl_dimmed = {
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
+max_seqs = 2
 
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 clock.link.stop() -- transport won't start if external link clock is already running
-max_seqs = 2
 
 -- pre-init locals
 local latest_strum_coroutine = coroutine.running()
@@ -268,7 +271,9 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 6 + 15 + 5)
+  params:add_group("preferences", "PREFERENCES", 15 + 16) -- 16 midi ports
+
+  -- params:add_separator("pset","pset")
 
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
@@ -279,6 +284,14 @@ function init()
   params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
+  -- params:add_separator("interaction","interaction")
+
+  params:add_option("sync_grid_norns", "Sync Grid/Norns", {"Off", "On"}, 2)
+  params:set_save("sync_grid_norns", false)
+  params:set("sync_grid_norns", param_option_to_index("sync_grid_norns", prefs.sync_grid_norns) or 2)
+  params:set_action("sync_grid_norns", function() save_prefs() end)
+
+  -- params:add_separator("dashboard","dashboard")
 
   local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown", nil}
   for dash_no = 1, 6 do
@@ -311,7 +324,7 @@ function init()
   end
 
   for i = 1, 3 do
-    params:add_option("enc_config_" .. i, "Enc " .. i, {"Slower -accel","Slower +accel","Slow, -accel","Slow +accel","Normal -accel","Normal +accel","Fast -accel","Fast +accel"}, 6)
+    params:add_option("enc_config_" .. i, "Enc " .. i, {"Slower -accel", "Slower +accel", "Slow, -accel", "Slow +accel", "Normal -accel", "Normal +accel", "Fast -accel", "Fast +accel"}, 6)
     params:set_save("enc_config_" .. i, false)
     params:set("enc_config_" .. i, ((prefs["enc_config_" .. i]) or 6))
     params:set_action("enc_config_" .. i, function(val) save_prefs(); enc_config(i, val) end)
@@ -336,7 +349,7 @@ function init()
   params:add_group("arranger_group", "ARRANGER", 2)
 
   params:add_option("arranger", "Arranger", {"Off", "On"}, 1)
-  -- params:set_action("arranger", function() update_arranger_active() end) setting post-bang
+  -- params:set_action("arranger", function() update_arranger_active() end) post-bang action set
   
   params:add_option("playback", "Playback", {"1-shot","Loop"}, 2)
   params:set_action("playback", function() arranger_ending() end)
@@ -845,7 +858,7 @@ function init()
   -- grid "views" are decoupled from screen "pages"  
   grid_views = {"Arranger","Chord","Seq"}
   grid_view_keys = {}
-  grid_view_name = grid_views[2]
+  grid_view_name = grid_views[1]
   cycle_1_16 = 1
   led_pulse = 0
   fast_blinky = 0
@@ -886,7 +899,7 @@ function init()
   arranger_grid_offset = 0 -- offset allows us to scroll the arranger grid view beyond 16 segments
   gen_arranger_padded()
   d_cuml = 0
-  interaction = nil
+  grid_interaction = nil
   norns_interaction = nil
   event_lanes = {}
   for i = 1, 15 do
@@ -978,16 +991,16 @@ function init()
   -----------------------------
   -- PSET callback functions --   
   -----------------------------
-  function params.action_write(filename,name,number)
+  function params.action_write(filename, name, number)
     local number = number or "00" -- template
-    local filepath = norns.state.data..number.."/"
-    os.execute("mkdir -p "..filepath)
+    local filepath = norns.state.data .. number .. "/"
+    os.execute("mkdir -p " .. filepath)
     -- Make table with version (for backward compatibility checks) and any useful system params
     misc = {}
     misc.timestamp = os.date()
     misc.version = version
     misc.clock_tempo = params:get("clock_tempo")
-    misc.clock_source = params:get("clock_source")
+    -- misc.clock_source = params:get("clock_source") -- defer to system
 
     -- need to save and restore nb voices which can change based on what mods are enabled
     -- reworked for seq2 but haven't tested
@@ -996,7 +1009,7 @@ function init()
     local sources = {}
     table.insert(sources, "chord_voice")
     for seq_no = 1, max_seqs do
-      table.insert(sources, "seq_voice_"..seq_no)
+      table.insert(sources, "seq_voice_" .. seq_no)
     end
     table.insert(sources, "crow_voice")
     table.insert(sources, "midi_voice")
@@ -1012,13 +1025,13 @@ function init()
 
     for i = 1, #pset_lookup do
       local tablename = pset_lookup[i]
-      tab.save(_G[tablename],filepath..tablename..".data")
-      print("table >> write: " .. filepath..tablename..".data")
+      tab.save(_G[tablename], filepath .. tablename .. ".data")
+      print("table >> write: " .. filepath..tablename .. ".data")
     end
   end
 
 
-  function params.action_read(filename,silent,number)
+  function params.action_read(filename, silent, number)
     local number = number or "00" -- template
     nb:stop_all()
     local filepath = norns.state.data..number.."/"
@@ -2002,7 +2015,7 @@ end
 
 function gen_menu()
   -- SONG MENU
-  table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "clock_source", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
+  table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
   
   -- CHORD MENU
   table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})
@@ -4144,13 +4157,33 @@ function reset_grid_led_phase()
 end
 
 
-function set_grid_view(new_view)
-  local current_view = grid_view_name
-  grid_view_name = new_view
-  if current_view ~= new_view then -- actions to take if view changed
-    if new_view == "Chord" then
-      reset_grid_led_phase()
+function set_grid_view(new_view, new_pattern) -- optional 2nd arg for seq pattern
+  local new_pattern = new_pattern or active_seq_pattern
+
+  if (grid_view_name ~= new_view) or (active_seq_pattern ~= new_pattern) then
+    reset_grid_led_phase() -- reset led pulse phase so it's most visible
+    grid_view_name = new_view
+    active_seq_pattern = new_pattern
+    grid_dirty = true
+
+    if params:string("sync_grid_norns") == "On" then -- sync norns screen view with grid view
+      local new_page = nil
+
+      if new_view == "Arranger" then
+        new_page = "SONG"
+      elseif new_view == "Chord" then
+        new_page = "CHORD"
+      elseif new_view == "Seq" then
+        new_page = "SEQ " .. new_pattern
+      end
+
+      page_index = tab.key(pages, new_page)
+      page_name = new_page
+
+      menu_index = 0
+      selected_menu = menus[page_index][menu_index]
     end
+
   end
 end
 
@@ -4169,9 +4202,8 @@ function update_pattern_queue() -- run after changes are made to arranger or arr
 end
 
 -- GRID KEYS
--- todo p1 put in some top level checks so we can break this up into functions or something navigatable
 ---@diagnostic disable-next-line: duplicate-set-field
-function g.key(x,y,z)
+function g.key(x, y, z)
   if z == 1 then
 
     if screen_view_name == "Events" then
@@ -4289,9 +4321,9 @@ function g.key(x,y,z)
         end
       end
 
-    -- view_key buttons  
-    elseif x == 16 and y > 5 + extra_rows then
-      if interaction == nil then  -- interactions block view switching
+    elseif x == 16 and y > 5 + extra_rows then -- view switcher (across all views except Events)
+      if (grid_interaction or "view_switcher") == "view_switcher" then  -- other interactions block view switching
+        grid_interaction = "view_switcher"
         view_key_count = view_key_count + 1
         pattern_grid_offset = 0
         
@@ -4302,6 +4334,7 @@ function g.key(x,y,z)
         table.insert(grid_view_keys, y - extra_rows)
         if view_key_count == 1 then
           set_grid_view(grid_views[y - extra_rows - 5])
+
         elseif view_key_count > 1 and (grid_view_keys[1] == 7 and grid_view_keys[2] == 8) or (grid_view_keys[1] == 8 and grid_view_keys[2] == 7) then
           screen_view_name = "Chord+seq"
         end
@@ -4335,13 +4368,13 @@ function g.key(x,y,z)
         
       
       -- ARRANGER SEGMENT CHORD PATTERNS
-      elseif y < 5 and interaction ~= "arranger_shift" then
+      elseif y < 5 and grid_interaction ~= "arranger_shift" then
         arranger[x_offset] = y == arranger[x_offset] and 0 or y  -- change arranger segment
         gen_arranger_padded()
         update_pattern_queue()
         
         -- allow pasting of events while setting patterns (but not the other way around)
-        if interaction == "event_copy" then
+        if grid_interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
           print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
           gen_arranger_dash_data("Event copy+paste")
@@ -4350,8 +4383,8 @@ function g.key(x,y,z)
       -- ARRANGER EVENTS TIMELINE KEY DOWN
       elseif y == 5 then
         arranger_loop_key_count = arranger_loop_key_count + 1
-        if interaction ~= "arranger_shift" then -- nil then
-          interaction = "event_copy"  
+        if (grid_interaction or "event_copy") == "event_copy" then -- if no interaction or already in event_copy
+          grid_interaction = "event_copy"
           -- First touched pattern is the one we edit, effectively resetting on key_count = 0
           if arranger_loop_key_count == 1 then
             event_edit_segment = x_offset
@@ -4365,12 +4398,12 @@ function g.key(x,y,z)
             gen_arranger_dash_data("Event copy+paste")
           end
         end
+      
       end
       
-    --CHORD PATTERN KEYS
-    elseif grid_view_name == "Chord" then
+    elseif grid_view_name == "Chord" then --CHORD PATTERN KEYS
 
-      if x < 15 then
+      if x < 15 then -- chord pattern
         chord_key_count = chord_key_count + 1
         if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = 0
@@ -4387,22 +4420,19 @@ function g.key(x,y,z)
           play_chord()
         end
 
-      -- set chord_pattern_length  
-      elseif x == 15 then
+      
+      elseif x == 15 then -- set chord_pattern_length
         params:set("chord_pattern_length", y + pattern_grid_offset)
         gen_arranger_dash_data("g.key chord_pattern_length")
       
 
-      elseif x == 16 and y <5 then  --Key DOWN events for pattern switcher.
+      elseif x == 16 and y <5 then  --Key DOWN events for chord pattern switcher
       
-        if grid_view_keys[1] == 7 then -- mute/unmute
-          interaction = "mute"
-          params:set("chord_mute", 3 - params:get("chord_mute"))
-          -- to sync phase of slow_pulse on keypress
-          -- this might cause other issues depending on where else slow_pulse is used
+        if grid_interaction == "view_switcher" then -- mute/unmute
+          params:set("chord_mute", 3 - params:get("chord_mute")) -- toggle mute state
         else
 
-          interaction = "chord_pattern_copy"
+          grid_interaction = "chord_pattern_copy"
           pattern_key_count = pattern_key_count + 1
           pattern_keys[y] = 1
           if pattern_key_count == 1 then
@@ -4453,11 +4483,11 @@ function g.key(x,y,z)
         end
       elseif x == 15 then
         params:set("seq_pattern_length_" .. active_seq_pattern, y + pattern_grid_offset)
-      elseif y <= max_seqs then -- pattern selector
-        if grid_view_keys[1] == 8 then -- mute/unmute
+      elseif y <= max_seqs then -- seq pattern selector
+        if grid_interaction == "view_switcher" then -- mute/unmute
           params:set("seq_mute_"..y, 3 - params:get("seq_mute_"..y))
         else -- switch seq grid view
-          active_seq_pattern = y
+          set_grid_view("Seq", y)
         end
       end
     end
@@ -4468,6 +4498,7 @@ function g.key(x,y,z)
   elseif z == 0 then
     -- Events key up
     if screen_view_name == "Events" then
+
       event_key_count = math.max(event_key_count - 1,0)
       
       -- Reset event_edit_step/lane when last key is released (if it was skipped when doing a K3 save to allow for copy+paste)
@@ -4476,29 +4507,37 @@ function g.key(x,y,z)
         event_edit_lane = 0
       end
 
-    -- view_key buttons
-    elseif x == 16 and y > 5 then
+    elseif x == 16 and y > 5 then -- view_key buttons
+
+      -- tracking of view_switcher keys is never blocked by interactions
       view_key_count = math.max(view_key_count - 1, 0)
       table.remove(grid_view_keys, tab.key(grid_view_keys, y))
-      if view_key_count > 0 then
-        set_grid_view(grid_views[grid_view_keys[1] - 5])
-        
-        if view_key_count > 1 and (grid_view_keys[1] == 7 and grid_view_keys[2] == 8) or (grid_view_keys[1] == 8 and grid_view_keys[2] == 7) then
-          screen_view_name = "Chord+seq"
+
+      if grid_interaction == "view_switcher" then -- other interactions block processing
+        if view_key_count > 0 then
+          set_grid_view(grid_views[grid_view_keys[1] - 5]) -- in case multiple are held and one is released
+          
+          if view_key_count > 1 and (grid_view_keys[1] == 7 and grid_view_keys[2] == 8) or (grid_view_keys[1] == 8 and grid_view_keys[2] == 7) then
+            screen_view_name = "Chord+seq" -- used for tooltip when holding multiple keys. Kinda hacky.
+          else
+            screen_view_name = "Session"   -- used for tooltip
+          end
         else
-          screen_view_name = "Session"  
+          screen_view_name = "Session"     -- used for tooltip
+          grid_interaction = nil -- how to handle other interaction keys that are being held and were blocked?
         end
-      else
-        screen_view_name = "Session"
       end
 
     -- Chord key up      
     elseif grid_view_name == "Chord" then
       if x == 16 then
         if y <5 then
-          if interaction ~= "mute" then
-            pattern_key_count = math.max(pattern_key_count - 1,0)
-            pattern_keys[y] = nil
+
+          -- always keep track of these even if in a blocking interaction
+          pattern_key_count = math.max(pattern_key_count - 1,0)
+          pattern_keys[y] = nil
+
+          if grid_interaction == "chord_pattern_copy" then
             if pattern_key_count == 0 and pattern_copy_performed == false then
               
               -- Resets current active_chord_pattern immediately if transport is stopped
@@ -4508,13 +4547,11 @@ function g.key(x,y,z)
                 chord_pattern_position = 0
                 reset_external_clock()
                 reset_pattern()
-                -- tells dash to show RST rather than 1.0
                 if arranger_position == 1 and chord_pattern_position == 0 then
                   reset_arrangement()
                 end
                 
-              -- Manual jump to queued pattern  
-              elseif y == pattern_queue and transport_active == false then
+              elseif y == pattern_queue and transport_active == false then -- Manual jump to queued pattern
                 print("Manual jump to queued pattern")
                 
                 set_chord_pattern(y)
@@ -4534,14 +4571,18 @@ function g.key(x,y,z)
                 end
               end
             end
+
+            if pattern_key_count == 0 then
+              -- print("resetting pattern_copy_performed to false")
+              pattern_copy_performed = false
+              grid_interaction = nil
+            end
+
           end
         end
-        if pattern_key_count == 0 then
-          -- print("resetting pattern_copy_performed to false")
-          pattern_copy_performed = false
-          interaction = nil
-        end  
-      elseif x < 15 then
+
+
+      elseif x < 15 then -- patterns
         chord_key_count = chord_key_count - 1
         if chord_key_count == 0 then
           -- This reverts the chord readout to the currently loaded chord but it is kinda confusing when paused so now it just wipes and refreshes at the next chord step. Could probably be improved todo p2
@@ -4552,22 +4593,24 @@ function g.key(x,y,z)
       end
     
     
-    -- ARRANGER KEY UP
-    elseif grid_view_name == "Arranger" then
-      local x_offset = x + arranger_grid_offset -- currently only used 
+    elseif grid_view_name == "Arranger" then -- ARRANGER KEY UP
       
       -- ARRANGER EVENTS TIMELINE KEY UP
       if y == 5 then
         arranger_loop_key_count = math.max(arranger_loop_key_count - 1, 0)
-        
-        -- Insert/remove patterns/events after arranger shift with K3
+
+
         if arranger_loop_key_count == 0 then
-          if interaction == "arranger_shift" then
+          if grid_interaction == "arranger_shift" then -- Insert/remove patterns/events after arranger shift with E3
             apply_arranger_shift()
             update_pattern_queue()
+            grid_interaction = nil
+          elseif grid_interaction == "event_copy" then
+            grid_interaction = nil
           end
-          interaction = nil
         end
+
+
       end
     end
 
@@ -4577,7 +4620,7 @@ end
 
 
 function apply_arranger_shift()
-  if d_cuml > 0 then  -- same as interaction == "arranger_shift"? todo p2 clean up anywhere this check is used
+  if d_cuml > 0 then
     for i = 1, d_cuml do
       table.insert(arranger, event_edit_segment, 0)
       table.remove(arranger, max_arranger_length + 1)
@@ -4659,7 +4702,7 @@ function key(n,z)
         grid_dirty = true
       
         -- Arranger Events strip held down
-      elseif arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then -- interaction == nil then
+      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
         local current_arranger_queue = arranger_queue
         
         arranger_queue = event_edit_segment
@@ -4731,7 +4774,7 @@ function key(n,z)
       -- K2 Transport controls K2 - STOP/RESET --
       ----------------------------------------
         
-      elseif interaction ~= "arranger_shift" then -- == nil then -- actually seems fine to do transport controls this during arranger shift?
+      elseif grid_interaction ~= "arranger_shift" then -- == nil then -- actually seems fine to do transport controls this during arranger shift?
 
         if params:string("clock_source") == "internal" then
           -- print("internal clock")
@@ -4848,7 +4891,7 @@ function key(n,z)
         -- Event Editor --
         -- K3 with Event Timeline key held down enters Event editor / function key event editor
         ---------------------------------------------------------------------------        
-      if arranger_loop_key_count > 0 and interaction ~= "arranger_shift" then
+      if arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -4856,7 +4899,7 @@ function key(n,z)
         event_edit_active = false
         reset_grid_led_phase()
         screen_view_name = "Events"
-        interaction = nil
+        grid_interaction = nil
         grid_dirty = true
 
         update_lanes() -- in case arranger shift has changed lane config
@@ -5061,7 +5104,7 @@ function key(n,z)
         -- Transport controls K3 - PLAY --
         ----------------------------------
         -- Todo p1 need to have a way of canceling a pending pause once transport controls are reworked
-      elseif interaction == nil then
+      elseif grid_interaction == nil then
         if params:string("clock_source") == "internal" then
           -- todo p0 evaluate this vs transport_state
           if transport_active == false then
@@ -5197,11 +5240,11 @@ function enc(n,d)
 
   -- n == ENC 2 ------------------------------------------------
   elseif n == 2 then
-    if view_key_count > 0 then
-      local d = util.clamp(d, -1, 1)
+    if grid_interaction == "view_switcher" then
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
+        local d = util.clamp(d, -1, 1) -- no acceleration
         rotate_pattern(grid_view_name, d)
-        grid_dirty = true            
+        grid_dirty = true
       end
    
     elseif screen_view_name == "Events" then
@@ -5215,7 +5258,7 @@ function enc(n,d)
         selected_events_menu = events_menus[events_index]
       end
 
-    else -- standard menus
+    elseif not grid_interaction then -- standard menus
       menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
       selected_menu = menus[page_index][menu_index]
       if norns_interaction == "preview_param" and menu_index ~= 0 then
@@ -5226,9 +5269,9 @@ function enc(n,d)
   else -- n == ENC 3 -------------------------------------------------------------  
   
     -- Grid-view custom encoder actions
-    if view_key_count > 0 then
-      local d = util.clamp(d, -1, 1)
-      if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
+    if grid_interaction == "view_switcher" then
+      if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq
+        local d = util.clamp(d, -1, 1)
         transpose_pattern(grid_view_name, d)
         grid_dirty = true
       end
@@ -5294,25 +5337,29 @@ function enc(n,d)
 
       end
       
-      --------------------
-      -- Arranger shift --  
-      --------------------
-    elseif grid_view_name == "Arranger" and arranger_loop_key_count > 0 then
+    elseif grid_interaction == "event_copy" or grid_interaction == "arranger_shift" then -- arranger shift
       local d = util.clamp(d, -1, 1)
-      -- Arranger segment detail options are on-screen
-      -- block event copy+paste, K2 and K3 (arranger jump and event editor)
-      -- new global to identify types of user interactions that should block certain other interactions e.g. copy+paste, arranger jump, and entering event editor
-      interaction = "arranger_shift"
+      grid_interaction = "arranger_shift"
       d_cuml = util.clamp(d_cuml + d, -64, 64)
       
       grid_dirty = true
   
-    elseif screen_view_name == "Session" then
+    elseif (not grid_interaction) and screen_view_name == "Session" then -- 
       if menu_index == 0 then
         menu_index = 0
         page_index = util.clamp(page_index + d, 1, #pages)
         page_name = pages[page_index]
-        selected_menu = menus[page_index][menu_index] -- redundant?
+
+        if params:string("sync_grid_norns") == "On" then
+          if page_name == "SONG" then
+            set_grid_view("Arranger")
+          elseif page_name == "CHORD" then
+            set_grid_view("Chord")
+          elseif string.sub(page_name, 1, 3) == "SEQ" then
+            set_grid_view("Seq", tonumber(string.sub(page_name, 4)))
+          end
+        end
+
       elseif norns_interaction == "preview_param" then
         preview_param:delta(d)
         preview_param_q_get[preview_param.id] = preview_param:get()
@@ -5772,33 +5819,38 @@ function redraw()
   local lvl_menu_selected = lvl.menu_selected
   local lvl_menu_deselected = lvl.menu_deselected
 
+  local grid_interaction = grid_interaction
+  local screen_view_name = screen_view_name
+
   screen.clear()
 
   -- POP-up g.key tooltips always takes priority
-  if view_key_count > 0 then
-    if screen_view_name == "Chord+seq" then
-      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→"})
-      footer("GENERATE")
-    elseif grid_view_name == "Arranger" then
-      tooltips(string.upper(grid_view_name) .. " GRID")
+  if grid_interaction == "view_switcher" then
+    -- technically screen_view_name can be used to show generator operates on chord+seq, but footer redesign is too small
+    -- if screen_view_name == "Chord+seq" then -- technically this can be used to show generator operates on chord+seq
+    --   local line3 = grid_view_name == "Chord" and "Tap pattern A-D: mute" or "Tap SEQ 1-" .. max_seqs .. ": mute"
+    --   tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", line3})
+    --   footer("GENERATE") -- technically this should indicate generating patterns for chord+seq
+    if grid_view_name == "Arranger" then
+      tooltips("SONG ARRANGER GRID")
     elseif grid_view_name == "Chord" then
-      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
+      tooltips("CHORD GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
       footer("GENERATE")
     elseif grid_view_name == "Seq" then
-      tooltips(string.upper(grid_view_name) .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
+      tooltips("SEQ " .. active_seq_pattern .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
       footer("GENERATE")
-      end
+    end
 
-  -- Arranger shift interaction
-  elseif interaction == "arranger_shift" then
+  elseif grid_interaction == "arranger_shift" then
     tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→"})
-  -- Arranger events timeline held down
-  elseif arranger_loop_key_count > 0 then
+
+  elseif grid_interaction == "event_copy" then
     tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→", "Hold+tap: paste events"})
     footer("JUMP", "EVENTS")
-  -- tooltips for interacting with chord patterns      
-  elseif grid_view_name == "Chord" and pattern_key_count > 0 then -- add a new interaction for this 
+  
+  elseif grid_interaction == "chord_pattern_copy" then
     tooltips("CHORD PATTERN " .. pattern_name[pattern_copy_source], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
+  
   else -- Standard priority (not momentary) menus
     -- NOTE: UI elements placed here appear in all views
 
@@ -5826,7 +5878,7 @@ function redraw()
           local type = event_lanes[i].type
           local glyph = type == "Single" and "☑" or type == "Multi" and "☰" or "☐" --☑ -- todo norns.ttf
 
-          screen.level(lane == i and lvl_menu_selected or lvl_menu_deselected) -- dim out the non-active glyphs to match pagination in main menu (+ less ghosting)
+          screen.level(lane == i and lvl_menu_selected or lvl_menu_deselected)
           screen.move((header_x + 35 + (i - 1) * 6), header_y)
           screen.text(glyph)
         end
@@ -6084,13 +6136,13 @@ function redraw()
       end
       
 
-      -- MAIN MENU HEADER/PAGE SELECTOR
-      -- horizontal main menu pagination
-      -- todo adapt to max_seqs
+      -- MAIN MENUPAGE SELECTOR
       if paging then  -- if we want it to only appear when changing pages
+        local width = (4 * #pages) - 1
+        local x = math.ceil((dash_x - width) / 2)
         for i = 1, #pages do
           screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
-          screen.rect(38 + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
+          screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
           screen.fill()
         end
       end
