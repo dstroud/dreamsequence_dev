@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240618 @modularbeat
+-- 240619 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -88,13 +88,8 @@ function init()
     nb.voice_count = prefs.voice_instances or 1
     print("nb.voice_count set to " .. nb.voice_count)
   end
+
   nb:init()
-  -- suppress some nb_crow and nb_jf mod players-- they come back on next nb init
-  nb.players["crow 1/2"] = nil
-  nb.players["crow 3/4"] = nil
-  nb.players["crow para"] = nil
-  -- nb.players["jf kit"] = nil
-  nb.players["jf mpe"] = nil
 
 
   ------------------------------------
@@ -190,20 +185,12 @@ function init()
   function cleanup()
     seq_lattice:destroy()
     nb:stop_all()
+    note_players = nil -- clears bundled crow/midi players for next script
     clock.link.stop()
     
     if preinit_jf_mode == 0 then
       crow.ii.jf.mode(preinit_jf_mode)
       print("Restoring jf.mode to " .. preinit_jf_mode)
-    end
-
-    -- clear weirdo crow players so they don't persist to other scripts
-    for i = 1, 4 do             -- cv
-      for j = 0, 4 do           -- env
-        if i ~= j then
-          nb.players["crow_ds "..i.."/"..j] = nil
-        end
-      end
     end
 
   end
@@ -651,35 +638,15 @@ function init()
   subdivide_indices("crow_ds 1/0") -- cv params
   subdivide_indices("crow_ds 1/2") -- env params
   
+  
   -- append nb params to events_lookup
   -- todo shared function with gen_voice_lookup() but mind the different trim width
   local function gen_category_name(string)
     local string = string
     
-    -- shorten midi names
-    if nb.players[string] ~= nil and nb.players[string].conn ~= nil then
-  
-      local function find_vport(name)
-        for k,v in pairs(midi.vports) do
-          if v.name == name then
-            return k
-          end
-        end
-      end
-  
-      local vport_name = nb.players[string].conn.name
-      -- can't rely on nb.players[string].conn.device.port since nbout doesn't set this :/
-      local port = find_vport(vport_name)
-      local voice = string.match(string, "(%d+)$")
-      local name = first_to_upper(string.lower(vport_name))
-      if screen.text_extents(name) > 35 then -- longest we can go and still append " 16.16" and "-"" (port.voice)
-        name = util.trim_string_to_width(string.upper(util.acronym(name)), 35)
-      end
-      string = port .. "." .. voice .. " " .. name
-    end
     return util.trim_string_to_width(string, 81) -- different length for event vs standard menus
   end
-  
+
 
   -- Function to sort table keys alphabetically. Might move to lib/functions
   local function sort_keys(tbl)
@@ -2047,8 +2014,10 @@ function grid_refresh()
   end
 end
 
+
 -- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
--- 1. shortens MIDI player names to port # and voice_count (sorry, outta space!)
+-- Previously: shortens MIDI player names to port # and voice_count (sorry, outta space!) -- no longer
+-- 1. suppresses default midi voices as we use custom ones
 -- 2. only serves up valid crow cv/env options based on crow_out_ param config
 function gen_voice_lookups()
   voice_param_options = {}
@@ -2066,34 +2035,8 @@ function gen_voice_lookups()
   for i = 1, params:lookup_param("chord_voice_raw").count do
     local option = params:lookup_param("chord_voice_raw").options[i]
 
-      -- identify connected MIDI players and rename
-      if nb.players[option] ~= nil and nb.players[option].conn ~= nil then
-        
-        local function find_vport(name)
-          for k,v in pairs(midi.vports) do
-            if v.name == name then
-              return k
-            end
-          end
-        end
+      if string.sub(option, 1, 7) == "crow_ds" then
 
-        local vport_name = nb.players[option].conn.name
-        -- can't rely on nb.players[option].conn.device.port since nbout doesn't set this :/
-        local port = find_vport(vport_name)
-        local voice = string.match(option, "(%d+)$")
-        local name = first_to_upper(string.lower(vport_name))
-
-        if screen.text_extents(name) > 35 then -- longest we can go and still append " 16.16" and "-"" (port.voice)
-          name = util.trim_string_to_width(string.upper(util.acronym(name)), 35)
-        end
-                
-        local option = port .. "." .. voice .. " " .. name
-
-        table.insert(voice_param_options, trim_menu(option))
-        table.insert(voice_param_index, i)
-        
-      -- mask any unwanted crow_ds players  
-      elseif string.sub(option, 1, 7) == "crow_ds" then
         local length = string.len(option)
         local cv = tonumber(string.sub(option, length - 2, length - 2))
         local env = tonumber(string.sub(option, length, length))
@@ -2108,9 +2051,19 @@ function gen_voice_lookups()
           table.insert(voice_param_index, i)            
         end
         
-      -- other players pass through as-is
-      else
-        table.insert(voice_param_options, trim_menu(first_to_upper(option)))
+      elseif string.sub(option, 1, 9) == "midi port" then -- reformat bundled ds midi player names
+        -- strip leading 0 that was used by nb to sort 1-2 trailing digits in string
+        table.insert(voice_param_options, "MIDI port " .. tonumber(string.sub(option, 11, 12)))
+        table.insert(voice_param_index, i)
+
+      -- block some players that are not relevant or have built-in alternatives
+      elseif string.sub(option, 1, 5) ~= "midi:"
+      and option ~= "crow 1/2"
+      and option ~= "crow 3/4"
+      and option ~= "crow para" -- todo test
+      -- and option ~= "jf kit" -- todo test
+      and option ~= "jf mpe" then
+        table.insert(voice_param_options, trim_menu(first_to_upper(option))) -- todo extend this or just mask!
         table.insert(voice_param_index, i)
       end
       

@@ -92,7 +92,7 @@ local function add_midi_players()
                             mod_d = "cc " .. params:get("midi_modulation_cc_" .. i .. '_' .. j)
                         end
                         return {
-                            name = "v.name",
+                            name = v.name,
                             supports_bend = true,
                             supports_slew = false,
                             note_mod_targets = { "pressure" },
@@ -128,7 +128,9 @@ function nb:add_param(param_id, param_name)
     for name, _ in pairs(note_players) do
         table.insert(names, name)
     end
-    table.sort(names)
+    table.sort(names, function(a, b)
+        return string.lower(a) < string.lower(b)
+    end)
     table.insert(names, 1, "none")
     local names_inverted = tab.invert(names)
     params:add_option(param_id, param_name, names, 1)

@@ -32,5 +32,7 @@ include(lib .. "glyphs")
 -- nota bene
 nb = include("lib/nb/lib/nb")
 
--- bundled crow nb voice
+-- bundled nb voices
 include("lib/crow")
+
+include("lib/midi")
