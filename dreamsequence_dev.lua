@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240619 @modularbeat
+-- 240620 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -22,13 +22,10 @@
 -- Crow OUT 4: Clock out
 
 
-
-
 -- stuff needed by includes
-
 -- layout and palette
 xy = {
-  dash_x = 99,
+  dash_x = 99, -- todo draw dash first-- adjust var if dash is empty
   header_x = 0,
   header_y = 7,
   menu_y = 9,
@@ -250,6 +247,25 @@ function init()
   --------------------
   -- PARAMS
   --------------------
+
+  -- functions used by params
+
+  -- show or hide midi channel param/menu
+  local function set_channel_vis(id, channel_param)
+    local old_visible = params:visible(channel_param)
+    local player = nb.players[id]
+    local new_visible = player and player.channel
+    if old_visible ~= new_visible then
+      if new_visible then
+        params:show(channel_param)
+      else
+        params:hide(channel_param)
+      end
+      _menu.rebuild_params()
+      gen_menu()
+    end
+  end
+
   ----------------------------------------
   params:add_separator ("DREAMSEQUENCE")
 
@@ -399,21 +415,22 @@ function init()
   ------------------
   -- CHORD PARAMS --
   ------------------
-  params:add_group("chord", "CHORD", 18)
-
-  -- params:add_number("chord_div_index", "Step length", 5, 57, 15, function(param) return divisions_string(param:get()) end)
-  -- -- action required here for pset loading. Will then be redefined post-bang with action for lattice
-  -- params:set_action("chord_div_index",function(val) chord_div = division_names[val][1] end)
-
-  -- -- chord_div needs to be set *before* the bang happens
-  -- chord_div = division_names[params:get("chord_div_index")][1]
+  params:add_group("chord", "CHORD", 19)
 
   nb:add_param("chord_voice_raw", "Voice raw")
   params:hide("chord_voice_raw")
 
   gen_voice_lookups() -- required to build front-end voice selectors (chord_voice_raw dependency)
   params:add_option("chord_voice", "Voice", voice_param_options, 1)
-  params:set_action("chord_voice", function(index) params:set("chord_voice_raw", voice_param_index[index]) end)
+  params:set_action("chord_voice",
+    function(index)
+      params:set("chord_voice_raw", voice_param_index[index])
+      set_channel_vis(params:string("chord_voice_raw"), "chord_channel")
+    end
+  )
+
+  params:add_number("chord_channel", "Channel", 1, 16, 1)
+  params:hide("chord_channel")
 
   params:add_option("chord_mute", "Play/mute", {"Play", "Mute"}, 1)
   
@@ -463,7 +480,7 @@ function init()
 
   for seq_no = 1, max_seqs do
 
-    params:add_group("seq"..seq_no, "SEQ "..seq_no, 23)
+    params:add_group("seq"..seq_no, "SEQ "..seq_no, 24)
 
     params:add_option("seq_note_map_"..seq_no, "Notes", note_map, 1)
     
@@ -513,8 +530,17 @@ function init()
     params:hide("seq_voice_raw_"..seq_no)
   
     params:add_option("seq_voice_"..seq_no, "Voice", voice_param_options, 1)
-    params:set_action("seq_voice_"..seq_no, function(index) params:set("seq_voice_raw_"..seq_no, voice_param_index[index]) end)
-    
+    params:set_action("seq_voice_"..seq_no,
+      function(index)
+        params:set("seq_voice_raw_"..seq_no, voice_param_index[index])
+        set_channel_vis(params:string("seq_voice_raw_"..seq_no), "seq_channel_"..seq_no)
+      end
+    )
+
+
+    params:add_number("seq_channel_"..seq_no, "Channel", 1, 16, 1)
+    params:hide("seq_channel_"..seq_no)
+
     params:add_option("seq_mute_"..seq_no, "Play/mute", {"Play", "Mute"}, 1)
 
     params:add_number("seq_duration_index_"..seq_no, "Duration", 0, 57, 0, function(param) return durations_string(param:get()) end)
@@ -550,7 +576,7 @@ function init()
   ------------------
   -- MIDI HARMONIZER PARAMS --
   ------------------
-  params:add_group("midi_harmonizer", "MIDI HARMONIZER", 8)  
+  params:add_group("midi_harmonizer", "MIDI HARMONIZER", 9)
 
   params:add_option("midi_note_map", "Notes", note_map, 1)
 
@@ -558,7 +584,15 @@ function init()
   params:hide("midi_voice_raw")
 
   params:add_option("midi_voice", "Voice", voice_param_options, 1)
-  params:set_action("midi_voice", function(index) params:set("midi_voice_raw", voice_param_index[index]) end)
+  params:set_action("midi_voice", 
+    function(index)
+      params:set("midi_voice_raw", voice_param_index[index])
+      set_channel_vis(params:string("midi_voice_raw"), "midi_channel")
+    end
+  )
+
+  params:add_number("midi_channel", "Channel", 1, 16, 1)
+  params:hide("midi_channel")
 
   params:add_number("midi_harmonizer_in_port", "Port in",1,#midi.vports,1)
     params:set_action("midi_harmonizer_in_port", function(value)
@@ -581,13 +615,21 @@ function init()
   ------------------
   -- CV HARMONIZER PARAMS --
   ------------------
-  params:add_group("cv_harmonizer", "CV HARMONIZER", 10)
+  params:add_group("cv_harmonizer", "CV HARMONIZER", 11)
   
   nb:add_param("crow_voice_raw", "Voice raw")
   params:hide("crow_voice_raw")
   
   params:add_option("crow_voice", "Voice", voice_param_options, 1)
-  params:set_action("crow_voice", function(index) params:set("crow_voice_raw", voice_param_index[index]) end)
+  params:set_action("crow_voice",
+    function(index)
+      params:set("crow_voice_raw", voice_param_index[index])
+      set_channel_vis(params:string("crow_voice_raw"), "crow_channel")
+    end
+  )
+
+  params:add_number("crow_channel", "Channel", 1, 16, 1)
+  params:hide("crow_channel")
 
   params:add_number("crow_div_index", "Trigger", 0, 57, 0, function(param) return crow_trigger_string(param:get()) end)
   params:set_action("crow_div_index", function(val) crow_div = val == 0 and 0 or division_names[val][1] end) -- overwritten
@@ -1287,11 +1329,18 @@ params:set_action("ts_numerator",
     -- todo: spin up tables for active voices so new notes only check against history for the matching voice
     -- Assumes PPQN == global_clock_div. Lookup tables will need adjustments if PPQN ~= 48
     for i = #note_history, 1, -1 do -- Steps backwards to account for table.remove messing with [i]
-      note_history[i].step = note_history[i].step - 1
-      if note_history[i].step == 0 then
-        note_history[i].player:note_off(note_history[i].note)
+      local hist = note_history[i]
+      hist.step = hist.step - 1
+
+      if hist.step == 0 then
+        if hist.channel then -- todo unsure if this check is optimal vs just sending properties
+          hist.player:note_off(hist.note, 0, {ch = hist.channel})
+        else
+          hist.player:note_off(hist.note)
+        end
         table.remove(note_history, i)
       end
+
     end
   end
 
@@ -1980,23 +2029,46 @@ end
 -- end
 
 
+-- todo consider breaking this up into sub-tables/functions as we're generating all of them each time a voice is changed
+-- benefit in having them all stored, just not generated
 function gen_menu()
+  menus = {}
+
   -- SONG MENU
   table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
-  
+
   -- CHORD MENU
-  table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})
- 
+  table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
+  if params:visible("chord_channel") or norns_interaction == "preview_param" then
+    table.insert(menus[#menus], 2, "chord_channel")
+  end
+
   -- SEQ MENUS
   for seq_no = 1, max_seqs do
     table.insert(menus, {"seq_voice_"..seq_no, "seq_note_map_"..seq_no, "seq_note_priority_"..seq_no, "seq_polyphony_"..seq_no, "seq_start_on_"..seq_no, "seq_reset_on_"..seq_no, "seq_octave_"..seq_no, "seq_rotate_"..seq_no, "seq_shift_"..seq_no, "seq_div_index_"..seq_no, "seq_duration_index_"..seq_no, "seq_swing_"..seq_no, "seq_accent_"..seq_no, "seq_dynamics_"..seq_no, "seq_probability_"..seq_no})
+    if params:visible("seq_channel_"..seq_no) or norns_interaction == "preview_param" then
+      table.insert(menus[#menus], 2, "seq_channel_"..seq_no)
+    end
   end
   
   -- MIDI HARMONIZER MENU
   table.insert(menus, {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"})
+  if params:visible("midi_channel") or norns_interaction == "preview_param" then
+    table.insert(menus[#menus], 2, "midi_channel")
+  end
 
   -- CV HARMONIZER MENU
   table.insert(menus, {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index","cv_harm_swing", "crow_dynamics"})
+  if params:visible("crow_channel") or norns_interaction == "preview_param" then
+    table.insert(menus[#menus], 2, "crow_channel")
+  end
+
+  -- keep us on the same menu or, if menu is gone, previous/above menu
+  if (menu_index or 0) ~= 0 then
+    menu_index = tab.key(menus[page_index], selected_menu) or page_index - 1
+    selected_menu = menus[page_index][menu_index]
+  end
+
 end
 
 
@@ -2016,9 +2088,9 @@ end
 
 
 -- front-end voice selector param that dynamically serves up players to be passed to _voice_raw param:
--- Previously: shortens MIDI player names to port # and voice_count (sorry, outta space!) -- no longer
--- 1. suppresses default midi voices as we use custom ones
--- 2. only serves up valid crow cv/env options based on crow_out_ param config
+-- 1. suppresses default midi and nb_crow voices
+-- 2. renames midi_ds players
+-- 3. only serves up valid crow cv/env options based on crow_out_ param config
 function gen_voice_lookups()
   voice_param_options = {}
   voice_param_index = {}
@@ -2034,8 +2106,8 @@ function gen_voice_lookups()
   
   for i = 1, params:lookup_param("chord_voice_raw").count do
     local option = params:lookup_param("chord_voice_raw").options[i]
-
-      if string.sub(option, 1, 7) == "crow_ds" then
+    local sub7 = string.sub(option, 1, 7)
+      if sub7 == "crow_ds" then
 
         local length = string.len(option)
         local cv = tonumber(string.sub(option, length - 2, length - 2))
@@ -2051,9 +2123,10 @@ function gen_voice_lookups()
           table.insert(voice_param_index, i)            
         end
         
-      elseif string.sub(option, 1, 9) == "midi port" then -- reformat bundled ds midi player names
+      -- might be better to handle this by checking if player.channel is true  
+      elseif sub7 == "midi_ds" then -- reformat bundled ds midi player names
         -- strip leading 0 that was used by nb to sort 1-2 trailing digits in string
-        table.insert(voice_param_options, "MIDI port " .. tonumber(string.sub(option, 11, 12)))
+        table.insert(voice_param_options, "MIDI port " .. tonumber(string.sub(option, 9, 10)))
         table.insert(voice_param_index, i)
 
       -- block some players that are not relevant or have built-in alternatives
@@ -3347,35 +3420,34 @@ end
 
 
 -- todo relocate!
-function to_player(player, note, dynamics, duration)
-  -- todo check if note_history exists and create if not?
-  -- also need to keep a list of players to run countdown functions on
-  
+function to_player(player, note, dynamics, duration, channel)
+  -- todo break up note_history by player so we don't have to check every note against non-matching players
+
   local note_on_time = util.time()
   local player_play_note = true
   local note_history_insert = true
   
   for i = 1, #note_history do
+    local hist = note_history[i]
     -- Check for duplicate notes and process according to dedupe_threshold setting
-    if note_history[i].player == player and note_history[i].note == note then
+    if hist.player == player and hist.channel == channel and hist.note == note then
       
       -- Preserve longer note-off duration to avoid which-note-was-first race condition. 
       -- Ex: if a sustained chord and a staccato note play at approximately the same time, the chord's note will sustain without having to worry about order
-      note_history[i].step = math.max(duration, note_history[i].step)
+      hist.step = math.max(duration, hist.step)
       note_history_insert = false -- don't insert a new note-off record since we just updated the duration
 
-      if params:get("dedupe_threshold") > 1 and (note_on_time - note_history[i].note_on_time) < dedupe_threshold_s then
-        -- print(("Deduped " .. note_on_time - note_history[i].note_on_time) .. " | " .. dedupe_threshold_s)
+      if params:get("dedupe_threshold") > 1 and (note_on_time - hist.note_on_time) < dedupe_threshold_s then
+        -- print(("Deduped " .. note_on_time - hist.note_on_time) .. " | " .. dedupe_threshold_s)
         player_play_note = false -- Prevent duplicate note from playing
       end
     
       -- Always update any existing note_on_time, even if a note wasn't played. 
       -- Otherwise the note duration may be extended but the gap between note_on_time and current time grows indefinitely and no dedupe occurs.
       -- Alternative is to not extend the duration when dedupe_threshold > 0 and a duplicate is found
-      note_history[i].note_on_time = note_on_time
+      hist.note_on_time = note_on_time
     end
   end
-
 
   -- if we're going to play a note...
   if player_play_note == true then
@@ -3383,26 +3455,44 @@ function to_player(player, note, dynamics, duration)
     -- existing (or updated) note duration exists
     -- MIDI/ex requires that we send a note-off for every note-on so immediately fire a note-off 
     if note_history_insert == false then
-      player:note_off(note)
-      
+      if channel then
+        player:note_off(note, 0, {ch = channel})
+      else
+        player:note_off(note)
+      end
+
     -- no other note duration exists so insert a new note record into the history table
     else
       table.insert(note_history, {
         step = duration,
         player = player,
+        channel = channel,
         note = note,
         note_on_time = note_on_time
       })
     end
   
-  -- Play note
-    player:note_on(note, dynamics)
+    -- Play note
+    if channel then -- todo unsure about the efficiency of this check vs. just sending nil properties table
+      player:note_on(note, dynamics, {ch = channel})
+    else
+      player:note_on(note, dynamics)
+    end
+
   end
 
 end
 
 
 function play_chord()
+  -- optional logic if we want to prevent notes being sent when voice == None.
+  -- leaving as-is for now since the plan is to break up note_history by player and can be blocked there probably
+  -- local param = params:lookup_param("chord_voice_raw")
+  -- if param.selected > 1 then -- don't do anything note if voice is None
+  -- local player = param:get_player()
+
+  local player = params:lookup_param("chord_voice_raw"):get_player()
+  local channel = player.channel and params:get("chord_channel") or nil
   local speed = chord_div / global_clock_div * strum_lengths[params:get("chord_strum_length")][1]
   local start, finish, step -- Determine the starting and ending indices based on the direction
   local playback = params:string("chord_style")
@@ -3412,16 +3502,12 @@ function play_chord()
     start, finish, step = note_qty, 1, -1  -- Bottom to top
   else
     start, finish, step = 1, note_qty, 1   -- Top to bottom for chord or Low-high strum/arp
-  end 
+  end
   
   local curve = params:get("chord_timing_curve") * .1
   -- local max_pre_scale = curve_get_y(#chord_transformed * .1, curve) -- scales across all notes
   local max_pre_scale = curve_get_y((note_qty - 1) * .1, curve) * (1/((note_qty - 1) / note_qty)) -- scales to penultimate note
-  local prev_y_scaled = 0
   local y_scaled = 0
-  local y_scaled_delta = 0
-  local note_sequence = 0
-  local player = params:lookup_param("chord_voice_raw"):get_player()
 
 
   strum_clock = clock.run(function()
@@ -3436,7 +3522,7 @@ function play_chord()
         local dynamics = dynamics + (dynamics * params:get("chord_dynamics_ramp") * .01 * elapsed)
         local dynamics = util.clamp(dynamics, 0, 1) -- per destination
         local note = chord_transformed[i] + params:get("transpose") + (params:get("chord_octave") * 12) + 48
-        to_player(player, note, dynamics, chord_duration)
+        to_player(player, note, dynamics, chord_duration, channel)
   
         if playback ~= "Off" and note_qty ~= 1 then
           local prev_y_scaled = y_scaled
@@ -3457,9 +3543,6 @@ function play_chord()
       
     end
   end)
-  
-  
- 
 end
 
 
@@ -3579,6 +3662,7 @@ function advance_seq_pattern(seq_no)
   -- todo would be awesome to have not just step probability but note probability!
   if params:get("seq_mute_"..seq_no) == 1 and math.random(1, 100) <= params:get("seq_probability_"..seq_no) then
     local player = params:lookup_param("seq_voice_raw_"..seq_no):get_player()
+    local channel = player.channel and params:get("seq_channel_"..seq_no) or nil
     local dynamics = (params:get("seq_dynamics_"..seq_no) * .01)
     local dynamics = dynamics + (dynamics * (_G["sprocket_seq_"..seq_no].downbeat and (params:get("seq_accent_"..seq_no) * .01) or 0))
     local priority = params:get("seq_note_priority_"..seq_no)
@@ -3593,7 +3677,7 @@ function advance_seq_pattern(seq_no)
       local x = seq_pattern[seq_no][seq_pattern_position[seq_no]]
       if x > 0 then
         local note = _G[note_map](x, octave) + 36
-        to_player(player, note, dynamics, seq_duration[seq_no])
+        to_player(player, note, dynamics, seq_duration[seq_no], channel)
       end
     
       
@@ -3602,7 +3686,7 @@ function advance_seq_pattern(seq_no)
       for x = 1, 14 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][x] == 1 then 
           local note = _G[note_map](x, octave) + 36
-          to_player(player, note, dynamics, seq_duration[seq_no])
+          to_player(player, note, dynamics, seq_duration[seq_no], channel)
           count = count + 1
           if count == polyphony then 
             break
@@ -3615,7 +3699,7 @@ function advance_seq_pattern(seq_no)
       for x = 14, 1, -1 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][x] == 1 then 
           local note = _G[note_map](x, octave) + 36
-          to_player(player, note, dynamics, seq_duration[seq_no])
+          to_player(player, note, dynamics, seq_duration[seq_no], channel)
           count = count + 1
           if count == polyphony then 
             break
@@ -3636,7 +3720,7 @@ function advance_seq_pattern(seq_no)
 
       for i = 1, math.min(#pool, polyphony) do
         local note = _G[note_map](pool[i], octave) + 36  -- make these local!
-        to_player(player, note, dynamics, seq_duration[seq_no])
+        to_player(player, note, dynamics, seq_duration[seq_no], channel)
       end
       
     end
@@ -3680,9 +3764,10 @@ function sample_crow(volts)
     -- Play the note
     
     local player = params:lookup_param("crow_voice_raw"):get_player()
+    local channel = player.channel and params:get("crow_channel") or nil
     local dynamics = params:get("crow_dynamics") * .01
 
-    to_player(player, note, dynamics, crow_duration)
+    to_player(player, note, dynamics, crow_duration, channel)
     
   end
   
@@ -3695,14 +3780,12 @@ end
 midi_event = function(data)
   local d = midi.to_msg(data)
   if d.type == "note_on" then
-
-    -- local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave"), params:get("chord_preload") ~= 0) + 36 -- todo p1 octave validation for all sources
-    local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
-
     local player = params:lookup_param("midi_voice_raw"):get_player()
+    local channel = player.channel and params:get("midi_channel") or nil
+    local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
     local dynamics = params:get("midi_dynamics") * .01 -- todo p1 velocity passthru (normalize to 0-1)
 
-    to_player(player, note, dynamics, midi_duration)
+    to_player(player, note, dynamics, midi_duration, channel)
     
   end
 end
@@ -4429,10 +4512,11 @@ function g.key(x, y, z)
         -- mostly shared with advance_seq. could be consolidated into one fn
         if transport_state == "stopped" or transport_state == "paused" then
           local player = params:lookup_param("seq_voice_raw_"..active_seq_pattern):get_player()
+          local channel = player.channel and params:get("seq_channel_"..active_seq_pattern) or nil
           local dynamics = (params:get("seq_dynamics_"..active_seq_pattern) * .01)
           -- local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
           local note = _G["map_note_" .. params:get("seq_note_map_"..active_seq_pattern)](x, params:get("seq_octave_"..active_seq_pattern)) + 36
-          to_player(player, note, dynamics, seq_duration[active_seq_pattern])
+          to_player(player, note, dynamics, seq_duration[active_seq_pattern], channel)
         end
       elseif x == 15 then
         params:set("seq_pattern_length_" .. active_seq_pattern, y + pattern_grid_offset)
@@ -4621,6 +4705,7 @@ function key(n,z)
         -- end
       else
         norns_interaction = "preview_param"
+        gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
           preview_param = clone_param(menus[page_index][menu_index])
         end
@@ -5155,6 +5240,7 @@ function key(n,z)
         preview_param_q_get = {}
         preview_param_q_string = {}
         norns_interaction = nil
+        gen_menu() -- re-hide any menus we don't need
       elseif norns_interaction == "event_actions" then
 
         -- make function if this ends up being used by K1 release as well as K3 down
@@ -5807,10 +5893,8 @@ function redraw()
   else -- Standard priority (not momentary) menus
     -- NOTE: UI elements placed here appear in all views
 
-    ----------------
-    -- EVENTS SCREEN
-    ----------------
-    if screen_view_name == "Events" then
+
+    if screen_view_name == "Events" then -- EVENTS SCREENS
       local lane = params:get("event_lane")
       local lane_id = event_lanes[lane].id
       local lane_type = event_lanes[lane].type -- or "Empty"
@@ -6018,8 +6102,7 @@ function redraw()
       end
 
         
-    -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
-    else
+    else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
       
       --------------------
