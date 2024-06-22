@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240620 @modularbeat
+-- 240621 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -51,7 +51,7 @@ local lvl_dimmed = {
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
-max_seqs = 2
+max_seqs = 3
 
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
@@ -490,11 +490,11 @@ function init()
 
         if val == 1 and type(seq_pattern[seq_no][1]) == "table" then -- poly to mono
           for step = 1, max_seq_pattern_length do
-            for col = 1, 14 do
+            for col = 1, 12 do
               if seq_pattern[seq_no][step][col] == 1 then
                 seq_pattern[seq_no][step] = col
                 break
-              elseif col == 14 then
+              elseif col == 12 then
                 seq_pattern[seq_no][step] = 0
               end
             end
@@ -503,14 +503,14 @@ function init()
         elseif val ~= 1 and type(seq_pattern[seq_no][1]) ~= "table" then  -- mono to poly
           for i = 1, max_seq_pattern_length do
             local v = seq_pattern[seq_no][i]
-            seq_pattern[seq_no][i] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+            seq_pattern[seq_no][i] = {0,0,0,0,0,0,0,0,0,0,0,0}
             seq_pattern[seq_no][i][v] = 1
           end
         end
       end
     )
     
-    params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 14, 1) -- to 0??
+    params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 12, 1) -- to 0??
 
     params:add_option("seq_start_on_"..seq_no, "Play", {"Loop", "All steps", "Chord steps", "Blank steps", "Cue/event"}, 1)
 
@@ -554,7 +554,7 @@ function init()
         
     params:add_number("seq_shift_"..seq_no, "Pattern ←→", 0, 13, 0, function(param) return param:get() end, true) -- dummy formatter??
     params:set_action("seq_shift_"..seq_no, function(val) seq_shift_abs(seq_no, val) end)
-    params:add_number("prev_seq_shift_"..seq_no, "prev_seq_shift_"..seq_no, -14, 14, 0)
+    params:add_number("prev_seq_shift_"..seq_no, "prev_seq_shift_"..seq_no, -12, 12, 0)
     params:hide("prev_seq_shift_"..seq_no)
     
     -- numbered so we can operate on parallel seqs down the road
@@ -840,7 +840,7 @@ function init()
       rows = 8
       print("16x8 or 16x16 Grid required. Add in SYSTEM >> DEVICES >> GRID")
     end
-    extra_rows = rows - 8
+    extra_rows = 0 -- rows - 8 -- todo prefs for various layouts
   end 
 
   function grid.add(dev)
@@ -914,7 +914,6 @@ function init()
   for i = 1, 15 do
     event_lanes[i] = {} --{type = "single", id = nil}
   end
-  -- event_ghosting = {0, 0, 0}
   events = {}
   events_length = {}
   
@@ -2298,7 +2297,7 @@ function seq_shift_abs(seq_no, new_shift_val)
   if params:get("seq_note_priority_"..seq_no) == 1 then -- mono seq
     for y = 1, max_seq_pattern_length do
       if seq_pattern[seq_no][y] ~= 0 then
-        seq_pattern[seq_no][y] = util.wrap(seq_pattern[seq_no][y] + offset, 1, 14)
+        seq_pattern[seq_no][y] = util.wrap(seq_pattern[seq_no][y] + offset, 1, 12)
       end
     end
   else -- poly seq
@@ -3672,7 +3671,7 @@ function advance_seq_pattern(seq_no)
 
     
     -- todo dynamic function set by seq_mono_poly action
-    -- todo p1 should also look at an optimized table of only active notes rather than having to iterate through all 14!
+    -- todo p1 should also look at an optimized table of only active notes rather than having to iterate through all 12!
     if priority == 1 then -- mono
       local x = seq_pattern[seq_no][seq_pattern_position[seq_no]]
       if x > 0 then
@@ -3683,7 +3682,7 @@ function advance_seq_pattern(seq_no)
       
     elseif priority == 2 then -- Poly L-R
       local count = 0
-      for x = 1, 14 do
+      for x = 1, 12 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][x] == 1 then 
           local note = _G[note_map](x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
@@ -3696,7 +3695,7 @@ function advance_seq_pattern(seq_no)
         
     elseif priority == 3 then -- poly R-L
       local count = 0
-      for x = 14, 1, -1 do
+      for x = 12, 1, -1 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][x] == 1 then 
           local note = _G[note_map](x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
@@ -3710,7 +3709,7 @@ function advance_seq_pattern(seq_no)
     else-- if priority == 4 then -- pool
 
       local pool = {}
-      for i = 1, 14 do
+      for i = 1, 12 do
         if seq_pattern[seq_no][seq_pattern_position[seq_no]][i] == 1 then
           table.insert(pool, i)
         end
@@ -3812,8 +3811,7 @@ function grid_redraw()
   
   g:all(0)
   
-  -- EVENT EDITOR
-  if screen_view_name == "Events" then
+  if screen_view_name == "Events" then -- EVENT EDITOR
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
     local lanes = 15
     local saved_level = 8         -- can layer playhead(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
@@ -3900,8 +3898,8 @@ function grid_redraw()
       g:led(16, grid_view_keys[i] + extra_rows , 7)
     end  
     
-    -- ARRANGER GRID REDRAW
-    if grid_view_name == "Arranger" then
+
+    if grid_view_name == "Arranger" then -- ARRANGER GRID REDRAW
       g:led(16, 6 + extra_rows, 15)
       
       -- final function for drawing arranger patterns + playhead
@@ -4073,10 +4071,10 @@ function grid_redraw()
       g:led(2, 8 + extra_rows, params:get("playback") == 2 and 15 or 4)
         
       -- pagination with scroll indicator for arranger grid view
-      for i = 0,3 do
+      for i = 0, 3 do
         local target = i * 16
         local led = math.max(10 + util.round((math.min(target, arranger_grid_offset) - math.max(target, arranger_grid_offset))/2), 1) + 2
-        g:led(i + 7, 8 , led)
+        g:led(i + 7, 8 + extra_rows , led)
       end
 
       -- visual detent on divisions matching pagination jumps
@@ -4091,6 +4089,8 @@ function grid_redraw()
       local level_next = 7 - led_pulse
       local level_med = 7
       local level_low = 3
+      local on_level = 8 -- 8 is equiv of saved_level in events
+      local playhead_level = 3
 
       for i = 1, 4 do
         if i == active_chord_pattern then
@@ -4104,81 +4104,75 @@ function grid_redraw()
 
       g:led(16, 7 + extra_rows, 15) -- grid view selector
       
-      -- chord playhead
-      for i = 1, 14 do                                                               
-        g:led(i, chord_pattern_position - pattern_grid_offset, 3)
-      end
       
       local length = chord_pattern_length[active_chord_pattern]
       for y = 1, rows do
-      -- chord pattern_length LEDs
-        if length - pattern_grid_offset > rows and y == rows then
+        local y_offset = y + pattern_grid_offset
+        local playhead_row = y_offset == chord_pattern_position
+        local on_col = chord_pattern[active_chord_pattern][y_offset]
+
+        if length - pattern_grid_offset > rows and y == rows then -- chord pattern_length LEDs
           g:led(15, y, 15 - (fast_blinky * 4))
         elseif pattern_grid_offset > 0 and y == 1 then 
-          g:led(15, y, (length < (y + pattern_grid_offset) and (3 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
+          g:led(15, y, (length < (y_offset) and (3 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
         else  
-          g:led(15, y, length < (y + pattern_grid_offset) and 3 or 15)
+          g:led(15, y, length < (y_offset) and 3 or 15)
         end
         
-        -- sequence pattern LEDs off/on
-        if chord_pattern[active_chord_pattern][y + pattern_grid_offset] > 0 then
-          g:led(chord_pattern[active_chord_pattern][y + pattern_grid_offset], y, 15)
+        for x = 1, 14 do -- sequence pattern LEDs off/on
+          g:led(x, y, (x == on_col and on_level or 0) + (playhead_row and playhead_level or 0))
         end
+
       end
       
       
-    -- SEQ GRID REDRAW
-    -- todo avoid conditionals by having this function be defined by seq_mono_poly param action
-    elseif grid_view_name == "Seq" then
+    elseif grid_view_name == "Seq" then  -- SEQ GRID REDRAW
+      
+      local on_level = 8 -- 8 is equiv of saved_level in events
+      local playhead_level = 3
       local active_seq_pattern = active_seq_pattern
-      local pattern_position = seq_pattern_position[active_seq_pattern]
-
-      g:led(16, 8 + extra_rows, 15)
-      
-      -- seq playhead
-      -- local seq_pattern_position_offset = seq_pattern_position - pattern_grid_offset
-      
-      -- todo needs to be updated to work with poly where, theoretically, all keys could be illuminated
-      for i = 1, 14 do                                                               
-        g:led(i, pattern_position - pattern_grid_offset, 3)
-      end
-      
       local length = seq_pattern_length[active_seq_pattern]
-      for y = 1, rows do
 
-        -- SEQ pattern_length LEDs
-        if length - pattern_grid_offset > rows and y == rows then
-          g:led(15, y, 15 - (fast_blinky * 4))
+      g:led(16, 8 + extra_rows, 15) -- seq view_selector indicator
+      
+      for y = 1, rows do
+        local y_offset = y + pattern_grid_offset
+        local playhead_row = y_offset == seq_pattern_position[active_seq_pattern]
+
+        if length - pattern_grid_offset > rows and y == rows then -- loop length
+          g:led(13, y, 13 - (fast_blinky * 4))
         elseif pattern_grid_offset > 0 and y == 1 then 
-          g:led(15, y, (length < (y + pattern_grid_offset) and (3 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
+          g:led(13, y, (length < (y_offset) and (3 - (fast_blinky * 2)) or (15 - (fast_blinky * 4))))
         else  
-          g:led(15, y, length < (y + pattern_grid_offset) and 3 or 15)
+          g:led(13, y, length < (y_offset) and 3 or 15)
         end
-          
-        -- sequence pattern LEDs off/on
-        if params:string("seq_note_priority_"..active_seq_pattern) == "Mono" then 
-          if seq_pattern[active_seq_pattern][y + pattern_grid_offset] > 0 then
-            g:led(seq_pattern[active_seq_pattern][y + pattern_grid_offset], y, 15)
+
+        -- todo refactor this because I'm tired and am pretty sure it sucks
+        -- todo avoid conditionals by having this function be defined by seq_mono_poly param action
+        if params:string("seq_note_priority_"..active_seq_pattern) == "Mono" then -- mono seq
+          local on_col = seq_pattern[active_seq_pattern][y_offset]
+            for x = 1, 12 do 
+              g:led(x, y, (x == on_col and on_level or 0) + (playhead_row and playhead_level or 0))
           end
         else -- Poly
-          for x = 1, 14 do
-            if seq_pattern[active_seq_pattern][y + pattern_grid_offset][x] == 1 then
-              g:led(x, y, 15)
-            end
+          for x = 1, 12 do
+            pattern_led = (seq_pattern[active_seq_pattern][y_offset][x] == 1) and on_level or 0
+            g:led(x, y, pattern_led + (playhead_row and playhead_level or 0))
           end
         end
         
       end
 
-
-      -- active seq selector
-      for y = 1, max_seqs do
-        if params:get("seq_mute_"..y) == 2 then -- muted, pulses
-          g:led(16, y, active_seq_pattern == y and (15 - (fast_blinky * 4)) or (3 - fast_blinky) or 3)
+      -- #region active seq selector
+      for seq_no = 1, max_seqs do
+        local x = seq_no + 13
+        if params:get("seq_mute_"..seq_no) == 2 then -- muted, pulses
+          g:led(x, 1, active_seq_pattern == seq_no and (15 - (fast_blinky * 4)) or (3 - fast_blinky) or 3)
         else
-          g:led(16, y, active_seq_pattern == y and 15 or 3)
+          g:led(x, 1, active_seq_pattern == seq_no and 15 or 3)
         end
       end
+      -- #endregion
 
     end
   end
@@ -4437,7 +4431,7 @@ function g.key(x, y, z)
       
       end
       
-    elseif grid_view_name == "Chord" then --CHORD PATTERN KEYS
+    elseif grid_view_name == "Chord" then
 
       if x < 15 then -- chord pattern
         chord_key_count = chord_key_count + 1
@@ -4497,7 +4491,7 @@ function g.key(x, y, z)
       
     -- SEQ PATTERN KEYS
     elseif grid_view_name == "Seq" then
-      if x < 15 then
+      if x < 13 then -- seq pattern keys
         if params:string("seq_note_priority_"..active_seq_pattern) == "Mono" then
           if x == seq_pattern[active_seq_pattern][y + pattern_grid_offset] then
             seq_pattern[active_seq_pattern][y + pattern_grid_offset] = 0
@@ -4518,13 +4512,14 @@ function g.key(x, y, z)
           local note = _G["map_note_" .. params:get("seq_note_map_"..active_seq_pattern)](x, params:get("seq_octave_"..active_seq_pattern)) + 36
           to_player(player, note, dynamics, seq_duration[active_seq_pattern], channel)
         end
-      elseif x == 15 then
+      elseif x == 13 then -- seq loop length
         params:set("seq_pattern_length_" .. active_seq_pattern, y + pattern_grid_offset)
-      elseif y <= max_seqs then -- seq pattern selector
+      elseif y == 1 then -- seq pattern selector
+        local seq_no = x - 13
         if grid_interaction == "view_switcher" then -- mute/unmute
-          params:set("seq_mute_"..y, 3 - params:get("seq_mute_"..y))
+          params:set("seq_mute_"..seq_no, 3 - params:get("seq_mute_"..seq_no))
         else -- switch seq grid view
-          set_grid_view("Seq", y)
+          set_grid_view("Seq", seq_no)
         end
       end
     end
@@ -4739,8 +4734,8 @@ function key(n,z)
         end
         grid_dirty = true
       
-        -- Arranger Events strip held down
-      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
+  
+      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- jump arranger playhead
         local current_arranger_queue = arranger_queue
         
         arranger_queue = event_edit_segment
@@ -4752,7 +4747,7 @@ function key(n,z)
         if arranger_queue <= arranger_length then arranger_one_shot_last_pattern = false end -- instantly de-blink glyph
         grid_dirty = true
       
-      elseif screen_view_name == "Events" then
+      elseif screen_view_name == "Events" then -- events
        
         if norns_interaction ~= "event_actions" then
           ------------------------
@@ -4812,7 +4807,7 @@ function key(n,z)
       -- K2 Transport controls K2 - STOP/RESET --
       ----------------------------------------
         
-      elseif grid_interaction ~= "arranger_shift" then -- == nil then -- actually seems fine to do transport controls this during arranger shift?
+      elseif grid_interaction ~= "arranger_shift" then -- actually seems fine to do transport controls this during arranger shift?
 
         if params:string("clock_source") == "internal" then
           -- print("internal clock")
@@ -4825,8 +4820,12 @@ function key(n,z)
             print(transport_state)        
             clock_start_method = "continue"
             send_continue = true
-          elseif transport_state == "stopped" then -- second press of K2 while stopped will always reset arranger now
-            reset_arrangement()
+          elseif transport_state == "stopped" then -- second press of K2 while stopped
+            -- don't want a full reset_arrangement as this changes the current chord pattern for arranger seg 1
+            -- instead, manually reset arranger
+            arranger_position = 0
+            arranger_queue = nil
+
           else
             reset_external_clock()
             if params:get("arranger") == 2 then
