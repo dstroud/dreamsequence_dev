@@ -13,6 +13,8 @@ local width = 29
 local lvl_pane = lvl.pane
 local lvl_pane_selected = lvl.pane_selected
 local lvl_pane_deselected = lvl.pane_deselected
+-- local blinky = blinky -- can't be locally defined here or there's no updating of value
+-- local led_pulse = led_pulse -- can't be locally defined here or there's no updating of value
 
 ------------------------------
 -- TRANSPORT STATE/METRONOME
@@ -28,7 +30,7 @@ function dash_functions.transport()
 
   -- glyph level
   if transport_state == "starting" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
-    screen.level(fast_blinky == 1 and lvl_pane_deselected or lvl_pane)
+    screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
   elseif transport_state == "playing" then -- metronome with emphasis on new measure
     screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane)
   else
@@ -183,7 +185,7 @@ function dash_functions.arranger_chart()
     if transport_state == "playing" then
       lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
       else
-      lvl = fast_blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
+      lvl = blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
     end
   end
   screen.level(lvl)
@@ -298,7 +300,7 @@ end
 --     if transport_state == "playing" then
 --       lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
 --       else
---       lvl = fast_blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
+--       lvl = blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
 --     end
 --   end
 --   screen.level(lvl)

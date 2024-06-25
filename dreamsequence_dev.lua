@@ -52,14 +52,14 @@ local lvl_dimmed = {
 
 lvl = lvl_normal -- required for includes:dashboards.lua
 
-local blinky = 0
+blinky = 0 -- must be global for dashboards.lua todo look into this
 local led_high = 15
 local led_med = 7
 local led_low = 3
 local led_high_blink = 15 - blinky * 4
 local led_med_blink = 7 - blinky * 2
 local led_low_blink = 3 - blinky
-local led_pulse = 0
+led_pulse = 0  -- must be global for dashboards.lua todo look into this
 
 max_seqs = 3
 max_seq_cols = 15 - max_seqs
@@ -974,11 +974,12 @@ function init()
   seq_duration = {}
   active_seq_pattern = {}
   selected_seq_no = 1 -- unlike chord, selected is not always the same as *active*
-
   pattern_copy_performed = {} -- also used for chord which always uses index 1
-  pattern_key_count = {} -- also used for chord which always uses index 1
+  pattern_key_count = 0 -- also used for chord
+  update_seq_pattern = {} -- flag and store patterns which seqs need to be set to on pattern key release
   pattern_keys = {} -- also used for chord which always uses index 1. used to highlight all held pattern keys
-  pattern_copy_source = {} -- also used for chord which always uses index 1
+  copied_seq_no = nil
+  copied_pattern = nil
 
   for seq_no = 1, max_seqs do
     -- initialize seq pattern tables
@@ -986,10 +987,7 @@ function init()
     seq_pattern_length[seq_no] = {}
     seq_pattern_position[seq_no] = {}
     pattern_copy_performed[seq_no] = false
-    pattern_key_count[seq_no] = 0
     pattern_keys[seq_no] = {}
-
-    pattern_copy_source[seq_no] = nil
 
     for pattern = 1, max_seq_patterns do
       seq_pattern[seq_no][pattern] = {}
@@ -1887,21 +1885,13 @@ end
 -- end
 
 
--- function key_timer()
---   local countdown = 4
--- -- true do -- not sure if we should check on the passed args + pattern_key table or grid_interaction state. Could switching held keys fuck this up?
---   while grid_interaction == "pattern_copy" do 
---     countdown = countdown - 1
---     if countdown == 0 then
---       print("COPY AVAILABLE")
---       paste_available = true
---       break
---     else
---       print(countdown)
---     end
---     clock.sleep(.1)
---   end
--- end
+function pattern_key_timer()
+  keydown_timer = 0
+  while grid_interaction == "pattern_switcher" do
+    keydown_timer = keydown_timer + 1
+    clock.sleep(.1)
+  end
+end
 
 
 function reset_norns_interaction(interaction)
@@ -4248,27 +4238,41 @@ end
 
 function set_page()
   page_name = pages[page_index]
-  local sync = params:string("sync_grid_norns") == "On"
+  local new_view = nil  
+  local new_pattern = selected_seq_no
+  print("debug new_pattern type ", type(new_pattern))
 
-  if page_name == "SONG" then
-    if sync then set_grid_view("Arranger") end
-  elseif page_name == "CHORD" then
-    if sync then set_grid_view("Chord") end
-  elseif string.sub(page_name, 1, 3) == "SEQ" then
-    if sync then set_grid_view("Seq", tonumber(string.sub(page_name, 4))) end
+  if params:string("sync_grid_norns") == "On" then 
+    if page_name == "SONG" then
+      new_view = "Arranger"
+    elseif page_name == "CHORD" then
+      new_view = "Chord"
+    elseif string.sub(page_name, 1, 3) == "SEQ" then
+      new_view = "Seq"
+      new_pattern = tonumber(string.sub(page_name, 4)) -- no idea why this is complaining
+    end
+
+    if (grid_view_name ~= new_view) or (selected_seq_no ~= new_pattern) then
+      pattern_grid_offset = 0
+      reset_grid_led_phase() -- reset led pulse phase so it's most visible
+      grid_view_name = new_view
+      selected_seq_no = new_pattern
+      grid_dirty = true
+    end
+
   end
 
 end
 
 
-function set_grid_view(new_view, new_pattern) -- optional 2nd arg for seq pattern
-  local new_pattern = new_pattern or selected_seq_no
+function set_grid_view(new_view, new_seq_no) -- optional 2nd arg for seq no
+  local new_seq_no = new_seq_no or selected_seq_no
 
-  if (grid_view_name ~= new_view) or (selected_seq_no ~= new_pattern) then
+  if (grid_view_name ~= new_view) or (selected_seq_no ~= new_seq_no) then
     pattern_grid_offset = 0
     reset_grid_led_phase() -- reset led pulse phase so it's most visible
     grid_view_name = new_view
-    selected_seq_no = new_pattern
+    selected_seq_no = new_seq_no
     grid_dirty = true
 
     if params:string("sync_grid_norns") == "On" then -- sync norns screen view with grid view
@@ -4279,7 +4283,7 @@ function set_grid_view(new_view, new_pattern) -- optional 2nd arg for seq patter
       elseif new_view == "Chord" then
         new_page = "CHORD"
       elseif new_view == "Seq" then
-        new_page = "SEQ " .. new_pattern
+        new_page = "SEQ " .. new_seq_no
       end
 
       page_index = tab.key(pages, new_page)
@@ -4536,24 +4540,24 @@ function g.key(x, y, z)
           params:set("chord_mute", 3 - params:get("chord_mute")) -- toggle mute state
         else
 
-          grid_interaction = "pattern_copy"
-          pattern_key_count[1] = pattern_key_count[1] + 1
-          pattern_keys[1][y] = true
-          if pattern_key_count[1] == 1 then
-            pattern_copy_source[1] = y
+          grid_interaction = "pattern_switcher"
+          pattern_key_count = pattern_key_count + 1
+          pattern_keys[1][y] = true -- pattern_keys is used by seqs as well so when in chord mode, always use table 1
+          if pattern_key_count == 1 then
+            copied_pattern = y
           else-- if pattern_key_count > 1 then
-            print("Copying pattern " .. pattern_name[pattern_copy_source[1]] .. " to pattern " .. pattern_name[y])
+            print("Copying pattern " .. pattern_name[copied_pattern] .. " to pattern " .. pattern_name[y])
             pattern_copy_performed[1] = true
             for i = 1, max_chord_pattern_length do
-              chord_pattern[y][i] = chord_pattern[pattern_copy_source[1]][i]
+              chord_pattern[y][i] = chord_pattern[copied_pattern][i]
             end
 
             -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param/grid table.
             if y == active_chord_pattern then
-              params:set("chord_pattern_length", chord_pattern_length[pattern_copy_source[1]])
+              params:set("chord_pattern_length", chord_pattern_length[copied_pattern])
             -- Otherwise just update the table
             else
-              chord_pattern_length[y] = chord_pattern_length[pattern_copy_source[1]]
+              chord_pattern_length[y] = chord_pattern_length[copied_pattern]
             end
 
           end
@@ -4601,40 +4605,46 @@ function g.key(x, y, z)
         if grid_interaction == "view_switcher" then -- mute/unmute
           params:set("seq_mute_"..seq_no, 3 - params:get("seq_mute_"..seq_no))
 
-        else -- switch seq grid view and (for now), set active pattern
-          grid_interaction = "pattern_copy"
-          pattern_key_count[seq_no] = pattern_key_count[seq_no] + 1
+        else
+          grid_interaction = "pattern_switcher"
+          pattern_key_count = pattern_key_count + 1 --used to identify when the first key is pressed and last key is released. Could also use pattern_keys...
+          pattern_keys[seq_no][y] = true -- log keydown
 
-          if pattern_key_count[seq_no] == 1 then -- copying
-            -- pattern_copy_source_seq_no = seq_no
+          if pattern_key_count == 1 then -- initial keydown sets pattern to copy and starts timer for simultaneous keydown detection
+            simultaneous = false
+            copied_seq_no = seq_no
+            copied_pattern = y
+            clock.run(pattern_key_timer)
+            update_seq_pattern = {}
+            update_seq_pattern[seq_no] = y -- sets pattern we need to update seq_no/index to on key-up
 
-            pattern_copy_source[seq_no] = y
-            pattern_keys[seq_no][pattern_copy_source[seq_no]] = true
-            -- paste_available = false
-            -- clock.run(key_timer)
-
-          -- elseif paste_available then -- pasting
-          elseif pattern_copy_source[seq_no] then -- if a copy source has been set for this seq/col
-
-            pattern_keys[seq_no][y] = true
-            -- todo copy+paste grid animation
-            print("Copying Seq " .. seq_no .. " pattern " .. pattern_name[pattern_copy_source[seq_no]] .. " to Seq " .. seq_no .. " pattern " .. pattern_name[y])
-            pattern_copy_performed[seq_no] = true
-            
-            -- possibly misleading as this copies the pattern in current state rather than when keydown was performed
-            -- todo consider copying the table contents at keydown which is probably what users expect (but expensive)
-            for step = 1, max_seq_pattern_length do
-              for note = 1, max_seq_cols do
-                seq_pattern[seq_no][y][step][note] = seq_pattern[seq_no][pattern_copy_source[seq_no]][step][note]
-              end
+          else
+            if (seq_no ~= copied_seq_no) and (keydown_timer < 2) then -- if ANY other seq is touched <2ms after initial keydown, this is now a simultaneous interaction
+              simultaneous = true
             end
 
-            -- copy pattern length, too
-            -- If we're pasting to a current active_seq_pattern, do it via param so we update param+grid as well as the table.
-            if y == active_seq_pattern[seq_no] then
-              params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[seq_no][pattern_copy_source[seq_no]])
-            else -- Otherwise just update the table
-              seq_pattern_length[seq_no][y] = seq_pattern_length[seq_no][pattern_copy_source[seq_no]]
+            if not simultaneous then
+                update_seq_pattern[copied_seq_no] = nil -- remove entry since we don't want to change to the pattern we're copying from
+
+                -- possibly misleading as this copies the pattern in current state rather than when keydown was performed
+                -- todo consider copying the table contents at keydown which is probably what users expect (but more expensive)
+                for step = 1, max_seq_pattern_length do
+                  for note = 1, max_seq_cols do
+                    seq_pattern[seq_no][y][step][note] = seq_pattern[copied_seq_no][copied_pattern][step][note]
+                  end
+                end
+
+                -- Pattern length. If we're pasting to a current active_seq_pattern, do it via param so we update param+grid as well as the table.
+                if y == active_seq_pattern[seq_no] then
+                  params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[copied_seq_no][copied_pattern])
+                else -- Otherwise just update the table
+                  seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
+                end
+
+                print("Copying Seq " .. copied_seq_no .. " pattern " .. pattern_name[copied_pattern] .. " to Seq " .. seq_no .. " pattern " .. pattern_name[y])
+              -- end
+            else -- simultaneous keypresses in other seq columns are interpreted as intent to switch patterns
+              update_seq_pattern[seq_no] = y -- sets pattern we need to update seq_no/index to on key-up
             end
           end
 
@@ -4683,11 +4693,11 @@ function g.key(x, y, z)
         if y <5 then
 
           -- always keep track of these even if in a blocking interaction
-          pattern_key_count[1] = math.max(pattern_key_count[1] - 1,0)
+          pattern_key_count = math.max(pattern_key_count - 1,0)
           pattern_keys[1][y] = nil
 
-          if grid_interaction == "pattern_copy" then
-            if pattern_key_count[1] == 0 and pattern_copy_performed[1] == false then
+          if grid_interaction == "pattern_switcher" then
+            if pattern_key_count == 0 and pattern_copy_performed[1] == false then
               
               -- Resets current active_chord_pattern immediately if transport is stopped
               if y == active_chord_pattern and transport_active == false then
@@ -4721,7 +4731,7 @@ function g.key(x, y, z)
               end
             end
 
-            if pattern_key_count[1] == 0 then
+            if pattern_key_count == 0 then
               -- print("resetting pattern_copy_performed to false")
               pattern_copy_performed[1] = false
               grid_interaction = nil
@@ -4749,40 +4759,24 @@ function g.key(x, y, z)
         local seq_no = x - (16 - max_seqs)
 
         -- always keep track of these even if in a blocking interaction
-        pattern_key_count[seq_no] = math.max(pattern_key_count[seq_no] - 1,0)
+        pattern_key_count = math.max(pattern_key_count - 1, 0)
         pattern_keys[seq_no][y] = nil
 
-        if grid_interaction == "pattern_copy" then
-          if pattern_key_count[seq_no] == 0 and pattern_copy_performed[seq_no] == false then -- switch/apply pattern
-            active_seq_pattern[seq_no] = y
-            set_grid_view("Seq", seq_no)
+        if grid_interaction == "pattern_switcher" then
+          local new_pattern = update_seq_pattern[seq_no]
+
+          if new_pattern then
+            active_seq_pattern[seq_no] = new_pattern
+          end
+      
+          if pattern_key_count == 0 then -- reset interaction and change grid view if appropriate
+            grid_interaction = nil
+            if not simultaneous and new_pattern then
+              set_grid_view("Seq", seq_no)
+            end
           end
 
-          if pattern_key_count[seq_no] == 0 then
-            local reset = true
-
-            pattern_copy_performed[seq_no] = false
-            pattern_copy_source[seq_no] = nil -- untested
-
-            for i = 1, max_seqs do
-              if pattern_key_count[i] > 0 then
-                reset = false
-              end
-            end
-
-            if reset then
-              -- print("DEBUG resetting grid_interaction")
-              grid_interaction = nil
-            end
-
-          end
         end
-
-        -- if grid_interaction == "pattern_copy" and not paste_available then -- key_timer based method. keeping around a while longer
-        --   active_seq_pattern[seq_no] = y
-        --   set_grid_view("Seq", seq_no)
-        -- end
-
 
       end
 
@@ -6037,25 +6031,15 @@ function redraw()
     tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→", "Hold+tap: paste events"})
     footer("JUMP", "EVENTS")
   
-  elseif grid_interaction == "pattern_copy" then
+  elseif grid_interaction == "pattern_switcher" then
     if page_name == "CHORD" then
-      tooltips("CHORD PATTERN " .. pattern_name[pattern_copy_source[1]], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
+      tooltips("CHORD PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
     else
-      local held = 0
-      local seq_no = 0
-      for i = 1, max_seqs do
-        if pattern_copy_source[i] then
-          held = held + 1
-          seq_no = i
-          pattern = pattern_name[pattern_copy_source[i]]
-        end
-      end
-      if held == 1 then
-          tooltips("SEQ " .. seq_no .. " PATTERN " .. pattern, {"Hold+tap (in SEQ " .. seq_no .. "): paste", "Release: choose pattern"})
+      if simultaneous then
+        tooltips("MULTIPLE SEQS", {"Release: choose patterns"})
       else
-        tooltips("MULTIPLE SEQS", {"Hold+tap in SEQs: paste", "Release: choose patterns"})
+        tooltips("SEQ " .. copied_seq_no .. ", PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: choose pattern"})
       end
-
     end
 
   else -- Standard priority (not momentary) menus
