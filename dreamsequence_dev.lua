@@ -569,17 +569,6 @@ function init()
     
   end
 
-  --  -- WTF ZONE WHEN PLACED HERE:
-  --  print("1.", purple_carrot)
-  --  purple_carrot = 14
-  --  print("2.", purple_carrot)
-  --  print("3.", -1 * purple_carrot)
-  --  print("4.", -99 * purple_carrot)
-  --  print("5.", purple_carrot * -1)
-  --  print("6.", -purple_carrot)
-  --  green_carrot = -1 * purple_carrot
-  --  print("7. ", green_carrot)
-  
 
   ------------------
   -- MIDI HARMONIZER PARAMS --
@@ -882,7 +871,6 @@ function init()
   set_chord_pattern(1)
   pattern_name = {"A","B","C","D"}
   pattern_queue = false
-  pattern_copy_performed = false
   chord_no = 0
   chord_key_count = 0
   chord_pattern_position = 0
@@ -972,10 +960,8 @@ function init()
   elapsed = 0
   percent_step_elapsed = 0
   seconds_remaining = 0
-  pattern_keys = {} -- indicates if pattern key is held down or queued pattern
   arranger_pattern_key_first = nil -- simpler way to identify the first key held down so we can handle this as a "copy" action and know when to act on it or ignore it. don't need a whole table.
   arranger_loop_key_count = 0 -- rename arranger_events_strip_key_count?
-  pattern_key_count = 0
   view_key_count = 0
   event_key_count = 0
   key_count = 0
@@ -989,15 +975,26 @@ function init()
   active_seq_pattern = {}
   selected_seq_no = 1 -- unlike chord, selected is not always the same as *active*
 
+  pattern_copy_performed = {} -- also used for chord which always uses index 1
+  pattern_key_count = {} -- also used for chord which always uses index 1
+  pattern_keys = {} -- also used for chord which always uses index 1. used to highlight all held pattern keys
+  pattern_copy_source = {} -- also used for chord which always uses index 1
+
   for seq_no = 1, max_seqs do
     -- initialize seq pattern tables
     seq_pattern[seq_no] = {}
     seq_pattern_length[seq_no] = {}
     seq_pattern_position[seq_no] = {}
+    pattern_copy_performed[seq_no] = false
+    pattern_key_count[seq_no] = 0
+    pattern_keys[seq_no] = {}
+
+    pattern_copy_source[seq_no] = nil
 
     for pattern = 1, max_seq_patterns do
       seq_pattern[seq_no][pattern] = {}
       seq_pattern_length[seq_no][pattern] = 8
+      pattern_keys[seq_no][pattern] = false
 
       for step = 1, max_seq_pattern_length do
         seq_pattern[seq_no][pattern][step] = {}
@@ -1868,6 +1865,41 @@ end
 
 --   for i = 1, 3 do
 --     event_ghosting[i] = (row[i] > 62) and 2 or (row[i] > 21) and 1 or 0
+--   end
+-- end
+
+-- clock.run(key_timer, 3, print("copying"))
+
+
+-- -- generic timer that runs function after counter reaches 0
+-- -- eg: clock.run(do_timer, 10, function() print("copying") end)
+-- function do_timer(countdown, func)
+--   while true do
+--     countdown = countdown - 1
+--     if countdown == 0 then
+--       func()
+--       break
+--     else
+--       print(countdown)
+--     end
+--     clock.sleep(.1)
+--   end
+-- end
+
+
+-- function key_timer()
+--   local countdown = 4
+-- -- true do -- not sure if we should check on the passed args + pattern_key table or grid_interaction state. Could switching held keys fuck this up?
+--   while grid_interaction == "pattern_copy" do 
+--     countdown = countdown - 1
+--     if countdown == 0 then
+--       print("COPY AVAILABLE")
+--       paste_available = true
+--       break
+--     else
+--       print(countdown)
+--     end
+--     clock.sleep(.1)
 --   end
 -- end
 
@@ -4131,7 +4163,7 @@ function grid_redraw()
         elseif i == pattern_queue then
           g:led(16, i, level_next)
         else
-          g:led(16, i, pattern_keys[i] and led_med or led_low)
+          g:led(16, i, pattern_keys[1][i] and led_med or led_low)
         end
       end
 
@@ -4182,7 +4214,7 @@ function grid_redraw()
         
       end
 
-      -- #region active seq selector
+      -- #region active seq pattern selector
       for seq_no = 1, max_seqs do
         local x = seq_no + max_seq_cols + 1
         local selected = seq_no == selected_seq_no
@@ -4214,6 +4246,21 @@ function reset_grid_led_phase()
 end
 
 
+function set_page()
+  page_name = pages[page_index]
+  local sync = params:string("sync_grid_norns") == "On"
+
+  if page_name == "SONG" then
+    if sync then set_grid_view("Arranger") end
+  elseif page_name == "CHORD" then
+    if sync then set_grid_view("Chord") end
+  elseif string.sub(page_name, 1, 3) == "SEQ" then
+    if sync then set_grid_view("Seq", tonumber(string.sub(page_name, 4))) end
+  end
+
+end
+
+
 function set_grid_view(new_view, new_pattern) -- optional 2nd arg for seq pattern
   local new_pattern = new_pattern or selected_seq_no
 
@@ -4230,14 +4277,9 @@ function set_grid_view(new_view, new_pattern) -- optional 2nd arg for seq patter
       if new_view == "Arranger" then
         new_page = "SONG"
       elseif new_view == "Chord" then
-        pattern_keys = {}
         new_page = "CHORD"
       elseif new_view == "Seq" then
         new_page = "SEQ " .. new_pattern
-        -- or just have chord always use pattern_keys[1][y]
-        for seq_no = 1, max_seqs do -- set up table for seq (also used for chords)
-          pattern_keys[seq_no] = {}
-        end
       end
 
       page_index = tab.key(pages, new_page)
@@ -4494,24 +4536,24 @@ function g.key(x, y, z)
           params:set("chord_mute", 3 - params:get("chord_mute")) -- toggle mute state
         else
 
-          grid_interaction = "chord_pattern_copy"
-          pattern_key_count = pattern_key_count + 1
-          pattern_keys[y] = true
-          if pattern_key_count == 1 then
-            pattern_copy_source = y
+          grid_interaction = "pattern_copy"
+          pattern_key_count[1] = pattern_key_count[1] + 1
+          pattern_keys[1][y] = true
+          if pattern_key_count[1] == 1 then
+            pattern_copy_source[1] = y
           else-- if pattern_key_count > 1 then
-            print("Copying pattern " .. pattern_copy_source .. " to pattern " .. y)
-            pattern_copy_performed = true
+            print("Copying pattern " .. pattern_name[pattern_copy_source[1]] .. " to pattern " .. pattern_name[y])
+            pattern_copy_performed[1] = true
             for i = 1, max_chord_pattern_length do
-              chord_pattern[y][i] = chord_pattern[pattern_copy_source][i]
+              chord_pattern[y][i] = chord_pattern[pattern_copy_source[1]][i]
             end
 
             -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param/grid table.
             if y == active_chord_pattern then
-              params:set("chord_pattern_length", chord_pattern_length[pattern_copy_source])
+              params:set("chord_pattern_length", chord_pattern_length[pattern_copy_source[1]])
             -- Otherwise just update the table
             else
-              chord_pattern_length[y] = chord_pattern_length[pattern_copy_source]
+              chord_pattern_length[y] = chord_pattern_length[pattern_copy_source[1]]
             end
 
           end
@@ -4560,35 +4602,40 @@ function g.key(x, y, z)
           params:set("seq_mute_"..seq_no, 3 - params:get("seq_mute_"..seq_no))
 
         else -- switch seq grid view and (for now), set active pattern
-          grid_interaction = "chord_pattern_copy"
-          pattern_key_count = pattern_key_count + 1
+          grid_interaction = "pattern_copy"
+          pattern_key_count[seq_no] = pattern_key_count[seq_no] + 1
 
-          if pattern_key_count == 1 then -- copying
-            pattern_keys[seq_no][y] = true -- switch to true (chord too)
-            pattern_copy_source_seq_no = seq_no
-            pattern_copy_source = y
-          else -- pasting
-            pattern_keys[seq_no][y] = true -- switch to true (chord too)
+          if pattern_key_count[seq_no] == 1 then -- copying
+            -- pattern_copy_source_seq_no = seq_no
+
+            pattern_copy_source[seq_no] = y
+            pattern_keys[seq_no][pattern_copy_source[seq_no]] = true
+            -- paste_available = false
+            -- clock.run(key_timer)
+
+          -- elseif paste_available then -- pasting
+          elseif pattern_copy_source[seq_no] then -- if a copy source has been set for this seq/col
+
+            pattern_keys[seq_no][y] = true
             -- todo copy+paste grid animation
-            -- print("Copying pattern " .. pattern_copy_source .. " to pattern " .. y)
-            pattern_copy_performed = true
+            print("Copying Seq " .. seq_no .. " pattern " .. pattern_name[pattern_copy_source[seq_no]] .. " to Seq " .. seq_no .. " pattern " .. pattern_name[y])
+            pattern_copy_performed[seq_no] = true
             
             -- possibly misleading as this copies the pattern in current state rather than when keydown was performed
             -- todo consider copying the table contents at keydown which is probably what users expect (but expensive)
             for step = 1, max_seq_pattern_length do
               for note = 1, max_seq_cols do
-                seq_pattern[seq_no][y][step][note] = seq_pattern[pattern_copy_source_seq_no][pattern_copy_source][step][note]
+                seq_pattern[seq_no][y][step][note] = seq_pattern[seq_no][pattern_copy_source[seq_no]][step][note]
               end
             end
 
+            -- copy pattern length, too
             -- If we're pasting to a current active_seq_pattern, do it via param so we update param+grid as well as the table.
-            if seq_no == selected_seq_no and y == active_seq_pattern[seq_no] then
-              params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[pattern_copy_source_seq_no][pattern_copy_source])
-            -- Otherwise just update the table
-            else
-              seq_pattern_length[seq_no][y] = seq_pattern_length[pattern_copy_source_seq_no][pattern_copy_source]
+            if y == active_seq_pattern[seq_no] then
+              params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[seq_no][pattern_copy_source[seq_no]])
+            else -- Otherwise just update the table
+              seq_pattern_length[seq_no][y] = seq_pattern_length[seq_no][pattern_copy_source[seq_no]]
             end
-
           end
 
         end
@@ -4636,11 +4683,11 @@ function g.key(x, y, z)
         if y <5 then
 
           -- always keep track of these even if in a blocking interaction
-          pattern_key_count = math.max(pattern_key_count - 1,0)
-          pattern_keys[y] = nil
+          pattern_key_count[1] = math.max(pattern_key_count[1] - 1,0)
+          pattern_keys[1][y] = nil
 
-          if grid_interaction == "chord_pattern_copy" then
-            if pattern_key_count == 0 and pattern_copy_performed == false then
+          if grid_interaction == "pattern_copy" then
+            if pattern_key_count[1] == 0 and pattern_copy_performed[1] == false then
               
               -- Resets current active_chord_pattern immediately if transport is stopped
               if y == active_chord_pattern and transport_active == false then
@@ -4667,17 +4714,18 @@ function g.key(x, y, z)
               -- Cue up a new pattern        
               else
                 print("New pattern queued; disabling arranger")
-                if pattern_copy_performed == false then
+                if pattern_copy_performed[1] == false then
                   params:set("arranger", 1)
                   set_pattern_queue(y)
                 end
               end
             end
 
-            if pattern_key_count == 0 then
+            if pattern_key_count[1] == 0 then
               -- print("resetting pattern_copy_performed to false")
-              pattern_copy_performed = false
+              pattern_copy_performed[1] = false
               grid_interaction = nil
+              pattern_keys[1] = {}
             end
 
           end
@@ -4701,22 +4749,41 @@ function g.key(x, y, z)
         local seq_no = x - (16 - max_seqs)
 
         -- always keep track of these even if in a blocking interaction
-        pattern_key_count = math.max(pattern_key_count - 1,0)
+        pattern_key_count[seq_no] = math.max(pattern_key_count[seq_no] - 1,0)
         pattern_keys[seq_no][y] = nil
 
-        if grid_interaction == "chord_pattern_copy" then
-          if pattern_key_count == 0 and pattern_copy_performed == false then -- switch/apply pattern
-              active_seq_pattern[seq_no] = y
-              set_grid_view("Seq", seq_no)
+        if grid_interaction == "pattern_copy" then
+          if pattern_key_count[seq_no] == 0 and pattern_copy_performed[seq_no] == false then -- switch/apply pattern
+            active_seq_pattern[seq_no] = y
+            set_grid_view("Seq", seq_no)
           end
 
-          if pattern_key_count == 0 then
-            -- print("resetting pattern_copy_performed to false")
-            pattern_copy_performed = false
-            grid_interaction = nil
-          end
+          if pattern_key_count[seq_no] == 0 then
+            local reset = true
 
+            pattern_copy_performed[seq_no] = false
+            pattern_copy_source[seq_no] = nil -- untested
+
+            for i = 1, max_seqs do
+              if pattern_key_count[i] > 0 then
+                reset = false
+              end
+            end
+
+            if reset then
+              -- print("DEBUG resetting grid_interaction")
+              grid_interaction = nil
+            end
+
+          end
         end
+
+        -- if grid_interaction == "pattern_copy" and not paste_available then -- key_timer based method. keeping around a while longer
+        --   active_seq_pattern[seq_no] = y
+        --   set_grid_view("Seq", seq_no)
+        -- end
+
+
       end
 
     elseif grid_view_name == "Arranger" then -- ARRANGER KEY UP
@@ -5480,17 +5547,7 @@ function enc(n,d)
       if menu_index == 0 then
         menu_index = 0
         page_index = util.clamp(page_index + d, 1, #pages)
-        page_name = pages[page_index]
-
-        if params:string("sync_grid_norns") == "On" then
-          if page_name == "SONG" then
-            set_grid_view("Arranger")
-          elseif page_name == "CHORD" then
-            set_grid_view("Chord")
-          elseif string.sub(page_name, 1, 3) == "SEQ" then
-            set_grid_view("Seq", tonumber(string.sub(page_name, 4)))
-          end
-        end
+        set_page()
 
       elseif norns_interaction == "preview_param" then
         preview_param:delta(d)
@@ -5980,11 +6037,25 @@ function redraw()
     tooltips("ARRANGER SEGMENT " .. event_edit_segment, {"E3: shift segments ←→", "Hold+tap: paste events"})
     footer("JUMP", "EVENTS")
   
-  elseif grid_interaction == "chord_pattern_copy" then
+  elseif grid_interaction == "pattern_copy" then
     if page_name == "CHORD" then
-      tooltips("CHORD PATTERN " .. pattern_name[pattern_copy_source], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
+      tooltips("CHORD PATTERN " .. pattern_name[pattern_copy_source[1]], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
     else
-      tooltips("SEQ " .. pattern_copy_source_seq_no .. " PATTERN " .. pattern_name[pattern_copy_source], {"Hold+tap: paste pattern", "Release: select pattern"})
+      local held = 0
+      local seq_no = 0
+      for i = 1, max_seqs do
+        if pattern_copy_source[i] then
+          held = held + 1
+          seq_no = i
+          pattern = pattern_name[pattern_copy_source[i]]
+        end
+      end
+      if held == 1 then
+          tooltips("SEQ " .. seq_no .. " PATTERN " .. pattern, {"Hold+tap (in SEQ " .. seq_no .. "): paste", "Release: choose pattern"})
+      else
+        tooltips("MULTIPLE SEQS", {"Hold+tap in SEQs: paste", "Release: choose patterns"})
+      end
+
     end
 
   else -- Standard priority (not momentary) menus
