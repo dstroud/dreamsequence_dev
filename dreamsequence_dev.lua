@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240624 @modularbeat
+-- 240626 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -61,7 +61,7 @@ local led_med_blink = 7 - blinky * 2
 local led_low_blink = 3 - blinky
 led_pulse = 0  -- must be global for dashboards.lua todo look into this
 
-max_seqs = 3
+max_seqs = 1
 max_seq_cols = 15 - max_seqs
 max_seq_patterns = 4 -- can probably hardcode
 max_seq_pattern_length = 16
@@ -493,6 +493,7 @@ function init()
 
   for seq_no = 1, max_seqs do
 
+
     params:add_group("seq"..seq_no, "SEQ "..seq_no, 24)
 
     params:add_option("seq_note_map_"..seq_no, "Notes", note_map, 1)
@@ -504,15 +505,45 @@ function init()
     params:add_option("seq_start_on_"..seq_no, "Play", {"Loop", "All steps", "Chord steps", "Blank steps", "Cue/event"}, 1)
 
     params:add_option("seq_reset_on_"..seq_no, "Reset", {"All steps", "Chord steps", "Blank steps", "Stop/event"}, 4)
-    
+
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start", "trigger")
     params:set_action("seq_start_"..seq_no,function()  play_seq[seq_no] = true end) -- seq_1_shot_1 = true end)
     
+
+    -- WTF ZONE --
+
+    -- -- works fine here...
+    -- print("1.", purple_carrot)                -- prints 1. nil
+    -- purple_carrot = 14                
+    -- print("2.", purple_carrot)                -- prints 2. 14
+    -- print("3.", -1 * purple_carrot)           -- prints 3. 196
+    -- print("4.", -99 * purple_carrot)          -- prints 4. 196
+    -- print("5.", purple_carrot * -1)           -- prints 5. -14
+    -- print("6.", -purple_carrot)               -- prints 6. -14
+    -- green_carrot = -1 * purple_carrot
+    -- print("7.", green_carrot)                 -- prints 7. 196
+    -- print("8.", (-1 * purple_carrot) == 196)  -- prints 8. TRUE
+
+    params:add_number("dummy_param", "dummy_param", 1, 1, 1) -- purple_carrot test above here works, below fails
+
+    -- weird here...
+    print("1.", purple_carrot)                -- prints 1. nil
+    purple_carrot = 14                
+    print("2.", purple_carrot)                -- prints 2. 14
+    print("3.", -1 * purple_carrot)           -- prints 3. 196
+    print("4.", -99 * purple_carrot)          -- prints 4. 196
+    print("5.", purple_carrot * -1)           -- prints 5. -14
+    print("6.", -purple_carrot)               -- prints 6. -14
+    green_carrot = -1 * purple_carrot
+    print("7.", green_carrot)                 -- prints 7. 196
+    print("8.", (-1 * purple_carrot) == 196)  -- prints 8. TRUE
+
+
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_reset_"..seq_no,"Reset", "trigger")
     params:set_action("seq_reset_"..seq_no,function() seq_pattern_position[seq_no] = 0 end)
-    
+
     params:add_number("seq_div_index_"..seq_no, "Step length", 1, 57, 8, function(param) return divisions_string(param:get()) end)
 
     nb:add_param("seq_voice_raw_"..seq_no, "Voice raw")
@@ -4240,7 +4271,6 @@ function set_page()
   page_name = pages[page_index]
   local new_view = nil  
   local new_pattern = selected_seq_no
-  print("debug new_pattern type ", type(new_pattern))
 
   if params:string("sync_grid_norns") == "On" then 
     if page_name == "SONG" then
@@ -4249,7 +4279,7 @@ function set_page()
       new_view = "Chord"
     elseif string.sub(page_name, 1, 3) == "SEQ" then
       new_view = "Seq"
-      new_pattern = tonumber(string.sub(page_name, 4)) -- no idea why this is complaining
+      new_pattern = tonumber(string.sub(page_name, 4)) or new_pattern
     end
 
     if (grid_view_name ~= new_view) or (selected_seq_no ~= new_pattern) then
