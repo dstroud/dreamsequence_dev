@@ -2,7 +2,8 @@
 -- PATTERN TRANSFORMATIONS --
 --------------------------------------------
 
--- Rotate looping portion of pattern
+-- Rotate pattern
+-- todo p0 revisit this vs rotate looping portion of pattern
 function rotate_pattern(view, offset)
   if view == "Chord" then
     -- local length = chord_pattern_length[active_chord_pattern]
@@ -13,6 +14,7 @@ function rotate_pattern(view, offset)
     -- for i = 1, length do
       -- chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - offset,1,length)]
     -- end
+
     chord_pattern[active_chord_pattern] = rotate_tab_values(chord_pattern[active_chord_pattern], offset)
   elseif view == "Seq" then
     -- local length = seq_pattern_length[active_seq_pattern]
@@ -23,7 +25,11 @@ function rotate_pattern(view, offset)
     -- for i = 1, length do
     --   seq_pattern[active_seq_pattern][i] = temp_seq_pattern[util.wrap(i - offset,1,length)]
     -- end
-    seq_pattern[active_seq_pattern] = rotate_tab_values(seq_pattern[active_seq_pattern], offset)
+
+    local pattern = seq_pattern[selected_seq_no]
+    local active = active_seq_pattern[selected_seq_no]
+  
+    pattern[active] = rotate_tab_values(pattern[active], offset)
   end
 end
 
@@ -147,7 +153,7 @@ function crow_v(out, volts)
 end
 
 
--- "Transposes" pattern if you can call it that
+-- "Transposes" pattern by shifting left or right
 function transpose_pattern(view, offset)
   if view == "Chord" then
     for y = 1, max_chord_pattern_length do
@@ -156,21 +162,12 @@ function transpose_pattern(view, offset)
       end
     end
   elseif view == "Seq" then
-    --shared with pattern_shift_abs fwiw
-    if params:get("seq_note_priority_"..active_seq_pattern) == 1 then -- mono seq
-      for y = 1, max_seq_pattern_length do
-        if seq_pattern[active_seq_pattern][y] ~= 0 then
-          seq_pattern[active_seq_pattern][y] = util.wrap(seq_pattern[active_seq_pattern][y] + offset, 1, 14)
-        end
-      end
-    else -- poly seq
-      for y = 1, max_seq_pattern_length do
-        seq_pattern[active_seq_pattern][y] = rotate_tab_values(seq_pattern[active_seq_pattern][y], offset)
-      end
+    local pattern = seq_pattern[selected_seq_no][active_seq_pattern[selected_seq_no]]
+    for y = 1, max_seq_pattern_length do
+      pattern[y] = rotate_tab_values(pattern[y], offset)
     end
-
-  end  
-end   
+  end
+end
 
 -- END OF EVENT-SPECIFIC FUNCTIONS ------------------------------------------------------
 
