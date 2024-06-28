@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240626 @modularbeat
+-- 240628 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -61,7 +61,7 @@ local led_med_blink = 7 - blinky * 2
 local led_low_blink = 3 - blinky
 led_pulse = 0  -- must be global for dashboards.lua todo look into this
 
-max_seqs = 1
+max_seqs = 3
 max_seq_cols = 15 - max_seqs
 max_seq_patterns = 4 -- can probably hardcode
 max_seq_pattern_length = 16
@@ -261,7 +261,9 @@ function init()
   -- PARAMS
   --------------------
 
-  -- functions used by params
+  -- functions and globals used by params
+
+  pattern_name = {"A","B","C","D"}
 
   -- show or hide midi channel param/menu
   local function set_channel_vis(id, channel_param)
@@ -489,12 +491,11 @@ function init()
   -- SEQ PARAMS --
   ------------------
 
-  local note_map = {"Triad", "7th", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Drums"} -- used by all but chord
+  local note_map = {"Triad", "7th", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Kit"} -- used by all but chord
 
   for seq_no = 1, max_seqs do
 
-
-    params:add_group("seq"..seq_no, "SEQ "..seq_no, 24)
+    params:add_group("seq"..seq_no, "SEQ "..seq_no, 26)
 
     params:add_option("seq_note_map_"..seq_no, "Notes", note_map, 1)
     
@@ -502,47 +503,42 @@ function init()
 
     params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 12, 1) -- to 0??
 
-    params:add_option("seq_start_on_"..seq_no, "Play", {"Loop", "All steps", "Chord steps", "Blank steps", "Cue/event"}, 1)
+    params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Blank steps", "Cue/event"}, 1)
 
-    params:add_option("seq_reset_on_"..seq_no, "Reset", {"All steps", "Chord steps", "Blank steps", "Stop/event"}, 4)
 
-    -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
-    params:add_binary("seq_start_"..seq_no,"Start", "trigger")
-    params:set_action("seq_start_"..seq_no,function()  play_seq[seq_no] = true end) -- seq_1_shot_1 = true end)
-    
 
     -- WTF ZONE --
+    -- if these params are created, the purple_carrot test produces wack results. comment/uncomment and observe
+    -- params:add_number("dummy_param_"..seq_no, "dummy_param", 1, 1, 1)
 
-    -- -- works fine here...
-    -- print("1.", purple_carrot)                -- prints 1. nil
-    -- purple_carrot = 14                
-    -- print("2.", purple_carrot)                -- prints 2. 14
-    -- print("3.", -1 * purple_carrot)           -- prints 3. 196
-    -- print("4.", -99 * purple_carrot)          -- prints 4. 196
-    -- print("5.", purple_carrot * -1)           -- prints 5. -14
-    -- print("6.", -purple_carrot)               -- prints 6. -14
-    -- green_carrot = -1 * purple_carrot
-    -- print("7.", green_carrot)                 -- prints 7. 196
-    -- print("8.", (-1 * purple_carrot) == 196)  -- prints 8. TRUE
+    -- -- uncomment to test
+    -- if seq_no == 1 then
+    --   print("1.", purple_carrot)                -- prints 1. nil
+    --   purple_carrot = 14                
+    --   print("2.", purple_carrot)                -- prints 2. 14
+    --   print("3.", -1 * purple_carrot)           -- prints 3. 196
+    --   print("4.", -99 * purple_carrot)          -- prints 4. 196
+    --   print("5.", purple_carrot * -1)           -- prints 5. -14
+    --   print("6.", -purple_carrot)               -- prints 6. -14
+    --   green_carrot = -1 * purple_carrot
+    --   print("7.", green_carrot)                 -- prints 7. 196
+    --   print("8.", (-1 * purple_carrot) == 196)  -- prints 8. TRUE
+    -- end
 
-    params:add_number("dummy_param", "dummy_param", 1, 1, 1) -- purple_carrot test above here works, below fails
 
-    -- weird here...
-    print("1.", purple_carrot)                -- prints 1. nil
-    purple_carrot = 14                
-    print("2.", purple_carrot)                -- prints 2. 14
-    print("3.", -1 * purple_carrot)           -- prints 3. 196
-    print("4.", -99 * purple_carrot)          -- prints 4. 196
-    print("5.", purple_carrot * -1)           -- prints 5. -14
-    print("6.", -purple_carrot)               -- prints 6. -14
-    green_carrot = -1 * purple_carrot
-    print("7.", green_carrot)                 -- prints 7. 196
-    print("8.", (-1 * purple_carrot) == 196)  -- prints 8. TRUE
 
+    params:add_option("seq_reset_on_"..seq_no, "Reset", {"Every step", "Chord steps", "Blank steps", "Stop/event"}, 4)
 
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
-    params:add_binary("seq_reset_"..seq_no,"Reset", "trigger")
-    params:set_action("seq_reset_"..seq_no,function() seq_pattern_position[seq_no] = 0 end)
+    params:add_binary("seq_start_"..seq_no,"Start on", "trigger")
+    params:set_action("seq_start_"..seq_no,function()  play_seq[seq_no] = true end) -- seq_1_shot_1 = true end)
+    
+    -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
+    params:add_binary("seq_reset_"..seq_no,"Reset on", "trigger")
+    params:set_action("seq_reset_"..seq_no,function() reset_seq(seq_no) end)
+
+    params:add_option("seq_pattern_change_"..seq_no, "Change", {"Instantly", "On loop", "On reset"}, 1)
+    params:set_action("seq_pattern_change_"..seq_no, function() seq_pattern_q[seq_no] = false end)
 
     params:add_number("seq_div_index_"..seq_no, "Step length", 1, 57, 8, function(param) return divisions_string(param:get()) end)
 
@@ -577,16 +573,25 @@ function init()
     params:add_number("prev_seq_shift_"..seq_no, "prev_seq_shift_"..seq_no, -max_seq_cols, max_seq_cols, 0)
     params:hide("prev_seq_shift_"..seq_no)
 
-    -- for p = 1, max_seq_patterns do
-      local name = {"A", "B", "C", "D"}
-      params:add_number("seq_pattern_length_"..seq_no, "Seq " .. seq_no .. " length", 1, max_seq_pattern_length, 8)
-      params:set_action("seq_pattern_length_"..seq_no,
-        function(val)
-          seq_pattern_length[seq_no][active_seq_pattern[seq_no]] = val -- store in table so we don't need x4 params
-          grid_dirty = true
-        end
-      )
-    -- end
+    params:add_option("seq_pattern_"..seq_no, "Pattern", pattern_name, 1)
+    params:set_action("seq_pattern_"..seq_no,
+    function(val)
+      active_seq_pattern[seq_no] = val -- store in table so we don't need x4 params
+      params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][val], true)
+      grid_dirty = true
+    end
+    )
+    
+    -- issue: if an event runs this before changing pattern, it won't operate on the new pattern. might be confusing
+    params:add_number("seq_pattern_length_"..seq_no, "Pattern length", 1, max_seq_pattern_length, 8)
+    -- action won't fire if index doesn't change. Actions lives here for params:menu but elsewhere script will set silently
+    params:set_action("seq_pattern_length_"..seq_no,
+      function(val)
+        -- print("debug seq_pattern_length_"..seq_no .. " action firing")
+        seq_pattern_length[seq_no][active_seq_pattern[seq_no]] = val -- store in table so we don't need x4 params
+        grid_dirty = true
+      end
+    )
 
     params:add_number("seq_octave_"..seq_no, "Octave", -4, 4, 0)
   
@@ -900,8 +905,7 @@ function init()
   --#region chord globals
   chord_pattern_length = {4,4,4,4}
   set_chord_pattern(1)
-  pattern_name = {"A","B","C","D"}
-  pattern_queue = false
+  chord_pattern_q = false
   chord_no = 0
   chord_key_count = 0
   chord_pattern_position = 0
@@ -1004,6 +1008,7 @@ function init()
   seq_pattern_position = {}
   seq_duration = {}
   active_seq_pattern = {}
+  seq_pattern_q = {}
   selected_seq_no = 1 -- unlike chord, selected is not always the same as *active*
   pattern_copy_performed = {} -- also used for chord which always uses index 1
   pattern_key_count = 0 -- also used for chord
@@ -1019,6 +1024,8 @@ function init()
     seq_pattern_position[seq_no] = {}
     pattern_copy_performed[seq_no] = false
     pattern_keys[seq_no] = {}
+    seq_pattern_q[seq_no] = false
+
 
     for pattern = 1, max_seq_patterns do
       seq_pattern[seq_no][pattern] = {}
@@ -1166,9 +1173,9 @@ function init()
       end
       arranger_queue = nil
       arranger_one_shot_last_pattern = false -- Added to prevent 1-pattern arrangements from auto stopping.
-      set_pattern_queue(false)
+      set_chord_pattern_q(false)
       for seq_no = 1, max_seqs do
-        seq_pattern_position[seq_no] = 0
+        reset_seq(seq_no)
         play_seq[seq_no] = false
       end
       chord_pattern_position = 0
@@ -2126,7 +2133,24 @@ function gen_menu()
 
   -- SEQ MENUS
   for seq_no = 1, max_seqs do
-    table.insert(menus, {"seq_voice_"..seq_no, "seq_note_map_"..seq_no, "seq_note_priority_"..seq_no, "seq_polyphony_"..seq_no, "seq_start_on_"..seq_no, "seq_reset_on_"..seq_no, "seq_octave_"..seq_no, "seq_rotate_"..seq_no, "seq_shift_"..seq_no, "seq_div_index_"..seq_no, "seq_duration_index_"..seq_no, "seq_swing_"..seq_no, "seq_accent_"..seq_no, "seq_dynamics_"..seq_no, "seq_probability_"..seq_no})
+    table.insert(menus, {
+      "seq_voice_"..seq_no,
+      "seq_note_map_"..seq_no,
+      "seq_note_priority_"..seq_no,
+      "seq_polyphony_"..seq_no,
+      "seq_octave_"..seq_no,
+      "seq_rotate_"..seq_no,
+      "seq_shift_"..seq_no,
+      "seq_div_index_"..seq_no,
+      "seq_duration_index_"..seq_no,
+      "seq_swing_"..seq_no,
+      "seq_accent_"..seq_no,
+      "seq_dynamics_"..seq_no,
+      "seq_probability_"..seq_no,
+      "seq_start_on_"..seq_no,
+      "seq_reset_on_"..seq_no,
+      "seq_pattern_change_"..seq_no
+    })
     if params:visible("seq_channel_"..seq_no) or norns_interaction == "preview_param" then
       table.insert(menus[#menus], 2, "seq_channel_"..seq_no)
     end
@@ -2848,9 +2872,9 @@ end
 function reset_pattern() -- todo: Also have the chord readout updated (move from advance_chord_pattern to a function)
   transport_state = "stopped"
   print(transport_state)
-  set_pattern_queue(false)
+  set_chord_pattern_q(false)
   for seq_no = 1, max_seqs do
-    seq_pattern_position[seq_no] = 0
+    reset_seq(seq_no)
   end
   chord_pattern_position = 0
   reset_sprockets("reset_pattern")
@@ -2936,7 +2960,7 @@ function advance_chord_pattern()
         -- changed from wrap to a check if incremented arranger_position exceeds seq_pattern_length
         arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
         set_chord_pattern(arranger_padded[arranger_position])
-        update_pattern_queue()
+        update_chord_pattern_q()
         arranger_queue = nil
       end
       
@@ -2950,9 +2974,9 @@ function advance_chord_pattern()
   -- If arrangement was not just reset, update chord position. 
   if arrangement_reset == false then
     if chord_pattern_position >= chord_pattern_length[active_chord_pattern] or arranger_retrig then
-      if arranger_param == false and pattern_queue then -- make arranger into local bool check (used above)
-        set_chord_pattern(pattern_queue)
-        set_pattern_queue(false)
+      if arranger_param == false and chord_pattern_q then -- make arranger into local bool check (used above)
+        set_chord_pattern(chord_pattern_q)
+        set_chord_pattern_q(false)
       end
       chord_pattern_position = 1
       arranger_retrig = false
@@ -2978,10 +3002,10 @@ function advance_chord_pattern()
         local reset_on = params:get("seq_reset_on_"..seq_no)
 
         if reset_on == 1 or reset_on == 2 then -- 1 == every step, 2 == on chord steps
-          seq_pattern_position[seq_no] = 0
+          reset_seq(seq_no)
         end
 
-        if start_on == 2 or start_on == 3 then -- 1 == every step, 3 == on chord steps
+        if start_on == 2 or start_on == 3 then -- 2 == every step, 3 == on chord steps
           play_seq[seq_no] = true
         end
       end
@@ -2991,10 +3015,10 @@ function advance_chord_pattern()
         local reset_on = params:get("seq_reset_on_"..seq_no)   
 
         if reset_on == 1 or reset_on == 3 then -- 1 == every step, 3 == on blank steps
-          seq_pattern_position[seq_no] = 0
+          reset_seq(seq_no)
         end
 
-        if start_on == 2 or start_on == 4 then -- 1 == every step, 4 == on blank steps
+        if start_on == 2 or start_on == 4 then -- 2 == every step, 4 == on blank steps
           play_seq[seq_no] = true
         end
       end
@@ -3019,15 +3043,15 @@ end
 
 -- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false
 -- Does not flip to true until Arranger is re-synced upon advance_chord_pattern (or transport reset)
--- Also updates pattern_queue
+-- Also updates chord_pattern_q
 function update_arranger_active()
   if params:string("arranger") == "Off" then
     arranger_active = false
-    set_pattern_queue(false)
+    set_chord_pattern_q(false)
 
   elseif params:string("arranger") == "On" then
     if chord_pattern_position == 0 then arranger_active = true end
-    update_pattern_queue()
+    update_chord_pattern_q()
   end
   gen_arranger_dash_data("update_arranger_active")
 end
@@ -3623,7 +3647,7 @@ function get_next_chord()
   local pre_arranger_position = arranger_position
   local pre_arranger_retrig = arranger_retrig
   local pre_chord_pattern_position = chord_pattern_position
-  local pre_pattern_queue = pattern_queue
+  local pre_chord_pattern_q = chord_pattern_q
         pre_pattern = active_chord_pattern
 
   -- Move arranger sequence if On
@@ -3650,9 +3674,9 @@ function get_next_chord()
   -- If arrangement was not just reset, update chord position. 
   if pre_arrangement_reset == false then
     if pre_chord_pattern_position >= chord_pattern_length[pre_pattern] or pre_arranger_retrig then
-      if pre_pattern_queue then
-        pre_pattern = pre_pattern_queue
-        pre_pattern_queue = false
+      if pre_chord_pattern_q then
+        pre_pattern = pre_chord_pattern_q
+        pre_chord_pattern_q = false
       end
       pre_chord_pattern_position = 1
       pre_arranger_retrig = false
@@ -3717,17 +3741,34 @@ function map_note_6(note_num, octave) -- chromatic mapping
   return(note_num -1 + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_7(note_num, octave) -- drum mapping (no key transposition)
+function map_note_7(note_num, octave) -- drum kit mapping (no key transposition)
   return(note_num -1 + (octave * 12)) -- todo param to shift?
 end
 
+
+function reset_seq(seq_no)
+  if seq_pattern_q[seq_no] then
+    active_seq_pattern[seq_no] = seq_pattern_q[seq_no]
+    params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][seq_pattern_q[seq_no]], true)
+    seq_pattern_q[seq_no] = false
+  end
+
+  seq_pattern_position[seq_no] = 0
+end
+
+
 function advance_seq_pattern(seq_no)
   local length = seq_pattern_length[seq_no][active_seq_pattern[seq_no]]
-  if seq_pattern_position[seq_no] > length or arranger_retrig == true then -- might be issue
-    seq_pattern_position[seq_no] = 1
-  else
-    seq_pattern_position[seq_no] = util.wrap(seq_pattern_position[seq_no] + 1, 1, length)
+
+  if seq_pattern_position[seq_no] >= length or arranger_retrig == true then
+    if params:string("seq_pattern_change_"..seq_no) == "On loop" then
+      reset_seq(seq_no) -- do move to seq_pattern_q if populated
+    else
+      seq_pattern_position[seq_no] = 0 -- don't move to seq_pattern_q
+    end
   end
+
+  seq_pattern_position[seq_no] = util.wrap(seq_pattern_position[seq_no] + 1, 1, length)
 
   -- todo dynamic function set by seq_probability action? seems expensive
   -- todo would be awesome to have not just step probability but note probability!
@@ -4181,7 +4222,7 @@ function grid_redraw()
       for i = 1, 4 do
         if i == active_chord_pattern then
           g:led(16, i, mute and led_high_blink or led_high)
-        elseif i == pattern_queue then
+        elseif i == chord_pattern_q then
           g:led(16, i, level_next)
         else
           g:led(16, i, pattern_keys[1][i] and led_med or led_low)
@@ -4212,6 +4253,7 @@ function grid_redraw()
       
     elseif grid_view_name == "Seq" then  -- SEQ GRID REDRAW
       local selected_seq_no = selected_seq_no
+      local level_next = led_med - led_pulse
       local length = seq_pattern_length[selected_seq_no][active_seq_pattern[selected_seq_no]]
 
       g:led(16, 8 + extra_rows, 15) -- set view_selector indicator to seq position
@@ -4240,11 +4282,14 @@ function grid_redraw()
         local x = seq_no + max_seq_cols + 1
         local selected = seq_no == selected_seq_no
         local mute = params:get("seq_mute_"..seq_no) == 2
+        local q = params:string("seq_pattern_change_"..seq_no) ~= "Instantly"
         local lvl_selected = mute and led_high_blink or led_high
         local lvl_unselected = mute and led_med_blink or led_med
 
         for pattern = 1, max_seq_patterns do -- y
-          if pattern == active_seq_pattern[seq_no] then
+          if pattern == seq_pattern_q[seq_no] then -- cued pattern
+            g:led(x, pattern, level_next)
+          elseif pattern == active_seq_pattern[seq_no] then
             g:led(x, pattern, selected and lvl_selected or lvl_unselected)
           else
             g:led(x, pattern, pattern_keys[seq_no][pattern] and led_med or led_low)
@@ -4327,17 +4372,17 @@ function set_grid_view(new_view, new_seq_no) -- optional 2nd arg for seq no
 end
 
 
-function set_pattern_queue(new_pattern)
-  local current_pattern = pattern_queue
-  pattern_queue = new_pattern
+function set_chord_pattern_q(new_pattern)
+  local current_pattern = chord_pattern_q
+  chord_pattern_q = new_pattern
   if current_pattern ~= new_pattern then -- actions to take if pattern q changed
     reset_grid_led_phase()
   end
 end
 
 
-function update_pattern_queue() -- run after changes are made to arranger or arranger pos (arranger_shift, keys, etc...)
-  set_pattern_queue(arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)])
+function update_chord_pattern_q() -- run after changes are made to arranger or arranger pos (arranger_shift, keys, etc...)
+  set_chord_pattern_q(arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)])
 end
 
 -- GRID KEYS
@@ -4509,7 +4554,7 @@ function g.key(x, y, z)
       elseif y < 5 and grid_interaction ~= "arranger_shift" then
         arranger[x_offset] = y == arranger[x_offset] and 0 or y  -- change arranger segment
         gen_arranger_padded()
-        update_pattern_queue()
+        update_chord_pattern_q()
         
         -- allow pasting of events while setting patterns (but not the other way around)
         if grid_interaction == "event_copy" then
@@ -4627,7 +4672,8 @@ function g.key(x, y, z)
           to_player(player, note, dynamics, seq_duration[selected_seq_no], channel)
         end
       elseif x == max_seq_cols + 1 then -- seq loop length
-        params:set("seq_pattern_length_" .. selected_seq_no, y + pattern_grid_offset)
+        params:set("seq_pattern_length_" .. selected_seq_no, y + pattern_grid_offset)--, true) -- silent as action needs to be run every time
+        -- seq_pattern_length[selected_seq_no][active_seq_pattern[selected_seq_no]] = y + pattern_grid_offset
 
       elseif y <= max_seq_patterns then -- seq pattern selector
         local seq_no = x - (16 - max_seqs)
@@ -4653,7 +4699,7 @@ function g.key(x, y, z)
               simultaneous = true
             end
 
-            if not simultaneous then
+            if not simultaneous then -- copy pattern
                 update_seq_pattern[copied_seq_no] = nil -- remove entry since we don't want to change to the pattern we're copying from
 
                 -- possibly misleading as this copies the pattern in current state rather than when keydown was performed
@@ -4664,10 +4710,10 @@ function g.key(x, y, z)
                   end
                 end
 
-                -- Pattern length. If we're pasting to a current active_seq_pattern, do it via param so we update param+grid as well as the table.
+                -- Pattern length. If we're pasting to a current active_seq_pattern, also update param
                 if y == active_seq_pattern[seq_no] then
-                  params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[copied_seq_no][copied_pattern])
-                else -- Otherwise just update the table
+                  params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[copied_seq_no][copied_pattern])--, true) -- silent!
+                else
                   seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
                 end
 
@@ -4740,12 +4786,12 @@ function g.key(x, y, z)
                   reset_arrangement()
                 end
                 
-              elseif y == pattern_queue and transport_active == false then -- Manual jump to queued pattern
+              elseif y == chord_pattern_q and transport_active == false then -- Manual jump to queued pattern
                 print("Manual jump to queued pattern")
                 
                 set_chord_pattern(y)
                 for seq_no = 1, max_seqs do
-                  seq_pattern_position[seq_no] = 0       -- For manual reset of current pattern as well as resetting on manual pattern change
+                  reset_seq(seq_no)
                 end
                 chord_pattern_position = 0
                 reset_external_clock()
@@ -4756,7 +4802,7 @@ function g.key(x, y, z)
                 print("New pattern queued; disabling arranger")
                 if pattern_copy_performed[1] == false then
                   params:set("arranger", 1)
-                  set_pattern_queue(y)
+                  set_chord_pattern_q(y)
                 end
               end
             end
@@ -4796,12 +4842,18 @@ function g.key(x, y, z)
           local new_pattern = update_seq_pattern[seq_no]
 
           if new_pattern then
-            active_seq_pattern[seq_no] = new_pattern
+            if params:string("seq_pattern_change_"..seq_no) == "Instantly" then -- swap pattern immediately vs cue next pattern
+              params:set("seq_pattern_" .. seq_no, new_pattern)
+            elseif new_pattern ~= active_seq_pattern[seq_no] then
+              seq_pattern_q[seq_no] = new_pattern
+            elseif seq_pattern_q[seq_no] and new_pattern == active_seq_pattern[seq_no] then -- wipe q
+              seq_pattern_q[seq_no] = false
+            end
           end
-      
+  
           if pattern_key_count == 0 then -- reset interaction and change grid view if appropriate
             grid_interaction = nil
-            if not simultaneous and new_pattern then
+            if (not simultaneous) and new_pattern then
               set_grid_view("Seq", seq_no)
             end
           end
@@ -4820,7 +4872,7 @@ function g.key(x, y, z)
         if arranger_loop_key_count == 0 then
           if grid_interaction == "arranger_shift" then -- Insert/remove patterns/events after arranger shift with E3
             apply_arranger_shift()
-            update_pattern_queue()
+            update_chord_pattern_q()
             grid_interaction = nil
           elseif grid_interaction == "event_copy" then
             grid_interaction = nil
@@ -6063,7 +6115,7 @@ function redraw()
   
   elseif grid_interaction == "pattern_switcher" then
     if page_name == "CHORD" then
-      tooltips("CHORD PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: queue pattern", "Tap 2x while stopped: jump"})
+      tooltips("CHORD PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: cue pattern", "Tap 2x while stopped: jump"})
     else
       if simultaneous then
         tooltips("MULTIPLE SEQS", {"Release: choose patterns"})
