@@ -2,34 +2,45 @@
 -- PATTERN TRANSFORMATIONS --
 --------------------------------------------
 
--- Rotate pattern
--- todo p0 revisit this vs rotate looping portion of pattern
+-- Rotate entire pattern
 function rotate_pattern(view, offset)
   if view == "Chord" then
-    -- local length = chord_pattern_length[active_chord_pattern]
-    -- local temp_chord_pattern = {}
-    -- for i = 1, length do
-      -- temp_chord_pattern[i] = chord_pattern[active_chord_pattern][i]
-    -- end
-    -- for i = 1, length do
-      -- chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - offset,1,length)]
-    -- end
-
     chord_pattern[active_chord_pattern] = rotate_tab_values(chord_pattern[active_chord_pattern], offset)
   elseif view == "Seq" then
-    -- local length = seq_pattern_length[active_seq_pattern]
-    -- local temp_seq_pattern = {}
-    -- for i = 1, length do
-    --   temp_seq_pattern[i] = seq_pattern[active_seq_pattern][i]
-    -- end
-    -- for i = 1, length do
-    --   seq_pattern[active_seq_pattern][i] = temp_seq_pattern[util.wrap(i - offset,1,length)]
-    -- end
-
     local pattern = seq_pattern[selected_seq_no]
     local active = active_seq_pattern[selected_seq_no]
-  
+
     pattern[active] = rotate_tab_values(pattern[active], offset)
+  end
+end
+
+
+-- Rotate only the looped portion of the pattern
+function rotate_loop(view, offset)
+  if view == "Chord" then
+    local length = chord_pattern_length[active_chord_pattern]
+    local temp_chord_pattern = {}
+
+    for i = 1, length do
+      temp_chord_pattern[i] = chord_pattern[active_chord_pattern][i]
+    end
+    for i = 1, length do
+      chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - offset,1,length)]
+    end
+
+  elseif view == "Seq" then
+    local pattern = seq_pattern[selected_seq_no]
+    local active = active_seq_pattern[selected_seq_no]
+    local length = seq_pattern_length[selected_seq_no][active]
+    local temp_seq_pattern = {}
+
+    for i = 1, length do
+      temp_seq_pattern[i] = pattern[active][i]
+    end
+    for i = 1, length do
+      pattern[active][i] = temp_seq_pattern[util.wrap(i - offset,1,length)]
+    end
+  
   end
 end
 

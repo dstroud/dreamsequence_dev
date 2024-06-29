@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240628 @modularbeat
+-- 240629 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -535,10 +535,19 @@ function init()
     
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_reset_"..seq_no,"Reset on", "trigger")
-    params:set_action("seq_reset_"..seq_no,function() reset_seq(seq_no) end)
+    params:set_action("seq_reset_"..seq_no,function() reset_seq_pattern(seq_no) end)
 
     params:add_option("seq_pattern_change_"..seq_no, "Change", {"Instantly", "On loop", "On reset"}, 1)
-    params:set_action("seq_pattern_change_"..seq_no, function() seq_pattern_q[seq_no] = false end)
+    params:set_action("seq_pattern_change_"..seq_no, 
+      function(var) -- immediately switch to any pending pattern q
+        if var == 1 and seq_pattern_q[seq_no] then
+          params:set("seq_pattern_" .. seq_no, seq_pattern_q[seq_no])
+          -- active_seq_pattern[seq_no] = seq_pattern_q[seq_no]
+          -- params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][seq_pattern_q[seq_no]])
+          seq_pattern_q[seq_no] = false
+        end
+      end
+    )
 
     params:add_number("seq_div_index_"..seq_no, "Step length", 1, 57, 8, function(param) return divisions_string(param:get()) end)
 
@@ -577,17 +586,14 @@ function init()
     params:set_action("seq_pattern_"..seq_no,
     function(val)
       active_seq_pattern[seq_no] = val -- store in table so we don't need x4 params
-      params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][val], true)
+      params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][val])
       grid_dirty = true
     end
     )
-    
     -- issue: if an event runs this before changing pattern, it won't operate on the new pattern. might be confusing
     params:add_number("seq_pattern_length_"..seq_no, "Pattern length", 1, max_seq_pattern_length, 8)
-    -- action won't fire if index doesn't change. Actions lives here for params:menu but elsewhere script will set silently
     params:set_action("seq_pattern_length_"..seq_no,
       function(val)
-        -- print("debug seq_pattern_length_"..seq_no .. " action firing")
         seq_pattern_length[seq_no][active_seq_pattern[seq_no]] = val -- store in table so we don't need x4 params
         grid_dirty = true
       end
@@ -1175,7 +1181,7 @@ function init()
       arranger_one_shot_last_pattern = false -- Added to prevent 1-pattern arrangements from auto stopping.
       set_chord_pattern_q(false)
       for seq_no = 1, max_seqs do
-        reset_seq(seq_no)
+        reset_seq_pattern(seq_no)
         play_seq[seq_no] = false
       end
       chord_pattern_position = 0
@@ -1305,11 +1311,14 @@ function init()
 
 -- Redefine div change actions, this time with lattice stuff
 
--- WIP: needs some work! currently only allowing time signature div changes at lattice reset which is dumb
+-- WIP: needs some work! Currently blocks any changes unless stopped LOL
 params:set_action("ts_numerator",
     function(val) 
       if transport_state == "stopped" then
+        ts_numerator = val
         sprocket_measure:set_division(val / params:string("ts_denominator"))
+      else
+        params:set("ts_numerator", ts_numerator or 4)
       end
     end
   )
@@ -1317,8 +1326,11 @@ params:set_action("ts_numerator",
   params:set_action("ts_denominator",
   function(val) 
     if transport_state == "stopped" then
+      ts_denominator = val
       sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
       sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
+    else
+      params:set("ts_denominator", ts_denominator or 3)
     end
   end
 )
@@ -2127,7 +2139,7 @@ function gen_menu()
 
   -- CHORD MENU
   table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
-  if params:visible("chord_channel") or norns_interaction == "preview_param" then
+  if params:visible("chord_channel") or norns_interaction == "k1" then
     table.insert(menus[#menus], 2, "chord_channel")
   end
 
@@ -2151,20 +2163,20 @@ function gen_menu()
       "seq_reset_on_"..seq_no,
       "seq_pattern_change_"..seq_no
     })
-    if params:visible("seq_channel_"..seq_no) or norns_interaction == "preview_param" then
+    if params:visible("seq_channel_"..seq_no) or norns_interaction == "k1" then
       table.insert(menus[#menus], 2, "seq_channel_"..seq_no)
     end
   end
   
   -- MIDI HARMONIZER MENU
   table.insert(menus, {"midi_voice", "midi_note_map", "midi_harmonizer_in_port", "midi_octave", "midi_duration_index", "midi_dynamics"})
-  if params:visible("midi_channel") or norns_interaction == "preview_param" then
+  if params:visible("midi_channel") or norns_interaction == "k1" then
     table.insert(menus[#menus], 2, "midi_channel")
   end
 
   -- CV HARMONIZER MENU
   table.insert(menus, {"crow_voice", "crow_div_index", "crow_note_map", "crow_auto_rest", "crow_octave", "crow_duration_index","cv_harm_swing", "crow_dynamics"})
-  if params:visible("crow_channel") or norns_interaction == "preview_param" then
+  if params:visible("crow_channel") or norns_interaction == "k1" then
     table.insert(menus[#menus], 2, "crow_channel")
   end
 
@@ -2390,7 +2402,7 @@ function rotate_tab_values(tbl, positions)
 end
 
 
-function seq_rotate_abs(seq_no, new_rotation_val) -- todo p0 -- todo p0 consider if we need to rotate individual patterns
+function seq_rotate_abs(seq_no, new_rotation_val)
   local offset = new_rotation_val - params:get("prev_seq_rotate_"..seq_no)
   local pattern = seq_pattern[selected_seq_no]
   local active = active_seq_pattern[selected_seq_no]
@@ -2401,7 +2413,7 @@ function seq_rotate_abs(seq_no, new_rotation_val) -- todo p0 -- todo p0 consider
 end
 
 
-function seq_shift_abs(seq_no, new_shift_val) -- todo p0 consider if we need to shift individual patterns
+function seq_shift_abs(seq_no, new_shift_val)
   local offset = new_shift_val - (params:get("prev_seq_shift_"..seq_no))
   local pattern = seq_pattern[selected_seq_no][active_seq_pattern[selected_seq_no]]
 
@@ -2874,7 +2886,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   print(transport_state)
   set_chord_pattern_q(false)
   for seq_no = 1, max_seqs do
-    reset_seq(seq_no)
+    reset_seq_pattern(seq_no)
   end
   chord_pattern_position = 0
   reset_sprockets("reset_pattern")
@@ -3002,7 +3014,7 @@ function advance_chord_pattern()
         local reset_on = params:get("seq_reset_on_"..seq_no)
 
         if reset_on == 1 or reset_on == 2 then -- 1 == every step, 2 == on chord steps
-          reset_seq(seq_no)
+          reset_seq_pattern(seq_no)
         end
 
         if start_on == 2 or start_on == 3 then -- 2 == every step, 3 == on chord steps
@@ -3015,7 +3027,7 @@ function advance_chord_pattern()
         local reset_on = params:get("seq_reset_on_"..seq_no)   
 
         if reset_on == 1 or reset_on == 3 then -- 1 == every step, 3 == on blank steps
-          reset_seq(seq_no)
+          reset_seq_pattern(seq_no)
         end
 
         if start_on == 2 or start_on == 4 then -- 2 == every step, 4 == on blank steps
@@ -3746,10 +3758,11 @@ function map_note_7(note_num, octave) -- drum kit mapping (no key transposition)
 end
 
 
-function reset_seq(seq_no)
+function reset_seq_pattern(seq_no)
   if seq_pattern_q[seq_no] then
-    active_seq_pattern[seq_no] = seq_pattern_q[seq_no]
-    params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][seq_pattern_q[seq_no]], true)
+    params:set("seq_pattern_" .. seq_no, seq_pattern_q[seq_no]) -- sets underlying table and length, too
+    -- active_seq_pattern[seq_no] = seq_pattern_q[seq_no]
+    -- params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][seq_pattern_q[seq_no]])
     seq_pattern_q[seq_no] = false
   end
 
@@ -3762,7 +3775,7 @@ function advance_seq_pattern(seq_no)
 
   if seq_pattern_position[seq_no] >= length or arranger_retrig == true then
     if params:string("seq_pattern_change_"..seq_no) == "On loop" then
-      reset_seq(seq_no) -- do move to seq_pattern_q if populated
+      reset_seq_pattern(seq_no) -- do move to seq_pattern_q if populated
     else
       seq_pattern_position[seq_no] = 0 -- don't move to seq_pattern_q
     end
@@ -4672,9 +4685,7 @@ function g.key(x, y, z)
           to_player(player, note, dynamics, seq_duration[selected_seq_no], channel)
         end
       elseif x == max_seq_cols + 1 then -- seq loop length
-        params:set("seq_pattern_length_" .. selected_seq_no, y + pattern_grid_offset)--, true) -- silent as action needs to be run every time
-        -- seq_pattern_length[selected_seq_no][active_seq_pattern[selected_seq_no]] = y + pattern_grid_offset
-
+        params:set("seq_pattern_length_" .. selected_seq_no, y + pattern_grid_offset)
       elseif y <= max_seq_patterns then -- seq pattern selector
         local seq_no = x - (16 - max_seqs)
 
@@ -4712,7 +4723,7 @@ function g.key(x, y, z)
 
                 -- Pattern length. If we're pasting to a current active_seq_pattern, also update param
                 if y == active_seq_pattern[seq_no] then
-                  params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[copied_seq_no][copied_pattern])--, true) -- silent!
+                  params:set("seq_pattern_length_" .. seq_no, seq_pattern_length[copied_seq_no][copied_pattern])
                 else
                   seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
                 end
@@ -4791,7 +4802,7 @@ function g.key(x, y, z)
                 
                 set_chord_pattern(y)
                 for seq_no = 1, max_seqs do
-                  reset_seq(seq_no)
+                  reset_seq_pattern(seq_no)
                 end
                 chord_pattern_position = 0
                 reset_external_clock()
@@ -4840,14 +4851,18 @@ function g.key(x, y, z)
 
         if grid_interaction == "pattern_switcher" then
           local new_pattern = update_seq_pattern[seq_no]
+          local q = seq_pattern_q
 
           if new_pattern then
             if params:string("seq_pattern_change_"..seq_no) == "Instantly" then -- swap pattern immediately vs cue next pattern
               params:set("seq_pattern_" .. seq_no, new_pattern)
-            elseif new_pattern ~= active_seq_pattern[seq_no] then
-              seq_pattern_q[seq_no] = new_pattern
-            elseif seq_pattern_q[seq_no] and new_pattern == active_seq_pattern[seq_no] then -- wipe q
-              seq_pattern_q[seq_no] = false
+            elseif q[seq_no] and new_pattern == q[seq_no] then -- double tap jumps immediately, like chord
+                params:set("seq_pattern_" .. seq_no, new_pattern)
+                q[seq_no] = false
+            elseif q[seq_no] and new_pattern == active_seq_pattern[seq_no] then -- selecting current active pattern will cancel q
+              q[seq_no] = false
+            elseif new_pattern ~= active_seq_pattern[seq_no] then -- set new q
+              q[seq_no] = new_pattern
             end
           end
   
@@ -4936,7 +4951,7 @@ function key(n,z)
         lvl = lvl_dimmed
         -- end
       else
-        norns_interaction = "preview_param"
+        norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
           preview_param = clone_param(menus[page_index][menu_index])
@@ -5468,7 +5483,7 @@ function key(n,z)
     key_count = key_count - 1
     if n == 1 then
 
-      if norns_interaction == "preview_param" then
+      if norns_interaction == "k1" then
         for k, v in pairs(preview_param_q_get) do
           params:set(k, v)
         end
@@ -5503,8 +5518,15 @@ end
 function enc(n,d)
   -- Scrolling/extending Arranger, Chord, Seq patterns
   if n == 1 then
-    ------- SCROLL ARRANGER/PATTERN GRID VIEWS--------
-    if grid_view_name == "Chord" or screen_view_name == "Events" then
+    if grid_interaction == "view_switcher" then -- whole pattern rotate
+      if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
+        local d = util.clamp(d, -1, 1) -- no acceleration
+        rotate_pattern(grid_view_name, d)
+        grid_dirty = true
+      end
+    
+      ------- SCROLL ARRANGER/PATTERN GRID VIEWS--------
+    elseif grid_view_name == "Chord" or screen_view_name == "Events" then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_chord_pattern_length -  rows)
     elseif grid_view_name == "Seq" then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_seq_pattern_length -  rows)
@@ -5513,12 +5535,11 @@ function enc(n,d)
     end
     grid_dirty = true
 
-  -- n == ENC 2 ------------------------------------------------
-  elseif n == 2 then
+  elseif n == 2 then -- ENC 2
     if grid_interaction == "view_switcher" then
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
         local d = util.clamp(d, -1, 1) -- no acceleration
-        rotate_pattern(grid_view_name, d)
+        rotate_loop(grid_view_name, d)
         grid_dirty = true
       end
    
@@ -5536,13 +5557,12 @@ function enc(n,d)
     elseif not grid_interaction then -- standard menus
       menu_index = util.clamp(menu_index + d, 0, #menus[page_index])
       selected_menu = menus[page_index][menu_index]
-      if norns_interaction == "preview_param" and menu_index ~= 0 then
+      if norns_interaction == "k1" and menu_index ~= 0 then
         preview_param = clone_param(menus[page_index][menu_index])
       end
     end
     
-  else -- n == ENC 3 -------------------------------------------------------------  
-  
+  else -- n == ENC 3
     -- Grid-view custom encoder actions
     if grid_interaction == "view_switcher" then
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq
@@ -5625,7 +5645,7 @@ function enc(n,d)
         page_index = util.clamp(page_index + d, 1, #pages)
         set_page()
 
-      elseif norns_interaction == "preview_param" then
+      elseif norns_interaction == "k1" then
         preview_param:delta(d)
         preview_param_q_get[preview_param.id] = preview_param:get()
         preview_param_q_string[preview_param.id] = preview_param:string()
@@ -6099,10 +6119,10 @@ function redraw()
     if grid_view_name == "Arranger" then
       tooltips("SONG ARRANGER GRID")
     elseif grid_view_name == "Chord" then
-      tooltips("CHORD GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
+      tooltips("CHORD GRID FUNCTIONS", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
       footer("GENERATE")
     elseif grid_view_name == "Seq" then
-      tooltips("SEQ " .. selected_seq_no .. " GRID FUNCTIONS", {"E2: rotate ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
+      tooltips("SEQ " .. selected_seq_no .. " GRID FUNCTIONS", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
       footer("GENERATE")
     end
 
