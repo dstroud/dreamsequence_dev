@@ -32,7 +32,7 @@ function dash_functions.transport()
   if transport_state == "starting" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
     screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
   elseif transport_state == "playing" then -- metronome with emphasis on new measure
-    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane)
+    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane - 2) 
   else
     screen.level(lvl_pane_selected)
   end
@@ -359,12 +359,12 @@ end
 
 
 -----------------------------
--- ARRANGER COUNTDOWN
+-- ARRANGER TIME REMAINING COUNTDOWN
 -----------------------------
-table.insert(dash_ids, "arranger_countdown")
-table.insert(dash_name, "Arranger countdown")
+table.insert(dash_ids, "time_remaining")
+table.insert(dash_name, "Time remaining")
 
-function dash_functions.arranger_countdown()
+function dash_functions.time_remaining()
   -- pane
   screen.level(lvl_pane)
   screen.rect(dash_x, dash_y, width, 9)
@@ -374,6 +374,27 @@ function dash_functions.arranger_countdown()
   screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected)
   screen.move(dash_x + 3, dash_y + 7)
   screen.text(seconds_remaining)
+
+  dash_y = dash_y + 10 -- position for next dash
+end
+
+
+-----------------------------
+-- ELAPSED PLAY TIME
+-----------------------------
+table.insert(dash_ids, "time_elapsed")
+table.insert(dash_name, "Time elapsed")
+
+function dash_functions.time_elapsed()
+  -- pane
+  screen.level(lvl_pane)
+  screen.rect(dash_x, dash_y, width, 9)
+  screen.fill()
+
+  -- pattern text a-d
+  screen.level(lvl_pane_selected)
+  screen.move(dash_x + 3, dash_y + 7)
+  screen.text(seconds_elapsed or "00:00")
 
   dash_y = dash_y + 10 -- position for next dash
 end

@@ -24,7 +24,7 @@ function generator()
   params:set("mode", math.random(1, 9)) -- Currently this is called each time c-gen runs, but might change this
   -- not really the best option but this is what the OG algos were built around
   set_param_string("seq_start_on_"..selected_seq_no, "Loop")
-  set_param_string("seq_reset_on_"..selected_seq_no, "Chord steps")
+  set_param_string("seq_reset_on_"..selected_seq_no, "Measure")
 
   params:set("seq_note_map_"..selected_seq_no, math.random(1, 2))
   params:set("chord_div_index", 15)
@@ -335,7 +335,7 @@ function seq_generator(mode)
     params:set("seq_note_map_"..selected_seq_no, seq_note_map)
     -- not really the best option but this is what the OG algos were built around. todo revisit this as they may have changed
     set_param_string("seq_start_on_"..selected_seq_no, "Loop")
-    set_param_string("seq_reset_on_"..selected_seq_no, "Chord steps")
+    set_param_string("seq_reset_on_"..selected_seq_no, "Measure")
   end
     
   -- Table containing seq algos. This runs at init as well.

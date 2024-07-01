@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240629 @modularbeat
+-- 240630 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -262,7 +262,6 @@ function init()
   --------------------
 
   -- functions and globals used by params
-
   pattern_name = {"A","B","C","D"}
 
   -- show or hide midi channel param/menu
@@ -299,7 +298,10 @@ function init()
 
   params:add_option("default_pset", "Load pset", {"Off", "Last", "Template"}, 1)
   params:set_save("default_pset", false)
-  params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
+
+  -- don't load last/template if it's a new version, assuming breaking changes
+  -- param_option_to_index is used rather than set_param_string to handle any invalid/changed saved values
+  params:set("default_pset", prefs.last_version == version and param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
   -- params:add_separator("interaction","interaction")
@@ -311,7 +313,18 @@ function init()
 
   -- params:add_separator("dashboard","dashboard")
 
-  local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Arranger countdown", nil}
+  local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Time remaining", nil}
+  -- todo probably a better way to do this rather than having these dummy funcs being called
+  function init_dummy_funcs()
+    function calc_seconds_remaining()
+    end
+
+    function calc_seconds_elapsed()
+    end
+
+  end
+  init_dummy_funcs()
+
   for dash_no = 1, 6 do
     params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, 1)
     params:set_save("dash_" .. dash_no, false)
@@ -320,6 +333,36 @@ function init()
       function(val)
         save_prefs()
         dash_list[dash_no] = dash_functions[dash_ids[val]]
+
+        -- enable/disable dash functions depending on selection
+
+        -- init functions in inactive states
+        init_dummy_funcs()
+        seconds_remaining = "00:00"
+        seconds_elapsed_raw = 0
+
+        for dash_no = 1, 6 do -- check every param each time one is changed
+          if params:string("dash_" .. dash_no) == "Time remaining" then
+
+            function calc_seconds_remaining()
+              if arranger_active then
+                percent_step_elapsed = (arranger_position == 0 and 0 or sprocket_chord.phase) / (sprocket_chord.division * 4 * seq_lattice.ppqn) -- ppc
+                seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
+              else
+                seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (steps_remaining_in_active_pattern or 0))
+              end
+              seconds_remaining = s_to_min_sec(math.ceil(seconds_remaining))
+            end
+
+          elseif params:string("dash_" .. dash_no) == "Time elapsed" then
+            function calc_seconds_elapsed()
+              seconds_elapsed_raw = seconds_elapsed_raw + .1
+              seconds_elapsed = s_to_min_sec(seconds_elapsed_raw)
+            end
+
+          end
+        end
+
       end)
   end
   
@@ -495,15 +538,15 @@ function init()
 
   for seq_no = 1, max_seqs do
 
-    params:add_group("seq"..seq_no, "SEQ "..seq_no, 26)
+    params:add_group("seq"..seq_no, "SEQ "..seq_no, 37)
 
     params:add_option("seq_note_map_"..seq_no, "Notes", note_map, 1)
     
-    params:add_option("seq_note_priority_"..seq_no, "Priority", {"Mono", "L→", "←R", "Random"}, 2)
+    params:add_option("seq_note_priority_"..seq_no, "Priority", {"Mono", "L→", "←R", "Random"}, 1)
 
-    params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, 12, 1) -- to 0??
+    params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, max_seq_cols, 1) -- to 0??
 
-    params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Blank steps", "Cue/event"}, 1)
+    params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Blank steps", "Measure", "Cue/event"}, 1)
 
 
 
@@ -527,7 +570,7 @@ function init()
 
 
 
-    params:add_option("seq_reset_on_"..seq_no, "Reset", {"Every step", "Chord steps", "Blank steps", "Stop/event"}, 4)
+    params:add_option("seq_reset_on_"..seq_no, "Reset", {"Every step", "Chord steps", "Blank steps", "Measure", "Stop/event"}, 4)
 
     -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start on", "trigger")
@@ -542,8 +585,6 @@ function init()
       function(var) -- immediately switch to any pending pattern q
         if var == 1 and seq_pattern_q[seq_no] then
           params:set("seq_pattern_" .. seq_no, seq_pattern_q[seq_no])
-          -- active_seq_pattern[seq_no] = seq_pattern_q[seq_no]
-          -- params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][seq_pattern_q[seq_no]])
           seq_pattern_q[seq_no] = false
         end
       end
@@ -570,23 +611,55 @@ function init()
     params:add_number("seq_duration_index_"..seq_no, "Duration", 0, 57, 0, function(param) return durations_string(param:get()) end)
     params:set_action("seq_duration_index_"..seq_no, function(val) seq_duration[seq_no] = val == 0 and division_names[params:get("seq_div_index_"..seq_no)][1] or division_names[val][1] end)
 
-    -- need rotate/shift for each sub-pattern??
-    params:add_number("seq_rotate_"..seq_no, "Pattern ↑↓", 0, max_seq_pattern_length - 1, 0, function(param) return param:get() end, true) -- dummy formatter??
-    params:set_action("seq_rotate_"..seq_no, function(val) seq_rotate_abs(seq_no, val) end)
-    params:add_number("prev_seq_rotate_"..seq_no, "prev_seq_rotate_"..seq_no, (max_seq_pattern_length * -1), max_seq_pattern_length, 0)
-    params:hide("prev_seq_rotate_"..seq_no)
+    
+    params:add_number("seq_pattern_rotate_"..seq_no, "Pattern ↑↓", 0, max_seq_pattern_length - 1, 0, nil, true) -- endless but confusing
+    params:set_action("seq_pattern_rotate_"..seq_no, function(val) seq_pattern_rotate_abs(seq_no, val) end)
 
-    params:add_number("seq_shift_"..seq_no, "Pattern ←→", 0, max_seq_cols - 1, 0, function(param) return param:get() end, true) -- dummy formatter??
+    for pattern = 1, max_seq_patterns do
+      params:add_number("prev_seq_pattern_rotate_"..seq_no .. "_" .. pattern, "prev_seq_pattern_rotate_"..seq_no .. "_" .. pattern, (max_seq_pattern_length * -1), max_seq_pattern_length, 0)
+      params:hide("prev_seq_pattern_rotate_"..seq_no .. "_" .. pattern)
+    end
+
+
+    params:add_number("seq_loop_rotate_"..seq_no, "Loop ↑↓", -9999, 9999, 0) -- can't use math.huge or is breaks random event values
+    params:set_action("seq_loop_rotate_"..seq_no, function(val) seq_loop_rotate_abs(seq_no, val) end)
+
+    for pattern = 1, max_seq_patterns do
+      params:add_number("prev_seq_loop_rotate_"..seq_no .. "_" .. pattern, "prev_seq_loop_rotate_"..seq_no .. "_" .. pattern, -math.huge, math.huge, 0)
+      params:hide("prev_seq_loop_rotate_"..seq_no .. "_" .. pattern)
+    end
+
+
+    params:add_number("seq_shift_"..seq_no, "Pattern ←→", 0, max_seq_cols - 1, 0, nil, true)
     params:set_action("seq_shift_"..seq_no, function(val) seq_shift_abs(seq_no, val) end)
 
-    params:add_number("prev_seq_shift_"..seq_no, "prev_seq_shift_"..seq_no, -max_seq_cols, max_seq_cols, 0)
-    params:hide("prev_seq_shift_"..seq_no)
+    for pattern = 1, max_seq_patterns do
+      params:add_number("prev_seq_shift_"..seq_no .. "_" .. pattern, "prev_seq_shift_"..seq_no .. "_" .. pattern, -max_seq_cols, max_seq_cols, 0)
+      params:hide("prev_seq_shift_"..seq_no .. "_" .. pattern)
+    end
+
 
     params:add_option("seq_pattern_"..seq_no, "Pattern", pattern_name, 1)
     params:set_action("seq_pattern_"..seq_no,
     function(val)
       active_seq_pattern[seq_no] = val -- store in table so we don't need x4 params
       params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][val])
+      
+      local current_pattern_rotation = params:get("seq_pattern_rotate_" .. seq_no)
+      if current_pattern_rotation ~= params:get("prev_seq_pattern_rotate_" .. seq_no .. "_" .. val) then
+        seq_pattern_rotate_abs(seq_no, current_pattern_rotation)
+      end
+
+      local current_loop_rotation = params:get("seq_loop_rotate_" .. seq_no)
+      if current_loop_rotation ~= params:get("prev_seq_loop_rotate_" .. seq_no .. "_" .. val) then
+        seq_loop_rotate_abs(seq_no, current_loop_rotation)
+      end
+
+      local current_shift = params:get("seq_shift_" .. seq_no)
+      if current_shift ~= params:get("prev_seq_shift_" .. seq_no .. "_" .. val) then
+        seq_shift_abs(seq_no, current_shift)
+      end
+
       grid_dirty = true
     end
     )
@@ -1190,15 +1263,6 @@ function init()
       if transport_state == "paused" then
         transport_state = "stopped" -- just flips to the stop icon so user knows they don't have to do this manually
       end
-
-      -- don't remember why this was needed?
-      -- local seq_reset_on_1 = params:get("seq_reset_on_1")
-      -- if seq_reset_on_1 == 4 then -- "on stop/event"
-      --   play_seq = true
-      -- else
-      --   play_seq = false
-      -- end
-    
       build_scale() -- Have to run manually because mode bang comes after all of this for some reason
       get_next_chord()
       chord_raw = next_chord
@@ -1274,9 +1338,9 @@ function init()
     local prefs = {}
     prefs.timestamp = os.date()
     prefs.last_version = version
-    -- prefs.chord_readout = params:string("chord_readout")
     prefs.default_pset = params:string("default_pset")
-    for dash_no = 1, 5 do
+    prefs.sync_grid_norns = params:string("sync_grid_norns")
+    for dash_no = 1, 6 do
       local id = "dash_" .. dash_no
       prefs[id] = params:string(id)
     end
@@ -1454,6 +1518,7 @@ params:set_action("ts_numerator",
   }
 
 
+  -- sprocket used for quantizing transport stops to 1/16 div which is what MIDI SPP uses-- also used to send continue/SPP on resume
   sprocket_16th = seq_lattice:new_sprocket{
     division = 1/16, -- SPP quantum, also used for start pre-sync
     order = 1,
@@ -1680,6 +1745,17 @@ params:set_action("ts_numerator",
           start = false
         end
 
+        for seq_no = 1, max_seqs do
+          if params:string("seq_reset_on_" .. seq_no) == "Measure" then
+            reset_seq_pattern(seq_no)
+          end
+
+          if params:string("seq_start_on_" .. seq_no) == "Measure" then
+            play_seq[seq_no] = true
+          end
+
+        end
+
       end,
       -- div_action = function(t)  -- call action when div change is processed -- todo along with measure
       division = div, -- params:get("ts_numerator") / params:string("ts_denominator"),
@@ -1765,14 +1841,13 @@ params:set_action("ts_numerator",
   init_sprocket_crow_clock(crow_clock_lookup[params:get("crow_clock_index")][1]/global_clock_div/4)
   
   for seq_no = 1, max_seqs do
-    -- function init_sprocket_seq_1(div)
     _G["init_sprocket_seq_"..seq_no] = function(div)
       _G["sprocket_seq_"..seq_no] = seq_lattice:new_sprocket{
           action = function(t)
           -- something like this is needed or stop during "pausing" (2x K2) will reset and play sequence again
           -- might be better to include a check in lattice since this probably affects all sprockets (including crow/harm)
           -- if transport_state == "playing" or transport_state == "pausing" then 
-          if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
+          if params:string("seq_start_on_"..seq_no) == "Loop" then
             advance_seq_pattern(seq_no)
             grid_dirty = true   -- todo should check active grid view?
           elseif play_seq[seq_no] then  -- todo seq2?
@@ -2151,7 +2226,8 @@ function gen_menu()
       "seq_note_priority_"..seq_no,
       "seq_polyphony_"..seq_no,
       "seq_octave_"..seq_no,
-      "seq_rotate_"..seq_no,
+      "seq_pattern_rotate_"..seq_no,
+      "seq_loop_rotate_"..seq_no,
       "seq_shift_"..seq_no,
       "seq_div_index_"..seq_no,
       "seq_duration_index_"..seq_no,
@@ -2402,27 +2478,57 @@ function rotate_tab_values(tbl, positions)
 end
 
 
-function seq_rotate_abs(seq_no, new_rotation_val)
-  local offset = new_rotation_val - params:get("prev_seq_rotate_"..seq_no)
-  local pattern = seq_pattern[selected_seq_no]
-  local active = active_seq_pattern[selected_seq_no]
+function seq_pattern_rotate_abs(seq_no, new_rotation_val)
+  local pattern = seq_pattern[seq_no]
+  local pattern_no = active_seq_pattern[seq_no]
+  local offset = new_rotation_val - params:get("prev_seq_pattern_rotate_" .. seq_no .. "_" .. pattern_no)
 
-  pattern[active] = rotate_tab_values(pattern[active], offset)
-  params:set("prev_seq_rotate_"..seq_no, new_rotation_val)
+  pattern[pattern_no] = rotate_tab_values(pattern[pattern_no], offset)
+  params:set("prev_seq_pattern_rotate_" .. seq_no .. "_" .. pattern_no, new_rotation_val)
   grid_dirty = true
 end
 
 
+function seq_loop_rotate_abs(seq_no, new_rotation_val)
+  local pattern = seq_pattern[seq_no]
+  local pattern_no = active_seq_pattern[seq_no]
+  local length = seq_pattern_length[seq_no][pattern_no]
+  local temp_seq_pattern = {}
+  local offset = new_rotation_val - params:get("prev_seq_loop_rotate_" .. seq_no .. "_" .. pattern_no)
+
+  for i = 1, length do
+    temp_seq_pattern[i] = pattern[pattern_no][i]
+  end
+
+  -- new method with no wrap
+  temp_seq_pattern = rotate_tab_values(temp_seq_pattern, offset)
+  for i = 1, length do
+    pattern[pattern_no][i] = temp_seq_pattern[i]
+  end
+
+  -- look into: maybe can store length-wrapped value for each pattern if we want to not do the wide range thing.
+  -- but I don't really thing wrapping the param works when we have various pattern lengths
+  params:set("prev_seq_loop_rotate_" .. seq_no .. "_" .. pattern_no, new_rotation_val)
+  grid_dirty = true
+  
+  -- print("DEBUG prev, new, offset, storing", params:get("prev_seq_loop_rotate_" .. seq_no .. "_" .. pattern_no), new_rotation_val, offset, new_rotation_val)
+
+end
+
+
 function seq_shift_abs(seq_no, new_shift_val)
-  local offset = new_shift_val - (params:get("prev_seq_shift_"..seq_no))
-  local pattern = seq_pattern[selected_seq_no][active_seq_pattern[selected_seq_no]]
+  local pattern_no = active_seq_pattern[seq_no]
+  local offset = new_shift_val - (params:get("prev_seq_shift_" .. seq_no .. "_" .. pattern_no))
+  local pattern = seq_pattern[seq_no][pattern_no]
 
   for y = 1, max_seq_pattern_length do
     pattern[y] = rotate_tab_values(pattern[y], offset)
   end
 
-  params:set("prev_seq_shift_"..seq_no, new_shift_val) -- blocking shift somehow
+  params:set("prev_seq_shift_" .. seq_no .. "_" .. pattern_no, new_shift_val)
+
   grid_dirty = true
+
 end
 
 
@@ -2742,20 +2848,15 @@ function gen_arranger_padded()
 end
 
 
-function calc_seconds_remaining()
-  if arranger_active then
-    percent_step_elapsed = (arranger_position == 0 and 0 or sprocket_chord.phase) / (sprocket_chord.division * 4 * seq_lattice.ppqn) -- ppc
-    seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
-  else
-    seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (steps_remaining_in_active_pattern or 0))
-  end
-  seconds_remaining = s_to_min_sec(math.ceil(seconds_remaining))
-end
-
-
 -- 1/10s timer used to calculate arranger countdown timer and do transport/grid blinkies
 function countdown()
-  calc_seconds_remaining()
+
+  -- todo p1 these are kinda expensive and run way too frequently. Can switch to once a second maybe but not sure about resuming.
+  if transport_state == "playing" then
+    calc_seconds_remaining()
+    calc_seconds_elapsed()
+  end
+
   cycle_1_16 = util.wrap(cycle_1_16 + 1, 1, 16)
   local led_pulse_tab = {0,0,0,1,2,3,2,1} -- 3x pause at top
   led_pulse = led_pulse_tab[util.wrap(cycle_1_16, 1, 8)]
@@ -2786,7 +2887,7 @@ function clock.transport.start(sync_value)
   end
   
   for seq_no = 1, max_seqs do
-    if params:get("seq_start_on_"..seq_no) == 1 then -- "in a loop"
+    if params:string("seq_start_on_"..seq_no) == "Loop" then
       play_seq[seq_no] = true
     end
   end
@@ -2797,6 +2898,8 @@ function clock.transport.start(sync_value)
 
   -- pre-sync to make sure lattice is in sync with system clock (not necessarily in phase though)
   clock.run(function()
+    local reset_elapsed = transport_state ~= "paused"
+    
     transport_state = "starting"
     print(transport_state)
 
@@ -2854,6 +2957,9 @@ function clock.transport.start(sync_value)
     end
     -- end)
 
+    if reset_elapsed then -- elapsed time dash has to go here after sync
+      seconds_elapsed_raw = 0
+    end
 
     -- -- Question: this was previously part of the sequence_clock loop
     -- -- should this be moved to 16th and measure sprockets?
@@ -3010,27 +3116,27 @@ function advance_chord_pattern()
       end
 
       for seq_no = 1, max_seqs do
-        local start_on = params:get("seq_start_on_"..seq_no)
-        local reset_on = params:get("seq_reset_on_"..seq_no)
+        local start_on = params:string("seq_start_on_"..seq_no)
+        local reset_on = params:string("seq_reset_on_"..seq_no)
 
-        if reset_on == 1 or reset_on == 2 then -- 1 == every step, 2 == on chord steps
+        if reset_on == "Every step" or reset_on == "Chord steps" then
           reset_seq_pattern(seq_no)
         end
 
-        if start_on == 2 or start_on == 3 then -- 2 == every step, 3 == on chord steps
+        if start_on == "Every step" or start_on == "Chord steps" then
           play_seq[seq_no] = true
         end
       end
     else -- no chord but we might need to start/reset seq
       for seq_no = 1, max_seqs do
-        local start_on = params:get("seq_start_on_"..seq_no)
-        local reset_on = params:get("seq_reset_on_"..seq_no)   
+        local start_on = params:string("seq_start_on_"..seq_no)
+        local reset_on = params:string("seq_reset_on_"..seq_no)
 
-        if reset_on == 1 or reset_on == 3 then -- 1 == every step, 3 == on blank steps
+        if reset_on == "Every step" or reset_on == "Blank steps" then
           reset_seq_pattern(seq_no)
         end
 
-        if start_on == 2 or start_on == 4 then -- 2 == every step, 4 == on blank steps
+        if start_on == "Every step" or start_on == "Blank steps" then
           play_seq[seq_no] = true
         end
       end
@@ -3761,8 +3867,6 @@ end
 function reset_seq_pattern(seq_no)
   if seq_pattern_q[seq_no] then
     params:set("seq_pattern_" .. seq_no, seq_pattern_q[seq_no]) -- sets underlying table and length, too
-    -- active_seq_pattern[seq_no] = seq_pattern_q[seq_no]
-    -- params:set("seq_pattern_length_"..seq_no, seq_pattern_length[seq_no][seq_pattern_q[seq_no]])
     seq_pattern_q[seq_no] = false
   end
 
@@ -3855,14 +3959,8 @@ function advance_seq_pattern(seq_no)
   
   
   if seq_pattern_position[seq_no] >= length then
-    if params:get("seq_start_on_"..seq_no) ~= 1 then -- "in a loop"
+    if params:string("seq_start_on_"..seq_no) ~= "Loop" then
       play_seq[seq_no] = false
-      
-      -- for "on cue/event "
-      -- if seq_start_on_1 == 5 then -- Only reset if we're currently in Event start_on mode. Could go either way here.
-      --   seq_1_shot_1 = false
-      -- end
-      
     end
   end
 end
