@@ -36,9 +36,10 @@ local lvl_normal = {
   menu_selected = 15,
   menu_deselected = 4,
   pane = 15,
-  pane_selected = 1,
+  pane_selected = 0,
   pane_deselected = 3,
   pane_dark = 7,
+  chart_deselected = 2 -- slightly prefer 2 but 3 has less banding
 }
 
 local lvl_dimmed = {
@@ -47,7 +48,8 @@ local lvl_dimmed = {
   pane = 15, -- not dimmed
   pane_selected = 1, -- not dimmed
   pane_deselected = 3, -- not dimmed
-  pane_dark = 3
+  pane_dark = 3,
+  chart_deselected = 1
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
@@ -6060,9 +6062,9 @@ function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
   local stop = 23 -- width of chart
-  local lvl_pane = lvl.pane
-  local lvl_pane_selected = lvl.pane_selected
-  local lvl_pane_deselected = lvl.pane_deselected
+  local lvl_pane = 0 -- lvl.pane
+  local lvl_pane_selected = lvl.menu_selected -- lvl.pane_selected
+  local lvl_pane_deselected = lvl.chart_deselected -- 2
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
