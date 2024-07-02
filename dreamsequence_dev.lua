@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240630 @modularbeat
+-- 240702 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -6288,7 +6288,7 @@ function redraw()
           screen.text("No events in lane")
         end
 
-        footer("EXIT", "EXIT") -- K3 also goes back to arranger 🤫. Might add footer but then its needs to be updated for quick menu.
+        footer("EXIT") -- K3 also goes back to arranger 🤫. Might add footer but then its needs to be updated for quick menu.
 
       else -- EVENT EDITOR MENUS
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
