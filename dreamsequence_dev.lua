@@ -36,20 +36,22 @@ local lvl_normal = {
   menu_selected = 15,
   menu_deselected = 4,
   pane = 15,
-  pane_selected = 0,
+  pane_selected = 1,
   pane_deselected = 3,
   pane_dark = 7,
-  chart_deselected = 2 -- slightly prefer 2 but 3 has less banding
+  chart_deselected = 2, -- slightly prefer 2 but 3 has less banding
+  chart_area = 0
 }
 
 local lvl_dimmed = {
   menu_selected = 7,
   menu_deselected = 2,
-  pane = 15, -- not dimmed
-  pane_selected = 1, -- not dimmed
-  pane_deselected = 3, -- not dimmed
+  pane = 7,
+  pane_selected = 1,
+  pane_deselected = 3,
   pane_dark = 3,
-  chart_deselected = 1
+  chart_deselected = 1,
+  chart_area = 0
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
@@ -1996,20 +1998,20 @@ end
 -- clock.run(key_timer, 3, print("copying"))
 
 
--- -- generic timer that runs function after counter reaches 0
--- -- eg: clock.run(do_timer, 10, function() print("copying") end)
--- function do_timer(countdown, func)
---   while true do
---     countdown = countdown - 1
---     if countdown == 0 then
---       func()
---       break
---     else
---       print(countdown)
---     end
---     clock.sleep(.1)
---   end
--- end
+-- generic timer that runs function after counter reaches 0
+-- eg: clock.run(do_timer, 10, function() print("copying") end)
+function do_timer(countdown, func)
+  while true do
+    countdown = countdown - 1
+    if countdown == 0 then
+      func()
+      break
+    -- else
+      -- print(countdown)
+    end
+    clock.sleep(.1)
+  end
+end
 
 
 function pattern_key_timer()
@@ -5060,7 +5062,25 @@ function key(n,z)
       end
 
     elseif n == 2 then -- KEY 2
-      if view_key_count > 0 then -- Grid view key held down
+      if norns_interaction == "k1" then
+        if params:get("sync_grid_norns") == 1 then
+          params:set("sync_grid_norns", 2) -- on
+          set_page() -- set Grid view to current page
+        else
+          params:set("sync_grid_norns", 1)
+        end
+        lvl = lvl_dimmed
+        update_dash_lvls()
+        screen_message = "sync_grid_norns_changed"
+        clock.run(do_timer, 7,
+          function()
+            screen_message = nil
+            lvl = lvl_normal
+            update_dash_lvls()
+          end
+        )
+
+      elseif view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
           -- When Chord+Seq Grid View keys are held down, K3 runs Generator (and resets pattern+seq on internal clock)
@@ -6062,9 +6082,6 @@ function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
   local stop = 23 -- width of chart
-  local lvl_pane = 0 -- lvl.pane
-  local lvl_pane_selected = lvl.menu_selected -- lvl.pane_selected
-  local lvl_pane_deselected = lvl.chart_deselected -- 2
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
@@ -6090,7 +6107,7 @@ function gen_arranger_dash_data(source)
     -- 3. Current arranger segment is turned off, resulting in it picking up a different pattern (either the previous pattern or wrapping around to grab the last pattern. arranger_padded shenanigans)
     -- 4. We DO want this to update if the arranger is reset (arranger_position = 0, however)
     
-    local segment_level = on and lvl_pane_selected or lvl_pane_deselected --and 15 or 2 WAG moving this up here
+    local segment_level = on and "menu_selected" or "chart_deselected" --and 15 or 2 WAG moving this up here
 
     -- Note: arranger_position == i idenifies if we're on the active segment. Implicitly false when arranger is reset (arranger_position 0) todo p2 make local
     if arranger_position == i then
@@ -6099,9 +6116,9 @@ function gen_arranger_dash_data(source)
         active_pattern = active_chord_pattern
         active_chord_pattern_length = chord_pattern_length[active_pattern]
         active_chord_pattern_position = math.max(chord_pattern_position, 1)
-        segment_level = lvl_pane_selected -- 15
+        segment_level = "menu_selected" -- 15
       else
-        segment_level = lvl_pane_deselected -- interrupted segment
+        segment_level = "chart_deselected" -- interrupted segment
       end
       pattern_sticky = active_pattern
       chord_pattern_length_sticky = active_chord_pattern_length
@@ -6132,15 +6149,15 @@ function gen_arranger_dash_data(source)
 
         table.insert(dash_patterns, pattern_sticky)
         table.insert(dash_levels, segment_level)
-        table.insert(dash_events, ((events[i][s].populated or 0) > 0) and segment_level or lvl_pane_deselected)
+        table.insert(dash_events, ((events[i][s].populated or 0) > 0) and segment_level or "chart_deselected")
         dash_steps = dash_steps + 1
       end
 
       -- insert blanks between segments
       if dash_steps < stop then
-        table.insert(dash_patterns, lvl_pane)
-        table.insert(dash_events, lvl_pane)
-        table.insert(dash_levels, lvl_pane)
+        table.insert(dash_patterns, 0)
+        table.insert(dash_events, "chart_area")
+        table.insert(dash_levels, "chart_area")
         dash_steps = dash_steps + 1 -- and 1 to grow on!
       end
 
@@ -6458,7 +6475,8 @@ function redraw()
         
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
-      
+
+
       --------------------
       -- MAIN MENUS, PAGES
       --------------------
@@ -6541,10 +6559,31 @@ function redraw()
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
 
+      -- if params:string("sync_grid_norns") == "On" then
+      --   screen.move(dash_x - 10, 7)
+      --   screen.text("▦")
+      -- end
+
       -- iterate through list of modular dashboard functions
       dash_y = 0
       for _, func in pairs(dash_list) do
         func()
+      end
+
+      if screen_message == "sync_grid_norns_changed" then -- notify of sync change using K1+K2
+        local border = 20 -- portion of lower layer still shown
+        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+
+        screen.level(0)
+        screen.rect(table.unpack(rect))
+        screen.fill()
+        screen.level(15)
+        screen.rect(table.unpack(rect))
+        screen.stroke()
+
+        screen.level(15)
+        screen.move(64, 34)
+        screen.text_center(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
       end
 
     end -- of event vs. non-event check

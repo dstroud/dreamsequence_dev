@@ -6,18 +6,35 @@ dash_name = {"Off"}
 ------------------------------
 -- MODULAR DASHBOARD FUNCTIONS
 ------------------------------
+
 -- x origin of chord and arranger dashes
 local dash_x = xy.dash_x
 local width = 29
+
+-- local lvl = lvl
 
 local lvl_pane = lvl.pane
 local lvl_pane_selected = lvl.pane_selected
 local lvl_pane_deselected = lvl.pane_deselected
 local lvl_chart_deselected = lvl.chart_deselected
 local lvl_menu_selected = lvl.menu_selected
+local lvl_chart_area = lvl.chart_area
 -- local lvl_menu_deselected = lvl.menu_deselected
 -- local blinky = blinky -- can't be locally defined here or there's no updating of value
 -- local led_pulse = led_pulse -- can't be locally defined here or there's no updating of value
+
+
+-- function called by main script when we need to switch between normal and dim levels
+function update_dash_lvls()
+  -- lvl = lvl -- used by arranger dash
+
+  lvl_pane = lvl.pane
+  lvl_pane_selected = lvl.pane_selected
+  lvl_pane_deselected = lvl.pane_deselected
+  lvl_chart_deselected = lvl.chart_deselected
+  lvl_menu_selected = lvl.menu_selected
+  lvl_chart_area = lvl.chart_area
+end
 
 ------------------------------
 -- TRANSPORT STATE/METRONOME
@@ -219,6 +236,7 @@ table.insert(dash_ids, "arranger_chart")
 table.insert(dash_name,"Arranger chart")
 
 function dash_functions.arranger_chart()
+  local lvl = lvl -- requires going to table for chart dimming :/
   local on = params:string("arranger") == "On"
   local final_seg = arranger_position >= arranger_length
   local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
@@ -268,15 +286,15 @@ function dash_functions.arranger_chart()
   -- ARRANGER MODE GLYPH
 
   -- glyph level -- todo see if we should pulse final segment when looping and blink when ending (to match grid led)
-  local lvl = on and lvl_pane_selected or lvl_pane_deselected   -- bright == on/dark == off
+  local level = on and lvl_pane_selected or lvl_pane_deselected   -- bright == on/dark == off
   if final_seg and not valid_jump then                        -- blink final-segment warning
     if transport_state == "playing" then
-      lvl = sprocket_metro.downbeat and lvl or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
+      level = sprocket_metro.downbeat and level or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
       else
-      lvl = blinky == 1 and lvl or (lvl_pane - 2)        -- otherwise fast blinky
+      level = blinky == 1 and level or (lvl_pane - 2)        -- otherwise fast blinky
     end
   end
-  screen.level(lvl)
+  screen.level(level)
 
   -- glyph type: loop or one-shot
   -- todo norns.ttf
@@ -321,12 +339,12 @@ function dash_functions.arranger_chart()
   -- Draw arranger patterns and events timeline straight from x_dash_flat
   for i = 1, #dash_patterns - reset_shift do
     -- arranger segment patterns
-    screen.level(dash_levels[i])
+    screen.level(lvl[dash_levels[i]]) -- less efficient to access lvl but got to
     screen.rect(arranger_dash_x , dash_y + 7 + ((dash_patterns[i] + 1) * 2), 1, 1)
     screen.fill()
 
     -- events pips
-    screen.level(dash_events[i] or 0)--lvl_pane)
+    screen.level(lvl[dash_events[i]])
     screen.pixel(arranger_dash_x, dash_y + 19)
     screen.fill()
 

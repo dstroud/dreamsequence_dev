@@ -2,7 +2,7 @@
 
 Chord-based sequencer, arpeggiator, and harmonizer for Monome Norns+Grid
 
-Required: Monome Norns (**240221 or later**) and Grid (16x8 or 16x16)
+Required: Monome Norns (**231114** or later) and Grid (16x8 or 16x16)
 
 Optional: Supports MIDI and Crow by default. Installation of additional [NB voices](https://llllllll.co/t/n-b-et-al-v0-1/60374) is highly recommended!
 
@@ -455,6 +455,71 @@ Dreamsequence supports using Crow to send and receive CV and triggers. Outputs a
 # Changelog
 
 <details>
+<summary>v1.4</summary>
+
+ 
+### Features
+- Seq enhancements
+	- 3 concurrent instances
+	- 4 patterns each
+		- Use `change` param for immediate or quantized pattern switching
+		- Simultaneous pattern switching is possible
+		- Hold+tap to copy and paste between patterns, but be sure to hold the pattern to copy for a brief moment (2ms) so this is not interpreted as a simultaneous pattern switch
+		- New `start` and `reset` options:
+			- Blank steps: start/reset on chord sequence steps containing no chord
+			- Measure: start/reset at the start of a new measure
+	- Polyphonic seq modes
+		- `notes` param options: chromatic, chromatic + transposition based on chord degree, and drum kit (chromatic starting from C1). Also available for CV/MIDI-in
+		- `priority` param determines if Grid is mono or poly, as well as order of note playback
+		- `polyphony` param determines number of notes played per step
+  		<br><br>
+    		> **_TIP:_** to play a random note from a pool of possible notes, set polyphony to "1" and priority to "random" then select the notes on Grid
+    		>
+
+- Modular dashboard 
+	- New options including metronome, chord pattern progress, elapsed play time
+	- Configure with PARAMETERS>>EDIT>>PREFERENCES>>Dash 1-6
+
+- User Interface:
+	- Holding K1 while changing menu values defers all changes until K1 is released
+	- `Sync Grid/Norns` preference changes the page displayed on Norns (Song, Chord, Seqs...) when the Grid view is changed, and vice versa. On by default and can be set in PARAMETERS>>EDIT>>PREFERENCES or toggled by holding K1+K2.
+	- PARAMETERS>>EDIT>>PREFERENCES>>Enc 1-3: set encoder speed and acceleration
+	- Rotation of full seq pattern or looped portion of pattern (param or permanent via seq key + E1/E2)
+	- Holding chord or seq Grid view switcher key and tapping a pattern will toggle muting of chord or seq.
+	- Pressing K2 when transport is stopped will reset arranger position, even if arranger is disabled
+ 	- E1 can be used to scroll arranger continuously, in addition to the page jump keys
+
+- Events
+	- Events editor now tracks what event types are saved in each lane/column and provides a summary browsable using E2/3. Glyphs indicate lane type:
+		- ☐ empty lane
+		- ⊡ "single-event" lane containing only type of event
+		- ☰ "multi-event" lane containing various types of events
+	- Selecting a lane using E2/3 or tapping an empty event slot will show the last-saved event in that lane
+	- Holding K1 in the events editor brings up a quick-menu. Select an option with E2/3 and release K1 or press K3 to perform the action. Currently the only option is to clear all events in the segment.
+
+- Custom NB MIDI voice with script-level control over channel
+
+
+### Changes and FYI
+- Rolled back requirements to 231114. However, Norns 240221 is required for Ableton Link clock support.
+- Grid will blink LEDs to communicate that user interaction may be required, e.g.: pattern extends beyond the current Grid view, muted patterns, unsaved events, arranger ending.
+- Grid will slowly pulse LEDs to communicate upcoming changes such as a manual jump of the arranger playhead, upcoming chord pattern changes, or arranger looping.
+- Dropping MIDI device names and displaying by port # instead. They're just too long.
+- Will reset `load pset` pref on first launch as compatibility with older psets is broken
+- Default seq `reset` value is now "measure"
+
+
+
+### Known issues
+
+- Breaks compatibility with earlier .psets
+- May need to clear dust/data/dreamsequence/prefs.data
+- Seq start/reset triggered by a new measure will occur before events fire
+- Time signature (`beats per bar` and `beat length`) can not be changed unless transport is stopped
+</details>
+
+	
+<details>
 <summary>v1.3</summary>
 	
 ### Features
@@ -526,6 +591,7 @@ Dreamsequence supports using Crow to send and receive CV and triggers. Outputs a
 </details>
 
 <details>
+	
 <summary>v1.2</summary>
 	
 ## New Chord menu options:
