@@ -11,8 +11,8 @@ include(lib .. "dashboards")
 -- modified version of lattice lib
 lattice = include(lib .. "lattice")
 
--- lookup table for chord names/qualities in mode
-include(lib .. "modes")
+-- lookup tables for chord names/qualities in mode, default custom scales, etc...
+include(lib .. "theory")
 
 -- divisions for clock modulo and durations
 include(lib .. "divisions")
