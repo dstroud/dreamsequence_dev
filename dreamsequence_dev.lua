@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240702 @modularbeat
+-- 240711 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -36,7 +36,7 @@ local lvl_normal = {
   menu_selected = 15,
   menu_deselected = 4,
   pane = 15,
-  pane_selected = 1,
+  pane_selected = 0,
   pane_deselected = 3,
   pane_dark = 7,
   chart_deselected = 2, -- slightly prefer 2 but 3 has less banding
@@ -47,8 +47,8 @@ local lvl_dimmed = {
   menu_selected = 7,
   menu_deselected = 2,
   pane = 7,
-  pane_selected = 1,
-  pane_deselected = 3,
+  pane_selected = 0,
+  pane_deselected = 3, -- not dimmed
   pane_dark = 3,
   chart_deselected = 1,
   chart_area = 0
@@ -73,11 +73,29 @@ max_seq_pattern_length = 16
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
+
+-- load global scales file if present
+local filepath = norns.state.data
+local scales = {}
+
+if util.file_exists(filepath) then
+  if util.file_exists(filepath.."scales.data") then
+    scales = tab.load(filepath.."scales.data")
+    print("table >> read: " .. filepath.."scales.data")
+  else
+    scales = gen_default_scales()
+  end
+end
+
+theory.scales = scales
+
+
 clock.link.stop() -- transport won't start if external link clock is already running
 
 -- pre-init locals
 local latest_strum_coroutine = coroutine.running()
 
+--#region init
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
@@ -292,13 +310,17 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 15 + 16) -- 16 midi ports
+  params:add_group("preferences", "PREFERENCES", 16 + 16) -- 16 midi ports
 
   -- params:add_separator("pset","pset")
 
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
   params:set_action("save_template", function() params:write(00,"template") end)
+
+  params:add_trigger("save_scales", "Save scales")
+  params:set_save("save_scales", false)
+  params:set_action("save_scales", function() write_global_scales() end)
 
   params:add_option("default_pset", "Load pset", {"Off", "Last", "Template"}, 1)
   params:set_save("default_pset", false)
@@ -502,7 +524,18 @@ function init()
   
   params:add_number("chord_range", "Range", 3, 64, 4, function(param) return chord_range_string(param:get()) end) -- intervals
 
-  params:add_number("chord_max_notes", "Max notes", 1, 24, 4)
+  params:add_number("chord_max_notes", "Note Qty.", 0, 24, 0,  -- todo rename this
+    function(param)
+      local val = param:get()
+
+      if val == 0 then
+        return("Dynamic")
+      else
+        return(val)
+      end
+    end
+
+  )
 
   params:add_number("chord_inversion", "Inversion", 0, 16, 0)
   
@@ -538,7 +571,11 @@ function init()
   -- SEQ PARAMS --
   ------------------
 
-  local note_map = {"Triad", "7th", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Kit"} -- used by all but chord
+  local note_map = {"Triad", "Chord extd.", "Chord dense", "Chord raw", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Kit"} -- used by all but chord
+  for i = 1, 8 do
+    table.insert(note_map, "Custom " .. i)
+    table.insert(note_map, "Custom " .. i .. "+tr.")
+  end
 
   for seq_no = 1, max_seqs do
 
@@ -985,7 +1022,16 @@ function init()
   screen_view_name = "Session"
   dash_y = 0
 
+  --#region scale globals
+  editing_scale = 1
+  scale_index = 0
+  --#endregion
+
+
   --#region chord globals
+  chord_menu_index = 1
+  editing_chord_degree = 1
+  editing_chord_root = 0
   chord_pattern_length = {4,4,4,4}
   set_chord_pattern(1)
   chord_pattern_q = false
@@ -1139,22 +1185,25 @@ function init()
   -- reset_clock() -- might need reset_lattice but it hasn't been intialized
   get_next_chord()
   chord_raw = next_chord
-
+  
 
   --#region PSET callback functions
   -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
+  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice", "scale"}
 
   function params.action_write(filename, name, number)
     local number = number or "00" -- template
     local filepath = norns.state.data .. number .. "/"
     os.execute("mkdir -p " .. filepath)
+    
     -- Make table with version (for backward compatibility checks) and any useful system params
     misc = {}
     misc.timestamp = os.date()
     misc.version = version
     misc.clock_tempo = params:get("clock_tempo")
     -- misc.clock_source = params:get("clock_source") -- defer to system
+    
+    scale = deepcopy(theory.scales)
 
     -- need to save and restore nb voices which can change based on what mods are enabled
     -- reworked for seq2 but haven't tested
@@ -1177,6 +1226,7 @@ function init()
       voice[sources[i]] = params:string(sources[i])
     end
 
+
     for i = 1, #pset_lookup do
       local tablename = pset_lookup[i]
       tab.save(_G[tablename], filepath .. tablename .. ".data")
@@ -1194,6 +1244,7 @@ function init()
       screen_view_name = "Session"
       misc = {}
       voice = {}
+      scale = {}
       for i = 1, #pset_lookup do
         local tablename = pset_lookup[i]
           if util.file_exists(filepath..tablename..".data") then
@@ -1203,6 +1254,11 @@ function init()
           print("table >> missing: " .. filepath..tablename..".data")
         end
       end
+
+      if #scale > 0 then
+        theory.scales = deepcopy(scale)
+      end
+
       -- clock_tempo isn't stored in .pset for some reason so set it from misc.data (todo: look into inserting into .pset)
       params:set("clock_tempo", misc.clock_tempo or params:get("clock_tempo"))
 
@@ -1375,12 +1431,11 @@ function init()
   -- Some actions need to be added post-bang.
   params:set_action("arranger", function() update_arranger_active() end)
 
-  params:set_action("mode", function() build_scale(); update_chord_action() end)
+  params:set_action("mode", function() gen_chord_tab(); build_scale(); update_chord_action() end)
 
--- Redefine div change actions, this time with lattice stuff
-
--- WIP: needs some work! Currently blocks any changes unless stopped LOL
-params:set_action("ts_numerator",
+  -- Redefine div change actions, this time with lattice stuff
+  -- WIP: needs some work! Currently blocks any changes unless stopped LOL
+  params:set_action("ts_numerator",
     function(val) 
       if transport_state == "stopped" then
         ts_numerator = val
@@ -1392,16 +1447,16 @@ params:set_action("ts_numerator",
   )
 
   params:set_action("ts_denominator",
-  function(val) 
-    if transport_state == "stopped" then
-      ts_denominator = val
-      sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
-      sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
-    else
-      params:set("ts_denominator", ts_denominator or 3)
+    function(val) 
+      if transport_state == "stopped" then
+        ts_denominator = val
+        sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
+        sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
+      else
+        params:set("ts_denominator", ts_denominator or 3)
+      end
     end
-  end
-)
+  )
 
   params:set_action("chord_div_index",
     function(val) 
@@ -1915,6 +1970,8 @@ params:set_action("ts_numerator",
   countdown_timer.count = -1
   countdown_timer:start()
 
+  gen_chord_tab()
+
   -- start and reset lattice to get note durations working
   disable_sprockets()
   seq_lattice:start()
@@ -1923,11 +1980,21 @@ params:set_action("ts_numerator",
   reset_arrangement()
 
 end -- end of init
-
+--#endregion init
 
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
+
+
+-- param action function that saves current scales to global folder location
+function write_global_scales()
+  local filepath = norns.state.data  
+  local scales = deepcopy(theory.scales)
+
+  tab.save(scales, filepath .. "scales.data")
+  print("table >> write: " .. filepath .. "scales.data")
+end
 
 
 function screenshot(name)
@@ -1936,6 +2003,25 @@ function screenshot(name)
   print("screenshot saved to " .. filepath)
 end
 
+
+-- Function to remove duplicates
+local function remove_duplicates(t)
+  local seen = {}
+  local result = {}
+  for _, value in ipairs(t) do
+      if not seen[value] then
+          seen[value] = true
+          table.insert(result, value)
+      end
+  end
+  return result
+end
+
+-- Function to sort a table numerically
+local function sort_and_remove_duplicates(t)
+  table.sort(t) -- Sort the table numerically
+  return remove_duplicates(t) -- Remove duplicates
+end
 
 -- function dump_params()
 --   local filepath = norns.state.data
@@ -2132,7 +2218,7 @@ end
 -- used to delta events, get min/max, and cue param changes with K1 held down
 function clone_param(id)
   if params:lookup_param(id) ~= nil then
-    local preview = copy(params:lookup_param(id))
+    local preview = shallowcopy(params:lookup_param(id))
     preview.action = function() end -- kill off action
     return(preview)
   end
@@ -2467,7 +2553,22 @@ end
 
 -- todo p3 move with other musicutil functions
 function build_scale()
-  notes_nums = musicutil.generate_scale_of_length(0, params:get("mode"), 7)
+  local mode = params:get("mode")
+
+  scale_heptatonic = musicutil.generate_scale_of_length(0, mode, 7)
+  gen_custom_scale() -- generates bool table with bool table of notes for each of the 8 custom scales
+
+  -- todo p1 optimize
+  -- could also do this for each source so no lookup is necessary each time a note plays
+  scale_custom = {}
+  for i = 1, 8 do
+    if theory.scales[mode][i] and theory.scales[mode][i][1] then
+      scale_custom[i] = theory.scales[mode][i]
+    else
+      scale_custom[i] = scale_heptatonic -- fall back on standard scale if custom one doesn't exist
+    end
+  end
+
 end
 
 
@@ -2708,11 +2809,6 @@ function param_id_to_name(id)
   -- print("param_id_to_name id = " .. (id or "nil"))
   return(params.params[params.lookup[id]].name)
 end
-
-
--- function mode_index_to_name(index)
---   return(musicutil.SCALES[index].name)
--- end
   
   
 function round(num, numDecimalPlaces)
@@ -2728,7 +2824,7 @@ end
 
 function transpose_string(x)
   return(
-    modes.keys[params:get("mode")][util.wrap(x, 0, 11)].key
+    theory.keys[params:get("mode")][util.wrap(x, 0, 11)].key
     .. (x == 0 and "" or " ") ..  (x >= 1 and "+" or "") .. (x ~= 0 and x or "")
   )
 end
@@ -3033,7 +3129,7 @@ end
 
 
 function advance_chord_pattern()
-  local debug = false
+  -- local debug = false
 
   chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
   local arrangement_reset = false
@@ -3548,62 +3644,117 @@ end
 
 function gen_chord_readout()
   if chord_no > 0 then
-    active_chord_name = modes.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
+    active_chord_name = theory.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
     active_chord_degree = chord_lookup[params:get("mode")]["chords"][chord_no]
   end
 end
 
 
-  -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
-  -- Also used for manual g.key presses while transport is stopped/paused
-  -- Mode is always updated in case no chord has been set but user has changed Mode param.
+-- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
+-- Also used for manual g.key presses while transport is stopped/paused
+-- Mode is always updated in case no chord has been set but user has changed Mode param.
 function update_chord(x)
-    current_chord_x = x
-    current_chord_o = (x > 7) and 1 or 0
-    current_chord_c = util.wrap(x, 1, 7)
-    
-    -- optionally: always includes 7th note since this will be used by seq, harmonizers
-    chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_c, true)
-    
-    transform_chord()
+  current_chord_x = x
+  current_chord_o = (x > 7) and 1 or 0
+  current_chord_c = util.wrap(x, 1, 7)
+
+  -- todo p1 optimize- build in chord editor or when mode changes, probably
+  local chords = theory.custom_chords
+  local pattern = active_chord_pattern
+  local y = chord_pattern_position
+  if chords and chords[pattern] and chords[pattern][x] and chords[pattern][x][y] then -- todo p1 generate all up to [y]
+    chord_raw = chords[pattern][x][y].intervals
+  else
+    chord_raw = theory.chords[x]
   end
+  
+
+  -- todo p1 only generate chord_dense_1 when one seq source is using this type of note transformation (param action needed)
+  -- todo also make local chord_raw intermediary table, probably
+  local max_interval = chord_raw[#chord_raw]
+
+  if max_interval - chord_raw[1] > 11 then -- If chord range spans more than an octave, rearrange the tones to fit in one octave
+    
+    -- generate densified table of chord intervals in 1 octave, reordering notes as necessary
+    local densified = {}
+    local octave_min = chord_raw[1]
+
+    for i = 1, #chord_raw do
+      interval = chord_raw[i]
+      densified[i] = (interval - octave_min) > 11 and interval - 12 or interval
+    end
+
+    chord_dense_1 = sort_and_remove_duplicates(densified)
+
+
+    -- generate densified table of chord intervals in 2 octaves by inserting higher-octave tones after highest note in _raw table
+    densified = simplecopy(chord_raw)
+    
+    for i = 1, #chord_raw - 1 do
+      local n = chord_raw[i]
+
+      
+      if (n - x < 12) and n + 12 > max_interval then
+        table.insert(densified, chord_raw[i] + 12)
+      end
+    end
+
+    chord_dense_2 = simplecopy(densified)
+
+  else
+    chord_dense_1 = chord_raw
+    chord_dense_2 = chord_raw
+  end
+
+
+
+  transform_chord()
+end
 
 
 -- Expands chord notes (range), inverts, and thins based on max notes
 function transform_chord()
-  local notes_in_chord = (params:get("chord_type") + 2)
+  -- local notes_in_chord = (params:get("chord_type") + 2)
+  local notes_in_chord = #chord_raw -- todo need to tie this in with max/dynamic/min notes param
+
   chord_transformed = {}
 
-  -- This adds intervals to achieve range plus upper inversion notes in a single pass
-  for i = 1, params:get("chord_range") + params:get("chord_inversion") do
-    local octave = math.ceil(i / notes_in_chord) - 1
-    chord_transformed[i] = chord_raw[util.wrap(i, 1, notes_in_chord)] + (i > notes_in_chord and (octave * 12) or 0)
+  -- temporary simplification while working on custom chords
+  for i = 1, notes_in_chord do
+    chord_transformed[i] = chord_raw[i]
   end
-  
-  -- remove lower inverted notes
-  for i = 1, params:get("chord_inversion") do
-    table.remove(chord_transformed, 1)
-  end  
-  
-  -- Thin out notes in chord to not exceed params:get("chord_max_notes")
-  local polyphony = params:get("chord_max_notes")
-  local notes = #chord_transformed
 
-  -- special handling for poly==1
-  if polyphony == 1 then
-    for i = notes, 2, -1 do
-      table.remove(chord_transformed, i)
-    end
-  -- regular handling of thinning to match poly. todo- additional thinning algos, e.g. preserve base triad  
-  elseif notes > polyphony then
-    chord_thinned = er.gen(polyphony - 1, notes - 1, 0)
-    for i = notes - 1, 2, -1 do
-      if chord_thinned[i] == false then
-        table.remove(chord_transformed, i)
-      end
-    end
-  end
+  -- -- This adds intervals to achieve range plus upper inversion notes in a single pass
+  -- for i = 1, params:get("chord_range") + params:get("chord_inversion") do
+  --   local octave = math.ceil(i / notes_in_chord) - 1
+  --   chord_transformed[i] = chord_raw[util.wrap(i, 1, notes_in_chord)] + (i > notes_in_chord and (octave * 12) or 0)
+  -- end
   
+  -- -- remove lower inverted notes
+  -- for i = 1, params:get("chord_inversion") do
+  --   table.remove(chord_transformed, 1)
+  -- end  
+  
+  -- -- Thin out notes in chord to not exceed params:get("chord_max_notes")
+  -- local polyphony = params:get("chord_max_notes")
+  -- local notes = #chord_transformed
+
+  -- -- special handling for poly==1
+  -- if polyphony == 1 then
+  --   for i = notes, 2, -1 do
+  --     table.remove(chord_transformed, i)
+  --   end
+  -- -- regular handling of thinning to match poly. todo- additional thinning algos, e.g. preserve base triad  
+  -- elseif notes > polyphony then
+  --   chord_thinned = er.gen(polyphony - 1, notes - 1, 0)
+  --   for i = notes - 1, 2, -1 do
+  --     if chord_thinned[i] == false then
+  --       table.remove(chord_transformed, i)
+  --     end
+  --   end
+  -- end
+  
+
 end
 
 
@@ -3738,6 +3889,7 @@ function play_chord()
         local dynamics = dynamics + (dynamics * params:get("chord_dynamics_ramp") * .01 * elapsed)
         local dynamics = util.clamp(dynamics, 0, 1) -- per destination
         local note = chord_transformed[i] + params:get("transpose") + (params:get("chord_octave") * 12) + 48
+
         to_player(player, note, dynamics, chord_duration, channel)
   
         if playback ~= "Off" and note_qty ~= 1 then
@@ -3821,7 +3973,9 @@ function get_next_chord()
 end
 
 
-function map_note_1(note_num, octave)-- , pre) -- triad chord mapping
+local transform_note = {} -- table containing note transformation functions
+
+transform_note[1] = function(note_num, octave) -- triad chord mapping
   local chord_length = 3
   -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
   local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
@@ -3830,41 +3984,88 @@ function map_note_1(note_num, octave)-- , pre) -- triad chord mapping
 end
 
 
-function map_note_2(note_num, octave) --, pre) -- 7th chord mapping
-  local chord_length = 4
-  -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
-  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
+
+transform_note[2] = function(note_num, octave) -- custom chords, densified to extend 2 octaves if necessary
+  local chord_length = #chord_dense_2
+
+  -- jump to next octave if difference from chord min/max intervals is >1 octave.
+  -- local additional_octave = (chord_raw[chord_length] - chord_raw[1]) >= 12 and 1 or 0 -- fine if we have just 12 seq rows
+  local additional_octave = math.floor((chord_dense_2[chord_length] - chord_dense_2[1]) / 12) -- in anticipation of variable max_seqs
+  local quantized_note = chord_dense_2[util.wrap(note_num, 1, chord_length)]
+  local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
+
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+
+end
+
+
+transform_note[3] = function(note_num, octave) -- custom chords, tones arranged into one octave
+  local chord_length = #chord_dense_1
+  local quantized_note = chord_dense_1[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
+transform_note[4] = function(note_num, octave) -- custom chords, spanning multiple octaves
+  local chord_length = #chord_raw
 
-function map_note_3(note_num, octave) --, pre)  -- mode mapping + diatonic transposition
+  -- jump to next octave if difference from chord min/max intervals is >1 octave.
+  -- local additional_octave = (chord_raw[chord_length] - chord_raw[1]) >= 12 and 1 or 0 -- fine if we have just 12 seq rows
+  local additional_octave = math.floor((chord_raw[chord_length] - chord_raw[1]) / 12) -- in anticipation of variable max_seqs
+  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
+  local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
+
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+
+end
+
+transform_note[5] = function(note_num, octave) -- mode mapping + diatonic transposition
   -- local diatonic_transpose = (math.max(pre == true and next_chord_x or current_chord_x, 1)) -1
   local diatonic_transpose = (math.max(current_chord_x, 1)) -1
   local note_num = note_num + diatonic_transpose
-  local quantized_note = notes_nums[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+  local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
   return(quantized_note + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_4(note_num, octave) -- mode mapping
+transform_note[6] = function(note_num, octave) -- mode mapping
   local note_num = note_num
-  local quantized_note = notes_nums[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+  local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
   return(quantized_note + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_5(note_num, octave) -- chromatic intervals from chord root
-  -- local diatonic_transpose = (math.max(current_chord_x, 1)) -1
+transform_note[7] = function(note_num, octave) -- chromatic intervals from chord root
   local root = chord_raw[1] or 0
   return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_6(note_num, octave) -- chromatic mapping
+transform_note[8] = function(note_num, octave) -- chromatic mapping
   return(note_num -1 + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_7(note_num, octave) -- drum kit mapping (no key transposition)
+transform_note[9] = function(note_num, octave) -- drum kit mapping (no key transposition)
   return(note_num -1 + (octave * 12)) -- todo param to shift?
+end
+
+for i = 1, 8 do
+  table.insert(transform_note,
+    function(note_num, octave) -- custom scale
+      local note_num = note_num
+      local scale_custom = scale_custom[i]
+      local length = #scale_custom
+      local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
+      return(quantized_note + (octave * 12) + params:get("transpose"))
+    end
+  )
+
+  table.insert(transform_note,
+    function(note_num, octave) -- custom scale + transposition (kinda weird)
+      local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
+      local scale_custom = scale_custom[i]
+      local length = #scale_custom
+      local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
+      return(quantized_note + (octave * 12) + params:get("transpose"))
+    end
+  )
 end
 
 
@@ -3900,16 +4101,16 @@ function advance_seq_pattern(seq_no)
     local dynamics = dynamics + (dynamics * (_G["sprocket_seq_"..seq_no].downbeat and (params:get("seq_accent_"..seq_no) * .01) or 0))
     local priority = params:get("seq_note_priority_"..seq_no)
     local polyphony = params:get("seq_polyphony_"..seq_no)
-    local note_map = "map_note_" .. params:get("seq_note_map_"..seq_no)
     local octave = params:get("seq_octave_"..seq_no)
     local row = seq_pattern[seq_no][active_seq_pattern[seq_no]][seq_pattern_position[seq_no]]
+    local transform = transform_note[params:get("seq_note_map_"..seq_no)]
 
     
-    -- todo dynamic function set by seq_mono_poly action
+    -- todo dynamic function set by seq_priority action
     if priority == 1 then -- mono
       for x = 1, max_seq_cols do
         if row[x] == 1 then 
-          local note = _G[note_map](x, octave) + 36
+          local note = transform(x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
           break
         end
@@ -3920,7 +4121,7 @@ function advance_seq_pattern(seq_no)
       local count = 0
       for x = 1, max_seq_cols do
         if row[x] == 1 then
-          local note = _G[note_map](x, octave) + 36
+          local note = transform(x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
           count = count + 1
           if count == polyphony then 
@@ -3933,7 +4134,7 @@ function advance_seq_pattern(seq_no)
       local count = 0
       for x = max_seq_cols, 1, -1 do
         if row[x] == 1 then 
-          local note = _G[note_map](x, octave) + 36
+          local note = transform(x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
           count = count + 1
           if count == polyphony then 
@@ -3954,7 +4155,7 @@ function advance_seq_pattern(seq_no)
       shuffle(pool)
 
       for i = 1, math.min(#pool, polyphony) do
-        local note = _G[note_map](pool[i], octave) + 36  -- make these local!
+        local note = transform(pool[i], octave) + 36  -- make these local!
         to_player(player, note, dynamics, seq_duration[seq_no], channel)
       end
       
@@ -3984,8 +4185,8 @@ end
 
 -- cv harmonizer input
 function sample_crow(volts)
-  -- local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave"), params:get("chord_preload") ~= 0) + 36
-  local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave")) + 36
+  local note = transform_note[params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave")) + 36
+
   -- Blocks duplicate notes within a chord step so rests can be added to simple CV sources
   if chord_pattern_retrig == true
   or params:get("crow_auto_rest") == 1
@@ -4011,7 +4212,8 @@ midi_event = function(data)
   if d.type == "note_on" then
     local player = params:lookup_param("midi_voice_raw"):get_player()
     local channel = player.channel and params:get("midi_channel") or nil
-    local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
+    local transform = transform_note[params:get("midi_note_map")]
+    local note = transform(d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
     local dynamics = params:get("midi_dynamics") * .01 -- todo p1 velocity passthru (normalize to 0-1)
 
     to_player(player, note, dynamics, midi_duration, channel)
@@ -4129,7 +4331,68 @@ function grid_redraw()
   
   g:all(0) -- todo look into efficiency of this
   
-  if screen_view_name == "Events" then -- EVENT EDITOR
+  if screen_view_name == "scale_editor" then
+    local editing_scale = editing_scale
+    local enabled_level = 8         -- can layer in_mode tones(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
+    local in_mode = {}  -- table containing 12 notes and t/f if they are in the current mode
+
+    for x = 1, 12 do
+      in_mode[x] = false
+    end
+    
+    for i = 1, 7 do
+      in_mode[scale_heptatonic[i] + 1] = true
+    end
+
+    local in_scale = theory.scales_bool
+
+    for y = 1, 8 do
+      local in_scale = in_scale[y]
+
+      for x = 1, 12 do
+        
+        -- low level highlight tones in mode
+        pattern_led = in_mode[x] and led_low or 0
+
+
+        -- draw enabled tones for each row/scale
+        pattern_led = pattern_led + (in_scale and in_scale[x] and enabled_level or 0)
+
+
+        -- pulse out-of-mode selections in editing scale/row
+        if y == editing_scale and in_scale[x] and not in_mode[x] then
+          pattern_led = pattern_led - led_pulse
+        end
+
+        g:led(x, y, pattern_led)
+      end
+
+      --draw selected scale keys on right side
+      g:led(16, y, y == editing_scale and led_high - led_pulse or led_low)
+    end
+
+
+  elseif screen_view_name == "chord_editor" then
+    local chords = theory.custom_chords
+    local pattern = editing_chord_pattern
+    local x = editing_chord_x
+    local y = editing_chord_y
+    -- local intervals_bool = {}
+    -- local intervals = {}
+    local root = editing_chord_root
+    local type = editing_chord_type
+    local editing_chord_bools = editing_chord_bools
+    local in_mode = editing_chord_mode_intervals
+    
+    for i = 1, 24 do -- 2 octaves split across 2 rows
+      pattern_led = in_mode[util.wrap(i, 1, 12)] and led_low or 0 -- highlight tones in mode, starting with root note
+      if editing_chord_bools[i] then
+        pattern_led = pattern_led + 7
+      end
+      g:led(util.wrap(i, 1, 12), (i <= 12) and 8 or 7, pattern_led)
+    end
+
+  elseif screen_view_name == "Events" then -- EVENT EDITOR
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
     local lanes = 15
     local saved_level = 8         -- can layer playhead(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
@@ -4500,12 +4763,171 @@ function update_chord_pattern_q() -- run after changes are made to arranger or a
   set_chord_pattern_q(arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)])
 end
 
--- GRID KEYS
+
+-- inits table of standard chord options for editing mode/degree
+-- todo p0 needs to be called on mode param change, too (events)
+function gen_chord_menus()
+  chord_menu_names = musicutil.chord_types_for_note(theory.chords[editing_chord_x][1] + 1, 1, params:string("mode")) -- todo check all mode strings
+end
+
+
+-- set initial states for bool table so grid_redraw doesn't have to do this every loop.
+-- intervals relative to degree I, in octave
+-- called by init_chord_editor, g.key, enc
+function gen_chord_bools(intervals)
+  local root = editing_chord_root
+
+  editing_chord_bools = {}
+
+  for i = 1, 24 do
+    editing_chord_bools[i] = false
+  end
+
+  for i = 1, #intervals do  -- set earlier to either standard or custom
+    editing_chord_bools[intervals[i] + 1 - root] = true
+  end
+end
+
+
+-- sets editing_chord_mode_intervals based on editing chord degree
+function init_chord_editor()
+  local pattern = editing_chord_pattern
+  local x = editing_chord_x
+  local y = editing_chord_y
+  editing_chord_degree = chord_lookup[params:get("mode")]["chords"][util.wrap(x, 1, 7)]
+  local root = editing_chord_root
+  gen_chord_menus()
+  local name = "Custom"
+  local intervals = {}
+
+
+  -- always generate up to the the x portion of custom chord table
+  -- todo p1 just generate at init
+  if not theory.custom_chords then
+    theory.custom_chords = {}
+  end
+
+  if not theory.custom_chords[pattern] then
+    theory.custom_chords[pattern] = {}
+  end
+
+  if not theory.custom_chords[pattern][x] then
+    theory.custom_chords[pattern][x] = {}
+  end
+
+
+  -- set editing_chord_intervals table which gets the custom interval if available or the standard degree intervals
+  local custom_chords = theory.custom_chords
+
+  if custom_chords[pattern][x][y] then
+    intervals = custom_chords[pattern][x][y].intervals
+
+    if name == "Custom" then
+      editing_chord_type = "custom"
+    else
+      editing_chord_type = "named" -- default if the subsequent check is negative
+      -- check if the recognized chord is "in-mode"
+      for i = 1, #chord_menu_names do
+        if chord_menu_names[i] == name then
+          editing_chord_type = "in-mode"
+          break
+        end
+      end
+    end
+  else
+    intervals = theory.chords[x]
+    editing_chord_type = "standard"
+  end
+
+  name = find_chord(intervals, root) or "Custom" -- pass root so intervals can be converted from absolute to relative to root
+  gen_chord_bools(intervals)
+  chord_menu_index = tab.key(chord_menu_names, name) or 0
+  pending_chord_disable = nil -- cancels turning off touched chord on key-up
+
+end
+
+
+
+-- check if this is a named scale and set Scale menu appropriately
+function set_scale_menu()
+  local lookup = theory.lookup_scales
+  local name = find_scale_name(theory.scales[params:get("mode")][editing_scale]) or "Custom"
+  if name ~= "Custom" then -- set Scale menu if there's a match
+    for i = 1, #lookup do
+      if name == lookup[i].name then
+        scale_index = i
+        break
+      end
+    end
+  else
+    scale_index = 0 -- "Custom"
+  end
+end
+        
+        
+        -- GRID KEYS
 ---@diagnostic disable-next-line: duplicate-set-field
 function g.key(x, y, z)
   if z == 1 then
+    if screen_view_name == "chord_editor" then
+      if x <= 12 and y >= 7 then
+        local interval = util.wrap(x, 1, 12) + (y == 7 and 12 or 0)
+        local pattern = editing_chord_pattern
+        local editing_chord_x = editing_chord_x -- don't change, we need x/y as well!
+        local editing_chord_y = editing_chord_y
+        local root = editing_chord_root
+        local editing_chord_bools = editing_chord_bools
 
-    if screen_view_name == "Events" then
+        -- todo look at whether to do this here or in init_chord_editor
+        if not theory.custom_chords[pattern][editing_chord_x][editing_chord_y] then
+          theory.custom_chords[pattern][editing_chord_x][editing_chord_y] = {intervals = {}}
+        end
+        
+        editing_chord_bools[interval] = not editing_chord_bools[interval] -- TODO P0 need to some some wrap/modulo stuff to turn x/y into index
+
+        -- write back to chord_custom
+        theory.custom_chords[pattern][editing_chord_x][editing_chord_y]["intervals"] = {}
+
+        for i = 1, #editing_chord_bools do
+          if editing_chord_bools[i] then
+            local i = i - 1
+            table.insert(theory.custom_chords[pattern][editing_chord_x][editing_chord_y]["intervals"], i + root)
+          end
+        end
+
+        -- TODO p0 need to do a name lookup and set menu as well
+        name = find_chord(theory.custom_chords[pattern][editing_chord_x][editing_chord_y].intervals, root) or "Custom" -- pass root so intervals can be converted from absolute to relative to root
+        chord_menu_index = tab.key(chord_menu_names, name) or 0
+
+      end
+
+    elseif screen_view_name == "scale_editor" then
+      if x <= 12 then
+        local mode = params:get("mode")
+        local scale = theory.scales_bool[y]
+
+        editing_scale = y
+        scale[x] = not scale[x] -- set value in flat table
+
+        -- write the changed pattern back to theory.scales which is the save format
+        theory.scales[mode][y] = {}
+        for i = 1, 12 do
+          if theory.scales_bool[y][i] then
+            table.insert(theory.scales[mode][y], i - 1)
+          end
+        end
+
+        build_scale()
+        set_scale_menu()
+
+        grid_dirty = true
+      elseif x == 16 then
+        editing_scale = y
+        grid_dirty = true
+        set_scale_menu()
+      end
+    
+    elseif screen_view_name == "Events" then
       if x == 16 then -- loop length
         -- temporarily disabled as event loop length needs implementation
         -- events_length[event_edit_segment] = y + pattern_grid_offset
@@ -4700,16 +5122,27 @@ function g.key(x, y, z)
       end
       
     elseif grid_view_name == "Chord" then
+      chord_key_count = chord_key_count + 1 -- used to determine when to reset chord readout
 
       if x < 15 then -- chord pattern
-        chord_key_count = chord_key_count + 1
-        if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
-          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = 0
-        else
-          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
+        if not grid_interaction then
+          grid_interaction = "chord_key_held"
+          editing_chord_pattern = active_chord_pattern
+          editing_chord_x = x -- used for chord editor
+          editing_chord_y = y -- used for chord editor
+          editing_chord_root = theory.chords[x][1]
         end
 
-        chord_no = util.wrap(x, 1, 7) + ((params:get("chord_type") + 2) == 4 and 7 or 0) -- or 0
+        -- new chord is enabled on key down, but disabling happens conditionally on key up if chord editor was not used
+        if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
+          -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by chord editor
+          pending_chord_disable = {active_chord_pattern, x, y}
+        else
+          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
+          pending_chord_disable = nil -- will be for copy+paste
+        end
+
+        chord_no = util.wrap(x, 1, 7) + ((params:get("chord_type") + 2) == 4 and 7 or 0) -- used for chord readout
         gen_chord_readout()
 
         -- plays Chord when pressing on any Grid key (even turning chord off)
@@ -4783,7 +5216,9 @@ function g.key(x, y, z)
           local channel = player.channel and params:get("seq_channel_"..selected_seq_no) or nil
           local dynamics = (params:get("seq_dynamics_"..selected_seq_no) * .01)
           -- local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
-          local note = _G["map_note_" .. params:get("seq_note_map_"..selected_seq_no)](x, params:get("seq_octave_"..selected_seq_no)) + 36
+          local transform = transform_note[params:get("seq_note_map_"..selected_seq_no)]
+          local note = transform(x, params:get("seq_octave_"..selected_seq_no)) + 36
+
           to_player(player, note, dynamics, seq_duration[selected_seq_no], channel)
         end
       elseif x == max_seq_cols + 1 then -- seq loop length
@@ -4846,7 +5281,10 @@ function g.key(x, y, z)
   --------------
   elseif z == 0 then
     -- Events key up
-    if screen_view_name == "Events" then
+    if screen_view_name == "scale_editor" then
+      -- reserved but might need to do some cleanup on key counts
+    
+    elseif screen_view_name == "Events" then
 
       event_key_count = math.max(event_key_count - 1,0)
       
@@ -4932,13 +5370,30 @@ function g.key(x, y, z)
 
 
       elseif x < 15 then -- patterns
-        chord_key_count = chord_key_count - 1
+        chord_key_count = math.max(chord_key_count - 1, 0)
+
+        if pending_chord_disable then
+          local off = pending_chord_disable -- {pattern, x, y}
+
+          -- todo p0 how to handle multiple key-downs and copying and scrolling and aghhhh
+          -- might need to check x/y(and offset) against the pending values
+        -- if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
+          chord_pattern[off[1]][off[3]] = 0
+          pending_chord_disable = nil
+        end
+
         if chord_key_count == 0 then
+          if grid_interaction == "chord_key_held" then
+            grid_interaction = nil
+          end
+
           -- This reverts the chord readout to the currently loaded chord but it is kinda confusing when paused so now it just wipes and refreshes at the next chord step. Could probably be improved todo p2
           -- chord_no = current_chord_c + ((params:get("chord_type") + 2) == 4 and 7 or 0)          
           -- gen_chord_readout()
           chord_no = 0
         end
+
+        -- process chord changes on key up now so holding can be used to make custom chords
       end
 
     
@@ -5037,12 +5492,25 @@ function apply_arranger_shift()
 end
 
 
+-- function called when K1 is released or K3 is used to enter scale editor
+function bang_params()
+  for k, v in pairs(preview_param_q_get) do
+    params:set(k, v)
+  end
+  preview_param = nil
+  preview_param_q_get = {}
+  preview_param_q_string = {}
+  norns_interaction = nil
+  gen_menu() -- re-hide any menus we don't need
+end
+
 ----------------------
 -- NORNS KEY FUNCTIONS
 ----------------------
 function key(n,z)
   if z == 1 then
     -- keys[n] = 1
+
     key_count = (key_count or 0) + 1
 
     if n == 1 then -- Key 1 is used to preview param changes before applying them on release
@@ -5052,7 +5520,7 @@ function key(n,z)
         norns_interaction = "event_actions"
         lvl = lvl_dimmed
         -- end
-      else
+      elseif not grid_interaction and not norns_interaction then
         norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
@@ -5062,7 +5530,14 @@ function key(n,z)
       end
 
     elseif n == 2 then -- KEY 2
-      if norns_interaction == "k1" then
+      if screen_view_name == "scale_editor" then -- close and return to session
+        screen_view_name = "Session"
+
+      elseif screen_view_name == "chord_editor" then -- close and return to session
+        grid_interaction = nil
+        screen_view_name = "Session"
+
+      elseif norns_interaction == "k1" then
         if params:get("sync_grid_norns") == 1 then
           params:set("sync_grid_norns", 2) -- on
           set_page() -- set Grid view to current page
@@ -5079,7 +5554,7 @@ function key(n,z)
             update_dash_lvls()
           end
         )
-
+    
       elseif view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -5288,19 +5763,37 @@ function key(n,z)
       end
 
     elseif n == 3 then -- KEY 3
-      -- if keys[1] == 1 then
-      -- rework to enter chord/scale editor, maybe
-      -- if view_key_count > 0 then -- Grid view key held down
-      --   if screen_view_name == "Chord+seq" then
-      --   elseif grid_view_name == "Chord" then       
-      --   elseif grid_view_name == "Seq" then       
-      --   grid_dirty = true
-      
+
+      if screen_view_name == "scale_editor" then
+        -- placeholder
+      elseif norns_interaction == "k1" then
+        scale_menu_index = 0
+        screen_view_name = "scale_editor"
+        norns_interaction = nil
+        grid_interaction = nil
+        bang_params() -- apply any defered param edits. could also ignore but this feels okay
+        set_scale_menu()
+
+      elseif grid_interaction == "chord_key_held" then
+        -- local pattern = editing_chord_pattern
+        -- local x = editing_chord_x
+        -- local y = editing_chord_y
+        local root = editing_chord_root
+
+        -- generate table of in-mode intervals for grid_redraw
+        editing_chord_mode_intervals = {}
+        for i = 1, 7 do
+          editing_chord_mode_intervals[util.wrap(scale_heptatonic[i] + 1 - root, 1, 12)] = true
+        end
+
+        screen_view_name = "chord_editor"
+        init_chord_editor()
+
         ---------------------------------------------------------------------------
         -- Event Editor --
         -- K3 with Event Timeline key held down enters Event editor / function key event editor
         ---------------------------------------------------------------------------        
-      if arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
+      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -5602,16 +6095,8 @@ function key(n,z)
     -- keys[n] = nil
     key_count = key_count - 1
     if n == 1 then
-
       if norns_interaction == "k1" then
-        for k, v in pairs(preview_param_q_get) do
-          params:set(k, v)
-        end
-        preview_param = nil
-        preview_param_q_get = {}
-        preview_param_q_string = {}
-        norns_interaction = nil
-        gen_menu() -- re-hide any menus we don't need
+        bang_params() -- defered param changes
       elseif norns_interaction == "event_actions" then
 
         -- make function if this ends up being used by K1 release as well as K3 down
@@ -5663,6 +6148,9 @@ function enc(n,d)
         grid_dirty = true
       end
    
+    elseif screen_view_name == "scale_editor" then
+      scale_menu_index = util.clamp(scale_menu_index + d, 0, 1)
+
     elseif screen_view_name == "Events" then
       if norns_interaction == "event_actions" then
         params:delta("event_quick_actions", d) -- change focus on event_quick_actions
@@ -5690,7 +6178,62 @@ function enc(n,d)
         transpose_pattern(grid_view_name, d)
         grid_dirty = true
       end
+    
+    elseif screen_view_name == "chord_editor" then -- chord editor
+      local pattern = editing_chord_pattern
+      local x = editing_chord_x
+      local y = editing_chord_y
+      local root = editing_chord_root
+
+      gen_chord_menus()
+      chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
+      local name = chord_menu_names[chord_menu_index]
+      local intervals = musicutil.generate_chord(root, name, 0)
+
+      -- write intervals to chords_custom so they are available to sequencer
+      theory.custom_chords[pattern][x][y] = {intervals = {}}
+      for i = 1, #intervals do
+        theory.custom_chords[pattern][x][y]["intervals"][i] = intervals[i]
+      end
+
+      gen_chord_bools(intervals) -- update for grid leds
+      theory.custom_chords[pattern][x][y].name = name
+
+    elseif screen_view_name == "scale_editor" then  -- scale editor
+      local mode = params:get("mode")
+
+      if menu_index == 0 then
+        editing_scale = util.clamp((editing_scale or 1) + d, 1, 8)
+        set_scale_menu()
+      else
+        local lookup = theory.lookup_scales
+
+        -- either show loaded/matching scale or "Custom" if altered
+        scale_index = util.clamp((scale_index or 0) + d, 1, #lookup)
         
+        -- set theory.scales to selected menu
+        theory.scales[mode][editing_scale] = {}
+
+        for i = 1, #lookup[scale_index].intervals do
+          theory.scales[mode][editing_scale][i] = lookup[scale_index]["intervals"][i]
+        end
+
+        -- set bool table
+        theory.scales_bool[editing_scale] = {}
+        for x = 1, 12 do
+          theory.scales_bool[editing_scale][x] = false
+        end
+  
+        for i = 1, #lookup[scale_index].intervals do
+          theory.scales_bool[editing_scale][lookup[scale_index]["intervals"][i] + 1] = true
+        end
+
+        build_scale()
+
+        grid_dirty = true
+      end
+
+
     ----------------------    
     -- Event editor menus
     ----------------------    
@@ -6472,7 +7015,41 @@ function redraw()
         end
       end
 
-        
+    elseif screen_view_name == "scale_editor" then
+      local editing_scale = editing_scale
+      local paging = scale_menu_index == 0
+      local scale_index = scale_index
+      local scale_name = scale_index == 0 and "Custom" or theory.lookup_scales[scale_index].name
+      local editing_scale_modified = false -- flag to set if scale was manually modified
+
+      screen.move(header_x, header_y)
+      screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      screen.text("CUSTOM SCALE " .. editing_scale)
+
+      screen.move(header_x, menu_y + 10)
+      screen.level(paging and lvl_menu_deselected or lvl_menu_selected)
+      screen.text("Scale: " .. (editing_scale_modified and "custom" or scale_name))
+
+      footer("EXIT")
+
+    elseif screen_view_name == "chord_editor" then
+      local chord_menu_names = chord_menu_names
+    
+      screen.move(header_x, header_y)
+      -- screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      screen.level(lvl_menu_deselected)
+      screen.text("CHORD EDITOR")
+
+      screen.move(header_x, menu_y + 10)
+      -- screen.level(paging and lvl_menu_deselected or lvl_menu_selected)
+      screen.level(lvl_menu_selected)
+      -- screen.text("Scale: " .. (editing_scale_modified and "custom" or scale_name))
+      -- screen.text("Chord: " .. editing_chord_degree)
+      screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or chord_menu_names[chord_menu_index or 1]))
+
+      footer("EXIT")
+
+
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
 
@@ -6568,6 +7145,21 @@ function redraw()
       dash_y = 0
       for _, func in pairs(dash_list) do
         func()
+      end
+
+      if norns_interaction == "k1" then
+        screen.level(0)             -- mask area behind footer
+        screen.rect(0, 54, 128, 10)
+        screen.fill()
+
+        footer(params:get("sync_grid_norns") == 1 and "SYNC ON" or "SYNC OFF", "EDIT SCALE")
+
+      elseif grid_interaction == "chord_key_held" then -- wag on placement here
+        screen.level(0)             -- mask area behind footer
+        screen.rect(0, 54, 128, 10)
+        screen.fill()
+
+        footer(nil, "EDIT CHORD")
       end
 
       if screen_message == "sync_grid_norns_changed" then -- notify of sync change using K1+K2

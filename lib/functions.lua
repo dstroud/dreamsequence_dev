@@ -203,9 +203,16 @@ function set_chord_pattern(y)
 end
 
 
+function simplecopy(t) -- no metatable functionality
+  local new = {}
+  for k, v in pairs(t) do new[k] = v end
+  return new
+end
+
+
 -- shallow copy
-function copy(t)
-  local u = { }
+function shallowcopy(t)
+  local u = {}
   for k, v in pairs(t) do u[k] = v end
   return setmetatable(u, getmetatable(t))
 end
