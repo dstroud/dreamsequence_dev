@@ -2,11 +2,59 @@ theory = {}
 
 --#region chords
 
--- lookup for chord degrees and qualities, mirroring MusicUtil.SCALE_CHORD_DEGREES with added chord "quality"
+-- TODO reorder these:
+-- extended list of chords, intervals
+-- quality is used to append to chord letter/degree roman numeral
+theory.chords = {
+  {name = "Major", quality = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
+  {name = "Minor", quality = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
+
+  {name = "Sus2", quality = "sus2", intervals = {0, 2, 7}},
+  {name = "Seventh sus2", quality = "7sus2", intervals = {0, 2, 7, 10}},
+
+  {name = "Sus4", quality = "sus4", intervals = {0, 5, 7}},
+  {name = "Seventh sus4", quality = "7sus4", intervals = {0, 5, 7, 10}},
+  
+  {name = "Major 6", quality = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
+
+  {name = "Major 7", quality = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
+  {name = "Major 69", quality = "6/9", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
+  {name = "Major 9", quality = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
+  {name = "Major 11", quality = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
+  {name = "Major 13", quality = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
+  {name = "Dominant 7", quality = "7", intervals = {0, 4, 7, 10}},
+  {name = "Ninth", quality = "9", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
+  {name = "Eleventh", quality = "11", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
+  {name = "Thirteenth", quality = "13", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
+  {name = "Augmented", quality = "+", intervals = {0, 4, 8}},
+  {name = "Augmented 7", quality = "+7", intervals = {0, 4, 8, 10}},
+
+
+  {name = "Minor Major 7", quality = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
+  -- {name = "Minor", quality = "m", alt_names = {"Min"}, intervals = {0, 3, 7}}, -- moved up due to DS' chord selection method
+  {name = "Minor 6", quality = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
+  {name = "Minor 7", quality = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
+  {name = "Minor 69", quality = "m6/9", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
+  {name = "Minor 9", quality = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
+  {name = "Minor 11", quality = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
+  {name = "Minor 13", quality = "m13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
+  {name = "Diminished", quality = "°", alt_names = {"Dim"}, intervals = {0, 3, 6}},
+  {name = "Diminished 7", quality = "°7", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
+  {name = "Half Diminished 7", quality = "ø7", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- alt m7b5
+  {name = "Augmented Major 7", quality = "+M7", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
+}
+-- Base data from https://github.com/fredericcormier/WesternMusicElements, extended by @dstroud
+
+
+-- lookup for chord degrees and qualities, mirroring musicutil.SCALE_CHORD_DEGREES with breakout for chord roman numeral and "quality"
 -- indices 1-7 are triads, 8-14 are 7ths
-chord_lookup = {
+theory.chord_degree = {
   {
     name = "Major",
+    numeral = {
+      "I",  "ii",  "iii",  "IV",  "V",  "vi",  "vii",
+      "I",  "ii",  "iii",  "IV",  "V",  "vi",  "vii"
+    },
     chords = {
       "I",  "ii",  "iii",  "IV",  "V",  "vi",  "vii°",
       "IM7", "ii7", "iii7", "IVM7", "V7", "vi7", "viiø7"
@@ -18,6 +66,10 @@ chord_lookup = {
   },
   {
     name = "Natural Minor",
+    numeral = {
+      "i",  "ii",  "III",  "iv",  "v",  "VI",  "VII",
+      "i",  "ii",  "III",  "iv",  "v",  "VI",  "VII"
+    },
     chords = {
       "i",  "ii°",  "III",  "iv",  "v",  "VI",  "VII",
       "i7", "iiø7", "IIIM7", "iv7", "v7", "VIM7", "VII7"
@@ -29,6 +81,10 @@ chord_lookup = {
   },
   {
     name = "Harmonic Minor",
+    numeral = {
+      "i",  "ii",  "III",  "iv",  "V",  "VI",  "vii",
+      "i",  "ii",  "III",  "iv",  "V",  "VI",  "vii"
+    },
     chords = {
       "i",  "ii°",  "III+",  "iv",  "V",  "VI",  "vii°",
       "i♮7", "iiø7", "III+M7", "iv7", "V7", "VIM7", "vii°7"
@@ -40,6 +96,10 @@ chord_lookup = {
   },
   {
     name = "Melodic Minor",
+    numeral = {
+      "i",  "ii",  "III",  "IV",  "V",  "vi",  "vii",
+      "i",  "ii",  "III",  "IV",  "V",  "vi",  "vii"
+    },
     chords = {
       "i",  "ii",  "III+",  "IV",  "V",  "vi°",  "vii°",
       "i♮7", "ii7", "III+M7", "IV7", "V7", "viø7", "viiø7"
@@ -51,6 +111,10 @@ chord_lookup = {
   },
   {
     name = "Dorian",
+    numeral = {
+      "i",  "ii",  "III",  "IV",  "v",  "vi",  "VII",
+      "i",  "ii",  "III",  "IV",  "v",  "vi",  "VII"
+    },
     chords = {
       "i",  "ii",  "III",  "IV",  "v",  "vi°",  "VII",
       "i7", "ii7", "IIIM7", "IV7", "v7", "viø7", "VIIM7"
@@ -62,6 +126,10 @@ chord_lookup = {
   },
   {
     name = "Phrygian",
+    numeral = {
+      "i",  "II",  "III",  "iv",  "v",  "VI",  "vii",
+      "i",  "II",  "III",  "iv",  "v",  "VI",  "vii"
+    },
     chords = {
       "i",  "II",  "III",  "iv",  "v°",  "VI",  "vii",
       "i7", "IIM7", "III7", "iv7", "vø7", "VIM7", "vii7"
@@ -73,6 +141,10 @@ chord_lookup = {
   },
   {
     name = "Lydian",
+    numeral = {
+      "I",  "II",  "iii",  "iv",  "V",  "vi",  "vii",
+      "I",  "II",  "iii",  "iv",  "V",  "vi",  "vii"
+    },
     chords = {
       "I",  "II",  "iii",  "iv°",  "V",  "vi",  "vii",
       "IM7", "II7", "iii7", "ivø7", "VM7", "vi7", "vii7"
@@ -84,6 +156,10 @@ chord_lookup = {
   },
   {
     name = "Mixolydian",
+    numeral = {
+      "I",  "ii",  "iii",  "IV",  "v",  "vi",  "VII",
+      "I",  "ii",  "iii",  "IV",  "v",  "vi",  "VII"
+    },
     chords = {
       "I",  "ii",  "iii°",  "IV",  "v",  "vi",  "VII",
       "I7", "ii7", "iiiø7", "IVM7", "v7", "vi7", "VIIM7"
@@ -95,6 +171,10 @@ chord_lookup = {
   },
   {
     name = "Locrian",
+    numeral = {
+      "i",  "II",  "iii",  "iv",  "V",  "VI",  "vii",
+      "i",  "II",  "iii",  "iv",  "V",  "VI",  "vii",
+    },
     chords = {
       "i°",  "II",  "iii",  "iv",  "V",  "VI",  "vii",
       "iø7", "IIM7", "iii7", "iv7", "VM7", "VI7", "vii7"
@@ -141,27 +221,31 @@ local chord_equivalent = {
 
 local function chord_offset(chord, offset)
   local chord_to_index = {A = 1, B = 2, C = 3, D = 4, E = 5, F = 6, G = 7}
-  local index_to_chord = {"A","B","C","D","E","F","G"}
+  local index_to_chord = {"A", "B", "C", "D", "E", "F", "G"}
   return(index_to_chord[util.wrap(chord_to_index[chord] + offset, 1, 7)])
 end
 
 
 -- enforces the "alphabet rule" for chords and picks whichever key has fewer nonstandard chords (##, bb, B#, Cb, E#, Fb)
 local function gen_keys()
-  theory.keys = {}
+  theory.chord_names = {}          -- chord names (letter + quality) for [mode][key]. 1-7 triad, 8-14 7th
+  theory.chord_letters = {}        -- chord letters for [mode][key]. 1-7 repeated for 8-14
   local chords_renamed = {}
+  local letters = {}
 
   for mode = 1, 9 do
-    theory.keys[mode] = {}
+    theory.chord_names[mode] = {}
+    theory.chord_letters[mode] = {}
 
     for transpose = 0, 11 do
-      theory.keys[mode][transpose] = {}
+      theory.chord_names[mode][transpose] = {}
+      theory.chord_letters[mode][transpose] = {}
       chords_renamed = {["flat"] = {}, ["sharp"] = {}, ["flat_rank"] = 0, ["sharp_rank"] = 0}
+      letters = {["flat"] = {}, ["sharp"] = {}}
 
       for _ , option in pairs({"flat", "sharp"}) do
         local prev_chord_name = nil
         local prev_letter = nil
-        local key = musicutil.NOTE_NAMES[util.wrap((musicutil.SCALES[mode]["intervals"][1] + 1) + transpose, 1, 12)] -- for debug
         
         for chord_no = 1, 14 do
           local chord_name = musicutil.NOTE_NAMES[util.wrap((musicutil.SCALES[mode]["intervals"][util.wrap(chord_no, 1, 7)] + 1) + transpose, 1, 12)]
@@ -174,7 +258,7 @@ local function gen_keys()
           local chord_letter = string.sub(chord_name, 1, 1)
           local equivalent = chord_equivalent[chord_name]
           local new_chord_name = chord_name
-          local quality = chord_lookup[mode]["quality"][chord_no]
+          local quality = theory.chord_degree[mode]["quality"][chord_no]
 
           if prev_chord_name then
             if prev_letter == chord_letter then
@@ -189,48 +273,38 @@ local function gen_keys()
           prev_chord_name = new_chord_name
           prev_letter = string.sub(new_chord_name, 1, 1)
           chords_renamed[option][chord_no] =  new_chord_name .. quality
+          letters[option][chord_no] = new_chord_name
 
-          if chord_no == 1 then
-            chords_renamed[option].key = new_chord_name
-          end
         end
       end
 
       -- keep the key that has a lower rank (fewer undesirable chord names)
       if (chords_renamed.flat_rank or 0) < (chords_renamed.sharp_rank or 0) then
-        theory.keys[mode][transpose] = chords_renamed.flat
+        theory.chord_names[mode][transpose] = chords_renamed.flat
+        theory.chord_letters[mode][transpose] = letters.flat
       else
-        theory.keys[mode][transpose] = chords_renamed.sharp
+        theory.chord_names[mode][transpose] = chords_renamed.sharp
+        theory.chord_letters[mode][transpose] = letters.sharp
       end
     end
+
   end
 end
 gen_keys()
 
 
--- generates chord tables across 2 octaves for selected mode and key
+-- generates base triad interval tables across 2 octaves for selected mode and key
 function gen_chord_tab()
   local mode = params:get("mode")
   -- local key = params:get("transpose") -- todo incorporate key into this calc rather than do downstream
 
-  theory.chords = {} -- table containing 2 octaves of chords for current mode+key
+  theory.chord_triads = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
 
-  -- for octave = 0, 1 do
-  --   local index = octave * 7
-  --   local octave = octave * 12
-
-  --   for chord_no = 1, 7 do
-  --     theory.chords[index + chord_no] = musicutil.generate_chord_scale_degree(octave, mode, chord_no, true)
-  --   end
-
-  -- end
-
-  -- same thing as above
   for x = 1, 14 do
     local octave = ((x > 7) and 1 or 0) * 12
     local degree = util.wrap(x, 1, 7)
 
-    theory.chords[x] = musicutil.generate_chord_scale_degree(octave, mode, degree, false) -- disabling 7ths!
+    theory.chord_triads[x] = musicutil.generate_chord_scale_degree(octave, mode, degree, false) -- disabling 7ths!
   end
 
 end
@@ -240,7 +314,7 @@ end
 -- optional root arg converts absolute intervals to relative to root
 -- look into: should this conversion happen here or upstream?
 function find_chord(intervals, root)
-  local lookup = musicutil.CHORDS
+  local lookup = theory.chords
   local root = root or 0
   local intervals_relative = {}
 
@@ -287,7 +361,7 @@ end
 
 --#region scales
 -- collection of scales used to populate default custom scale tables
--- Includes those in MusicUtil/https://github.com/fredericcormier/WesternMusicElements and some additions
+-- Includes those in musicutil/https://github.com/fredericcormier/WesternMusicElements and some additions
 theory.lookup_scales = {
   -- {name = "Major", alt_names = {"Ionian"}, intervals = {0, 2, 4, 5, 7, 9, 11}},
   -- {name = "Natural Minor", alt_names = {"Minor", "Aeolian"}, intervals = {0, 2, 3, 5, 7, 8, 10}},
@@ -402,6 +476,79 @@ theory.lookup_scales = {
   {name = "Whole Tone", intervals = {0, 2, 4, 6, 8, 10}},
 
 }
+
+-- lookup table to translate between 9 core DS scales and their index in the main lookup_scales table
+theory.base_scales = {}
+for base_idx = 1, #dreamsequence.scales do
+  for scale_idx = 1, #theory.lookup_scales do
+    if dreamsequence.scales[base_idx] == theory.lookup_scales[scale_idx].name then
+      theory.base_scales[base_idx] = scale_idx
+      break
+    end
+  end
+end
+
+
+
+-- generates valid chords for scales (currently just doing the 9 base scales)
+-- inserts table with chord names and indices into lookup_scales
+function gen_chord_lookups()
+
+  -- option a: iterate through every scale to generate list of valid chords per degree
+  -- for scale_idx = 1, #theory.lookup_scales do
+  
+  -- option b: iterate through only the 9 base DS scales to generate lists of valid chords per degree
+  for scale_idx = 1, #theory.base_scales do
+    scale_idx = theory.base_scales[scale_idx] -- just for option b
+
+    local scale_tab = theory.lookup_scales[scale_idx]
+    local scale_intervals = scale_tab.intervals
+
+  
+    scale_tab.chord_indices = {}
+    scale_tab.chord_names = {}
+
+    for degree = 1, #scale_intervals do -- warning- some don't have 7 "degrees"
+      scale_tab["chord_indices"][degree] = {}
+      scale_tab["chord_names"][degree] = {}
+
+      -- compare each type of chord against the scale
+      for chord_idx = 1, #theory.chords do -- temp just check 1st chord (Major)
+        local chord_tab = theory.chords[chord_idx]
+        local chord_intervals = chord_tab.intervals
+
+        pass_chord = true
+
+        -- iterate through each interval in chord
+        for chord_i = 1, #chord_intervals do
+          local interval = chord_intervals[chord_i]
+
+          local pass_interval = false -- if chord interval is found in scale
+
+          -- pass_interval is true when the chord's interval is found in the scale
+          for scale_i = 1, #scale_intervals do
+            if util.wrap(scale_intervals[scale_i] - scale_intervals[degree], 0, 11) == interval % 12 then
+              pass_interval = true
+            end
+          end
+
+          if not pass_interval then -- if chord interval was not matched in the scale, passes fail
+            pass_chord = false
+            break
+          end
+        end
+
+        if pass_chord then
+          table.insert(scale_tab.chord_indices[degree], chord_idx)
+          table.insert(scale_tab.chord_names[degree], chord_tab.name)
+        end
+
+      end
+
+    end
+  end
+end
+gen_chord_lookups()
 
 
 

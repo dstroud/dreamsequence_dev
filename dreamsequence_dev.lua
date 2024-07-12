@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240711 @modularbeat
+-- 240712 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -23,6 +23,9 @@
 
 
 -- stuff needed by includes
+
+dreamsequence = {} -- todo local
+
 -- layout and palette
 xy = {
   dash_x = 99, -- todo draw dash first-- adjust var if dash is empty
@@ -70,6 +73,21 @@ max_seq_cols = 15 - max_seqs
 max_seq_patterns = 4 -- can probably hardcode
 max_seq_pattern_length = 16
 
+
+-- 9 primary scales used to define base chords, scale
+dreamsequence.scales = {
+  "Major", -- "Ionian", 
+  "Natural Minor", -- "Aeolian", 
+  "Harmonic Minor",
+  "Melodic Minor",
+  "Dorian",
+  "Phrygian",
+  "Lydian",
+  "Mixolydian",
+  "Locrian"
+}
+
+-- pre-init bits n bobs
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
@@ -447,19 +465,9 @@ function init()
   -- SONG PARAMS --
   ------------------
   params:add_group("song", "SONG", 13)
-  
-  local modes = {
-    "Major", -- "Ionian", 
-    "Natural minor", -- "Aeolian", 
-    "Harmonic minor", 
-    "Melodic minor", 
-    "Dorian", 
-    "Phrygian", 
-    "Lydian", 
-    "Mixolydian", 
-    "Locrian"
-  }
-  params:add_number("mode", "Mode", 1, 9, 1, function(param) return modes[param:get()] end) -- post-bang action
+
+  -- TODO rename as SCALE!
+  params:add_number("mode", "Mode", 1, 9, 1, function(param) return dreamsequence.scales[param:get()] end) -- post-bang action
 
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
@@ -1039,7 +1047,6 @@ function init()
 
   --#region chord globals
   chord_menu_index = 1
-  editing_chord_degree = 1
   editing_chord_root = 0
   chord_pattern_length = {4,4,4,4}
   set_chord_pattern(1)
@@ -2829,7 +2836,7 @@ end
 
 function transpose_string(x)
   return(
-    theory.keys[params:get("mode")][util.wrap(x, 0, 11)].key
+    theory.chord_letters[params:get("mode")][util.wrap(x, 0, 11)][1]
     .. (x == 0 and "" or " ") ..  (x >= 1 and "+" or "") .. (x ~= 0 and x or "")
   )
 end
@@ -3649,8 +3656,8 @@ end
 
 function gen_chord_readout()
   if chord_no > 0 then
-    active_chord_name = theory.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
-    active_chord_degree = chord_lookup[params:get("mode")]["chords"][chord_no]
+    active_chord_name = theory.chord_names[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
+    active_chord_degree = theory.chord_degree[params:get("mode")]["chords"][chord_no]
   end
 end
 
@@ -3673,7 +3680,7 @@ function update_chord(x)
   if custom[pattern][x][y] then
     raw = custom[pattern][x][y].intervals
   else
-    raw = theory.chords[x]
+    raw = theory.chord_triads[x]
   end
   chord_raw = raw
   
@@ -4761,7 +4768,7 @@ end
 -- inits table of standard chord options for editing mode/degree
 -- todo p0 needs to be called on mode param change, too (events)
 function gen_chord_menus()
-  chord_menu_names = musicutil.chord_types_for_note(theory.chords[editing_chord_x][1] + 1, 1, params:string("mode")) -- todo check all mode strings
+  chord_menu_names = theory.lookup_scales[theory.base_scales[params:get("mode")]].chord_names[util.wrap(editing_chord_x, 1, 7)]
 end
 
 
@@ -4788,7 +4795,6 @@ function init_chord_editor()
   local pattern = editing_chord_pattern
   local x = editing_chord_x
   local y = editing_chord_y
-  editing_chord_degree = chord_lookup[params:get("mode")]["chords"][util.wrap(x, 1, 7)]
   local root = editing_chord_root
   gen_chord_menus()
   local name = "Custom"
@@ -4813,7 +4819,7 @@ function init_chord_editor()
       end
     end
   else
-    intervals = theory.chords[x]
+    intervals = theory.chord_triads[x]
     editing_chord_type = "standard"
   end
 
@@ -4851,8 +4857,8 @@ function g.key(x, y, z)
       if x <= 12 and y >= 7 then
         local interval = util.wrap(x, 1, 12) + (y == 7 and 12 or 0)
         local pattern = editing_chord_pattern
-        local editing_chord_x = editing_chord_x -- don't change, we need x/y as well!
-        local editing_chord_y = editing_chord_y
+        local editing_chord_x = editing_chord_x -- distinct from x/y coords!
+        local editing_chord_y = editing_chord_y -- distinct from x/y coords!
         local root = editing_chord_root
         local editing_chord_bools = editing_chord_bools
 
@@ -5100,15 +5106,23 @@ function g.key(x, y, z)
       end
       
     elseif grid_view_name == "Chord" then
-      chord_key_count = chord_key_count + 1 -- used to determine when to reset chord readout
+      if x < 15 then -- chord degrees
+        local x_wrapped = util.wrap(x, 1, 7)
+        chord_key_count = chord_key_count + 1 -- used to determine when to reset chord readout
 
-      if x < 15 then -- chord pattern
         if not grid_interaction then
           grid_interaction = "chord_key_held"
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
           editing_chord_y = y -- used for chord editor
-          editing_chord_root = theory.chords[x][1]
+          editing_chord_root = theory.chord_triads[x][1]
+
+          local mode = params:get("mode")
+          local key = util.wrap(params:get("transpose"), 0, 11)
+          editing_chord_name = theory.chord_names[mode][key][x_wrapped]           -- name+quality
+          editing_chord_letter = theory.chord_letters[mode][key][x_wrapped]       -- letter
+          editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]   -- degree roman numeral only
+
         end
 
         -- new chord is enabled on key down, but disabling happens conditionally on key up if chord editor was not used
@@ -5120,7 +5134,7 @@ function g.key(x, y, z)
           pending_chord_disable = nil -- will be for copy+paste
         end
 
-        chord_no = util.wrap(x, 1, 7) -- todo p1 used for chord readout but only showing triads ATM
+        chord_no = x_wrapped -- todo p1 used for chord readout but only showing triads ATM
         gen_chord_readout()
 
         -- plays Chord when pressing on any Grid key (even turning chord off)
@@ -5347,7 +5361,7 @@ function g.key(x, y, z)
         end
 
 
-      elseif x < 15 then -- patterns
+      elseif x < 15 then -- chord degrees
         chord_key_count = math.max(chord_key_count - 1, 0)
 
         if pending_chord_disable then
@@ -5355,7 +5369,7 @@ function g.key(x, y, z)
 
           -- todo p0 how to handle multiple key-downs and copying and scrolling and aghhhh
           -- might need to check x/y(and offset) against the pending values
-        -- if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
+          -- if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
           chord_pattern[off[1]][off[3]] = 0
           pending_chord_disable = nil
         end
@@ -5365,7 +5379,7 @@ function g.key(x, y, z)
             grid_interaction = nil
           end
 
-          chord_no = 0 -- blank out chord readout
+          chord_no = 0 -- blank out chord readout until next chord is played (could also revert but it gets a little confusing IME)
         end
 
         -- process chord changes on key up now so holding can be used to make custom chords
@@ -6163,7 +6177,20 @@ function enc(n,d)
       gen_chord_menus()
       chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
       local name = chord_menu_names[chord_menu_index]
-      local intervals = musicutil.generate_chord(root, name, 0)
+
+      -- generate intervals for the selected menu:
+      -- todo probably make this a theory function (replacement for generate_chord)
+      local intervals = {}
+      local chords = theory.chords
+      for c = 1, #chords do
+        if name == chords[c].name then
+          local c_int = chords[c].intervals
+          for i = 1, #c_int do
+            intervals[i] = c_int[i] + root
+          end
+          break
+        end
+      end
 
       -- write intervals to chords_custom so they are available to sequencer
       theory.custom_chords[pattern][x][y] = {intervals = {}}
@@ -7011,16 +7038,12 @@ function redraw()
       local chord_menu_names = chord_menu_names
     
       screen.move(header_x, header_y)
-      -- screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.level(lvl_menu_deselected)
-      screen.text("CHORD EDITOR")
+      screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_name)
 
       screen.move(header_x, menu_y + 10)
-      -- screen.level(paging and lvl_menu_deselected or lvl_menu_selected)
       screen.level(lvl_menu_selected)
-      -- screen.text("Scale: " .. (editing_scale_modified and "custom" or scale_name))
-      -- screen.text("Chord: " .. editing_chord_degree)
-      screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or chord_menu_names[chord_menu_index or 1]))
+      screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or editing_chord_letter .. " " .. chord_menu_names[chord_menu_index or 1]))
 
       footer("EXIT")
 
@@ -7131,7 +7154,7 @@ function redraw()
 
       elseif grid_interaction == "chord_key_held" then -- wag on placement here
         screen.level(0)             -- mask area behind footer
-        screen.rect(0, 54, 128, 10)
+        screen.rect(64, 54, 64, 10)
         screen.fill()
 
         footer(nil, "EDIT CHORD")
