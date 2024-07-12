@@ -230,7 +230,6 @@ function gen_chord_tab()
     local octave = ((x > 7) and 1 or 0) * 12
     local degree = util.wrap(x, 1, 7)
 
-    -- optionally: always includes 7th note since this will be used by seqs, harmonizers
     theory.chords[x] = musicutil.generate_chord_scale_degree(octave, mode, degree, false) -- disabling 7ths!
   end
 
@@ -265,6 +264,23 @@ function find_chord(intervals, root)
   end
 end
 
+
+-- initialize tables where custom chords don't exist
+if not theory.custom_chords then
+  theory.custom_chords = {}
+end
+
+for pattern = 1, 4 do
+  if not theory.custom_chords[pattern] then -- create pattern table if needed
+    theory.custom_chords[pattern] = {}
+  end
+  
+  for x = 1, 14 do
+    if not theory.custom_chords[pattern][x] then -- create col/degree table if needed
+      theory.custom_chords[pattern][x] = {}
+    end
+  end
+end
 
 --#endregion chords
 

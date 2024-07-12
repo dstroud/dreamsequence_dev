@@ -499,7 +499,7 @@ function init()
   ------------------
   -- CHORD PARAMS --
   ------------------
-  params:add_group("chord", "CHORD", 19)
+  params:add_group("chord", "CHORD", 18)
 
   nb:add_param("chord_voice_raw", "Voice raw")
   params:hide("chord_voice_raw")
@@ -519,25 +519,34 @@ function init()
   params:add_option("chord_mute", "Play/mute", {"Play", "Mute"}, 1)
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
-  
-  params:add_option("chord_type","Type", {"Triad", "7th"}, 1)
-  
-  params:add_number("chord_range", "Range", 3, 64, 4, function(param) return chord_range_string(param:get()) end) -- intervals
 
-  params:add_number("chord_max_notes", "Note Qty.", 0, 24, 0,  -- todo rename this
+  params:add_number("chord_range", "Range", 0, 64, 0, 
     function(param)
       local val = param:get()
 
       if val == 0 then
-        return("Dynamic")
+        return("Chord")
+      -- elseif params:get("chord_notes") > params:get("chord_range") then -- circle back on this. might keep
+        -- return(val .. "*")
       else
         return(val)
       end
     end
-
   )
 
-  params:add_number("chord_inversion", "Inversion", 0, 16, 0)
+  params:add_number("chord_inversion", "Inversion", 0, 16, 0) -- todo negative inversion
+
+  params:add_number("chord_notes", "Notes", 1, 25, 25,
+  function(param)
+    local val = param:get()
+
+    if val == 25 then
+      return("Uncapped")
+    else
+      return(val)
+    end
+  end
+  )
   
   params:add_option("chord_style", "Strum", {"Off", "Low-high", "High-low"}, 1)
   
@@ -1189,7 +1198,7 @@ function init()
 
   --#region PSET callback functions
   -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice", "scale"}
+  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice", "scale", "chord"}
 
   function params.action_write(filename, name, number)
     local number = number or "00" -- template
@@ -1204,6 +1213,7 @@ function init()
     -- misc.clock_source = params:get("clock_source") -- defer to system
     
     scale = deepcopy(theory.scales)
+    chord = deepcopy(theory.custom_chords)
 
     -- need to save and restore nb voices which can change based on what mods are enabled
     -- reworked for seq2 but haven't tested
@@ -1255,8 +1265,12 @@ function init()
         end
       end
 
-      if #scale > 0 then
+      if scale and #scale > 0 then
         theory.scales = deepcopy(scale)
+      end
+
+      if chord and #chord > 0 then
+        theory.custom_chords = deepcopy(chord)
       end
 
       -- clock_tempo isn't stored in .pset for some reason so set it from misc.data (todo: look into inserting into .pset)
@@ -2303,7 +2317,7 @@ function gen_menu()
   table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
 
   -- CHORD MENU
-  table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
+  table.insert(menus, {"chord_voice", "chord_octave", "chord_range", "chord_inversion", "chord_notes", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
   if params:visible("chord_channel") or norns_interaction == "k1" then
     table.insert(menus[#menus], 2, "chord_channel")
   end
@@ -2780,15 +2794,6 @@ function crow_trigger_string(index)
 end
 
 
-function chord_range_string(arg) 
-  if params:get("chord_max_notes") > params:get("chord_range") then
-    return(arg .. "*")
-  else
-    return(arg)
-  end
-end
-
-
 function ms_string(arg)
   return(arg .. "ms")
 end
@@ -3243,7 +3248,7 @@ function advance_chord_pattern()
     end
     
     if chord_key_count == 0 then
-      chord_no = current_chord_c + ((params:get("chord_type") + 2) == 4 and 7 or 0)
+      chord_no = current_chord_c -- todo p1. triad only, as it stands
       gen_chord_readout()
     end
 
@@ -3658,102 +3663,99 @@ function update_chord(x)
   current_chord_o = (x > 7) and 1 or 0
   current_chord_c = util.wrap(x, 1, 7)
 
-  -- todo p1 optimize- build in chord editor or when mode changes, probably
-  local chords = theory.custom_chords
+
+  -- todo p1 optimize- might build chord_raw, chord_densified, and chord_extended whenver chord is edited or mode changes
+  local custom = theory.custom_chords
   local pattern = active_chord_pattern
   local y = chord_pattern_position
-  if chords and chords[pattern] and chords[pattern][x] and chords[pattern][x][y] then -- todo p1 generate all up to [y]
-    chord_raw = chords[pattern][x][y].intervals
+  local raw = {}
+
+  if custom[pattern][x][y] then
+    raw = custom[pattern][x][y].intervals
   else
-    chord_raw = theory.chords[x]
+    raw = theory.chords[x]
   end
+  chord_raw = raw
   
+  local rawcount = #raw
+  local max_interval = raw[rawcount]
+  local min_interval = raw[1]
 
-  -- todo p1 only generate chord_dense_1 when one seq source is using this type of note transformation (param action needed)
-  -- todo also make local chord_raw intermediary table, probably
-  local max_interval = chord_raw[#chord_raw]
-
-  if max_interval - chord_raw[1] > 11 then -- If chord range spans more than an octave, rearrange the tones to fit in one octave
-    
+  if max_interval - min_interval > 11 then -- Chords with intervals spanning more than an octave need special tables for transform_note fns
     -- generate densified table of chord intervals in 1 octave, reordering notes as necessary
     local densified = {}
-    local octave_min = chord_raw[1]
 
-    for i = 1, #chord_raw do
-      interval = chord_raw[i]
-      densified[i] = (interval - octave_min) > 11 and interval - 12 or interval
+    for i = 1, rawcount do
+      interval = raw[i]
+      densified[i] = (interval - min_interval) > 11 and interval - 12 or interval
     end
 
-    chord_dense_1 = sort_and_remove_duplicates(densified)
+    chord_densified = sort_and_remove_duplicates(densified)
 
+    -- generate extended table of chord intervals in 2 octaves by inserting higher-octave tones after highest note in _raw table
+    densified = simplecopy(raw)
+    min_interval = min_interval + 12 -- redefined to delineate one octave up from min
 
-    -- generate densified table of chord intervals in 2 octaves by inserting higher-octave tones after highest note in _raw table
-    densified = simplecopy(chord_raw)
-    
-    for i = 1, #chord_raw - 1 do
-      local n = chord_raw[i]
-
+    for i = 1, rawcount - 1 do
+      local n = raw[i]
       
-      if (n - x < 12) and n + 12 > max_interval then
-        table.insert(densified, chord_raw[i] + 12)
+      -- find notes that:
+      -- 1. are in the first octave
+      -- 2. when raised an octave, are higher pitched than the highest/last tone in chord_raw
+      if (n < min_interval) and n + 12 > max_interval then
+        table.insert(densified, raw[i] + 12)
       end
     end
 
-    chord_dense_2 = simplecopy(densified)
+    chord_extended = simplecopy(densified)
 
   else
-    chord_dense_1 = chord_raw
-    chord_dense_2 = chord_raw
+    chord_densified = raw
+    chord_extended = raw
   end
-
-
 
   transform_chord()
 end
 
 
+
+
 -- Expands chord notes (range), inverts, and thins based on max notes
 function transform_chord()
-  -- local notes_in_chord = (params:get("chord_type") + 2)
-  local notes_in_chord = #chord_raw -- todo need to tie this in with max/dynamic/min notes param
+  local chord_raw = chord_raw
+  local chord_extended = chord_extended
+  local notes_in_raw = #chord_raw
+  local notes_in_extended = #chord_extended
+  local extended_oct = notes_in_raw == notes_in_extended and 12 or 24 -- offset to apply when extending
+  local range = params:get("chord_range")
+  if range == 0 then range = notes_in_raw end
+  local max_notes = params:get("chord_notes")
+  local inversion = params:get("chord_inversion")
 
   chord_transformed = {}
 
-  -- temporary simplification while working on custom chords
-  for i = 1, notes_in_chord do
-    chord_transformed[i] = chord_raw[i]
+  -- Add intervals to achieve range plus apply inversion shift (upper and lower)
+  for i = 1, range do
+    local inv = i + inversion
+    local octave = math.ceil(inv / notes_in_extended) - 1
+    chord_transformed[i] = chord_extended[util.wrap(inv, 1, notes_in_extended)] + (inv > notes_in_extended and (octave * extended_oct) or 0)
   end
 
-  -- -- This adds intervals to achieve range plus upper inversion notes in a single pass
-  -- for i = 1, params:get("chord_range") + params:get("chord_inversion") do
-  --   local octave = math.ceil(i / notes_in_chord) - 1
-  --   chord_transformed[i] = chord_raw[util.wrap(i, 1, notes_in_chord)] + (i > notes_in_chord and (octave * 12) or 0)
-  -- end
-  
-  -- -- remove lower inverted notes
-  -- for i = 1, params:get("chord_inversion") do
-  --   table.remove(chord_transformed, 1)
-  -- end  
-  
-  -- -- Thin out notes in chord to not exceed params:get("chord_max_notes")
-  -- local polyphony = params:get("chord_max_notes")
-  -- local notes = #chord_transformed
 
-  -- -- special handling for poly==1
-  -- if polyphony == 1 then
-  --   for i = notes, 2, -1 do
-  --     table.remove(chord_transformed, i)
-  --   end
-  -- -- regular handling of thinning to match poly. todo- additional thinning algos, e.g. preserve base triad  
-  -- elseif notes > polyphony then
-  --   chord_thinned = er.gen(polyphony - 1, notes - 1, 0)
-  --   for i = notes - 1, 2, -1 do
-  --     if chord_thinned[i] == false then
-  --       table.remove(chord_transformed, i)
-  --     end
-  --   end
-  -- end
-  
+ -- todo p2 gotta be some way of doing this with note densification for better efficiency
+ -- Thin out notes in chord to not exceed params:get("chord_notes")
+  if max_notes ~= 25 then
+    if max_notes == 1 then
+      chord_transformed = {chord_transformed[1]}
+    elseif range > max_notes then -- todo- additional thinning algos, e.g. preserve base triad
+      chord_thinned = er.gen(max_notes - 1, range - 1, 0)
+      for i = range - 1, 2, -1 do
+        if chord_thinned[i] == false then
+          table.remove(chord_transformed, i)
+        end
+      end
+    end
+  end
 
 end
 
@@ -3986,12 +3988,12 @@ end
 
 
 transform_note[2] = function(note_num, octave) -- custom chords, densified to extend 2 octaves if necessary
-  local chord_length = #chord_dense_2
+  local chord_length = #chord_extended
 
   -- jump to next octave if difference from chord min/max intervals is >1 octave.
   -- local additional_octave = (chord_raw[chord_length] - chord_raw[1]) >= 12 and 1 or 0 -- fine if we have just 12 seq rows
-  local additional_octave = math.floor((chord_dense_2[chord_length] - chord_dense_2[1]) / 12) -- in anticipation of variable max_seqs
-  local quantized_note = chord_dense_2[util.wrap(note_num, 1, chord_length)]
+  local additional_octave = math.floor((chord_extended[chord_length] - chord_extended[1]) / 12) -- in anticipation of variable max_seqs
+  local quantized_note = chord_extended[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
 
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
@@ -4000,8 +4002,8 @@ end
 
 
 transform_note[3] = function(note_num, octave) -- custom chords, tones arranged into one octave
-  local chord_length = #chord_dense_1
-  local quantized_note = chord_dense_1[util.wrap(note_num, 1, chord_length)]
+  local chord_length = #chord_densified
+  local quantized_note = chord_densified[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
@@ -4373,14 +4375,6 @@ function grid_redraw()
 
 
   elseif screen_view_name == "chord_editor" then
-    local chords = theory.custom_chords
-    local pattern = editing_chord_pattern
-    local x = editing_chord_x
-    local y = editing_chord_y
-    -- local intervals_bool = {}
-    -- local intervals = {}
-    local root = editing_chord_root
-    local type = editing_chord_type
     local editing_chord_bools = editing_chord_bools
     local in_mode = editing_chord_mode_intervals
     
@@ -4800,22 +4794,6 @@ function init_chord_editor()
   local name = "Custom"
   local intervals = {}
 
-
-  -- always generate up to the the x portion of custom chord table
-  -- todo p1 just generate at init
-  if not theory.custom_chords then
-    theory.custom_chords = {}
-  end
-
-  if not theory.custom_chords[pattern] then
-    theory.custom_chords[pattern] = {}
-  end
-
-  if not theory.custom_chords[pattern][x] then
-    theory.custom_chords[pattern][x] = {}
-  end
-
-
   -- set editing_chord_intervals table which gets the custom interval if available or the standard degree intervals
   local custom_chords = theory.custom_chords
 
@@ -4885,7 +4863,7 @@ function g.key(x, y, z)
         
         editing_chord_bools[interval] = not editing_chord_bools[interval] -- TODO P0 need to some some wrap/modulo stuff to turn x/y into index
 
-        -- write back to chord_custom
+        -- write back to custom_chords
         theory.custom_chords[pattern][editing_chord_x][editing_chord_y]["intervals"] = {}
 
         for i = 1, #editing_chord_bools do
@@ -5142,7 +5120,7 @@ function g.key(x, y, z)
           pending_chord_disable = nil -- will be for copy+paste
         end
 
-        chord_no = util.wrap(x, 1, 7) + ((params:get("chord_type") + 2) == 4 and 7 or 0) -- used for chord readout
+        chord_no = util.wrap(x, 1, 7) -- todo p1 used for chord readout but only showing triads ATM
         gen_chord_readout()
 
         -- plays Chord when pressing on any Grid key (even turning chord off)
@@ -5387,10 +5365,7 @@ function g.key(x, y, z)
             grid_interaction = nil
           end
 
-          -- This reverts the chord readout to the currently loaded chord but it is kinda confusing when paused so now it just wipes and refreshes at the next chord step. Could probably be improved todo p2
-          -- chord_no = current_chord_c + ((params:get("chord_type") + 2) == 4 and 7 or 0)          
-          -- gen_chord_readout()
-          chord_no = 0
+          chord_no = 0 -- blank out chord readout
         end
 
         -- process chord changes on key up now so holding can be used to make custom chords
@@ -6202,7 +6177,7 @@ function enc(n,d)
     elseif screen_view_name == "scale_editor" then  -- scale editor
       local mode = params:get("mode")
 
-      if menu_index == 0 then
+      if scale_menu_index == 0 then
         editing_scale = util.clamp((editing_scale or 1) + d, 1, 8)
         set_scale_menu()
       else
