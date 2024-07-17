@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240712 @modularbeat
+-- 240717 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -76,15 +76,22 @@ max_seq_pattern_length = 16
 
 -- 9 primary scales used to define base chords, scale
 dreamsequence.scales = {
-  "Major", -- "Ionian", 
-  "Natural Minor", -- "Aeolian", 
-  "Harmonic Minor",
-  "Melodic Minor",
-  "Dorian",
-  "Phrygian",
-  "Lydian",
-  "Mixolydian",
-  "Locrian"
+
+-- canonical scales
+"Major", -- "Ionian", 
+"Natural Minor", -- "Aeolian", 
+"Harmonic Minor",
+"Melodic Minor",
+"Dorian",
+"Phrygian",
+"Lydian",
+"Mixolydian",
+"Locrian",
+
+-- some additions that work, too, but need to have some theory functions updated
+-- "Altered Scale",
+-- "Harmonic Major",
+-- "Overtone",
 }
 
 -- pre-init bits n bobs
@@ -465,9 +472,9 @@ function init()
   -- SONG PARAMS --
   ------------------
   params:add_group("song", "SONG", 13)
-
-  -- TODO rename as SCALE!
-  params:add_number("mode", "Mode", 1, 9, 1, function(param) return dreamsequence.scales[param:get()] end) -- post-bang action
+ 
+  -- TODO rename as SCALE and make option type
+  params:add_option("mode", "Scale", dreamsequence.scales, 1) -- post-bang action
 
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
@@ -544,7 +551,7 @@ function init()
 
   params:add_number("chord_inversion", "Inversion", 0, 16, 0) -- todo negative inversion
 
-  params:add_number("chord_notes", "Notes", 1, 25, 25,
+  params:add_number("chord_notes", "Max notes", 1, 25, 25,
   function(param)
     local val = param:get()
 
@@ -576,7 +583,7 @@ function init()
 
   params:add_number("chord_dynamics", "Dynamics", 0, 100, 70, function(param) return percent(param:get()) end)
 
-  params:add_number("chord_dynamics_ramp", "Ramp", -100, 100, 0, function(param) return percent(param:get()) end)
+  params:add_number("chord_dynamics_ramp", "Ramp", -100, 100, 0, function(param) return percent(param:get()) end) --todo p0 update param and docs to "Tracking"
 
   -- will act on current pattern unlike numbered seq param
   max_chord_pattern_length = 16
@@ -1055,9 +1062,11 @@ function init()
   chord_key_count = 0
   chord_pattern_position = 0
   chord_raw = {}
-  current_chord_x = 0
+  current_chord_x = 1 -- WAG here now that we're using this rather than _c for readout. Might break something.
   current_chord_o = 0
-  current_chord_c = 1
+  current_chord_c = 1 -- to default readout/note transformations
+  dash_chord_name = ""
+  dash_chord_degree = ""
   next_chord_x = 0
   next_chord_o = 0
   next_chord_c = 1
@@ -2576,8 +2585,8 @@ end
 function build_scale()
   local mode = params:get("mode")
 
-  scale_heptatonic = musicutil.generate_scale_of_length(0, mode, 7)
-  gen_custom_scale() -- generates bool table with bool table of notes for each of the 8 custom scales
+  scale_heptatonic = theory.lookup_scales[theory.base_scales[params:get("mode")]].intervals
+  gen_custom_scale() -- generates bool table with notes for each of the 8 custom scales
 
   -- todo p1 optimize
   -- could also do this for each source so no lookup is necessary each time a note plays
@@ -2836,7 +2845,7 @@ end
 
 function transpose_string(x)
   return(
-    theory.chord_letters[params:get("mode")][util.wrap(x, 0, 11)][1]
+    theory.scale_chord_letters[params:get("mode")][util.wrap(x, 0, 11)][1]
     .. (x == 0 and "" or " ") ..  (x >= 1 and "+" or "") .. (x ~= 0 and x or "")
   )
 end
@@ -3239,6 +3248,10 @@ function advance_chord_pattern()
           play_seq[seq_no] = true
         end
       end
+
+      -- update chord names in dash any time a chord is enabled on this step (even if not displayed due to chord key being held)
+      gen_chord_readout()
+
     else -- no chord but we might need to start/reset seq
       for seq_no = 1, max_seqs do
         local start_on = params:string("seq_start_on_"..seq_no)
@@ -3252,11 +3265,6 @@ function advance_chord_pattern()
           play_seq[seq_no] = true
         end
       end
-    end
-    
-    if chord_key_count == 0 then
-      chord_no = current_chord_c -- todo p1. triad only, as it stands
-      gen_chord_readout()
     end
 
   end
@@ -3655,35 +3663,51 @@ end
 
 
 function gen_chord_readout()
-  if chord_no > 0 then
-    active_chord_name = theory.chord_names[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
-    active_chord_degree = theory.chord_degree[params:get("mode")]["chords"][chord_no]
+    -- return triad but give an * indicator if it's a custom chord
+    if grid_interaction ~= "chord_key_held" then
+    local x = current_chord_x
+    local x_wrapped = util.wrap(current_chord_x, 1, 7)
+    local custom = theory.custom_chords
+    local pattern = active_chord_pattern
+    local y = chord_pattern_position
+
+    if custom[pattern][x][y] then -- this is a custom chord
+      active_chord_name = theory.scale_chord_names[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"
+      active_chord_degree = theory.chord_degree[params:get("mode")]["chords"][x_wrapped] .. "*"
+    else
+      active_chord_name = theory.scale_chord_names[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
+      active_chord_degree = theory.chord_degree[params:get("mode")]["chords"][x_wrapped]
+    end
+
+    dash_chord_name = active_chord_name
+    dash_chord_degree = active_chord_degree
   end
+
 end
 
 
 -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
 -- Also used for manual g.key presses while transport is stopped/paused
 -- Mode is always updated in case no chord has been set but user has changed Mode param.
-function update_chord(x)
+function update_chord(x, y) -- y is optional when playing chord using g.key
   current_chord_x = x
   current_chord_o = (x > 7) and 1 or 0
   current_chord_c = util.wrap(x, 1, 7)
 
-
   -- todo p1 optimize- might build chord_raw, chord_densified, and chord_extended whenver chord is edited or mode changes
   local custom = theory.custom_chords
   local pattern = active_chord_pattern
-  local y = chord_pattern_position
+  local y = y or chord_pattern_position
   local raw = {}
 
+  -- determines if we're using a custom chord or standard
   if custom[pattern][x][y] then
     raw = custom[pattern][x][y].intervals
   else
-    raw = theory.chord_triads[x]
+    raw = theory.chord_triad_intervals[x]
   end
   chord_raw = raw
-  
+
   local rawcount = #raw
   local max_interval = raw[rawcount]
   local min_interval = raw[1]
@@ -4790,7 +4814,7 @@ function gen_chord_bools(intervals)
 end
 
 
--- sets editing_chord_mode_intervals based on editing chord degree
+-- generates bool table for selected intervals in chord
 function init_chord_editor()
   local pattern = editing_chord_pattern
   local x = editing_chord_x
@@ -4819,7 +4843,7 @@ function init_chord_editor()
       end
     end
   else
-    intervals = theory.chord_triads[x]
+    intervals = theory.chord_triad_intervals[x]
     editing_chord_type = "standard"
   end
 
@@ -5110,21 +5134,32 @@ function g.key(x, y, z)
         local x_wrapped = util.wrap(x, 1, 7)
         chord_key_count = chord_key_count + 1 -- used to determine when to reset chord readout
 
+        -- todo p0 need to do copy+paste and figure out complications there with simultaneous keypresses
         if not grid_interaction then
           grid_interaction = "chord_key_held"
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
           editing_chord_y = y -- used for chord editor
-          editing_chord_root = theory.chord_triads[x][1]
+          editing_chord_root = theory.chord_triad_intervals[x][1]
 
           local mode = params:get("mode")
           local key = util.wrap(params:get("transpose"), 0, 11)
-          editing_chord_name = theory.chord_names[mode][key][x_wrapped]           -- name+quality
-          editing_chord_letter = theory.chord_letters[mode][key][x_wrapped]       -- letter
-          editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]   -- degree roman numeral only
+          editing_chord_name = theory.scale_chord_names[mode][key][x_wrapped]           -- name+quality
+          editing_chord_letter = theory.scale_chord_letters[mode][key][x_wrapped]       -- letter
+          editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
+
+          -- todo need to think about interaction with copy+paste and whether we show first or last key held
+          if theory.custom_chords[editing_chord_pattern][editing_chord_x][editing_chord_y] then
+            dash_chord_name = editing_chord_name .. "*"
+            dash_chord_degree = editing_chord_degree .. "*"
+          else
+            dash_chord_name = editing_chord_name
+            dash_chord_degree = editing_chord_degree
+          end
 
         end
 
+        -- todo needs to be included in above logic but blocked when doing copy+paste in column...
         -- new chord is enabled on key down, but disabling happens conditionally on key up if chord editor was not used
         if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
           -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by chord editor
@@ -5134,12 +5169,9 @@ function g.key(x, y, z)
           pending_chord_disable = nil -- will be for copy+paste
         end
 
-        chord_no = x_wrapped -- todo p1 used for chord readout but only showing triads ATM
-        gen_chord_readout()
-
         -- plays Chord when pressing on any Grid key (even turning chord off)
         if transport_state == "stopped" or transport_state == "paused" then
-          update_chord(x)
+          update_chord(x, y)
           play_chord()
         end
 
@@ -5377,9 +5409,11 @@ function g.key(x, y, z)
         if chord_key_count == 0 then
           if grid_interaction == "chord_key_held" then
             grid_interaction = nil
-          end
 
-          chord_no = 0 -- blank out chord readout until next chord is played (could also revert but it gets a little confusing IME)
+            -- restore dash chord readouts to whatever the active chord is
+            dash_chord_name = active_chord_name or ""
+            dash_chord_degree = active_chord_degree or ""
+          end
         end
 
         -- process chord changes on key up now so holding can be used to make custom chords
@@ -5523,6 +5557,30 @@ function key(n,z)
         screen_view_name = "Session"
 
       elseif screen_view_name == "chord_editor" then -- close and return to session
+
+        -- check if the current custom intervals are the same as the default triad for this mode/degree
+        -- if so, wipe the custom chord entry so we know it's default
+        -- this could also be replaced with a name check (but needs to be generated for default triads)
+        local pattern = editing_chord_pattern
+        local custom = theory.custom_chords[pattern][editing_chord_x]
+        if custom[editing_chord_y] then -- x entry won't be created if keys/encoders aren't touched
+          local custom_intervals = custom[editing_chord_y].intervals
+          local standard_intervals = theory.chord_triad_intervals[editing_chord_x]
+
+          if #custom_intervals == 3 then -- triads only!
+            local pass = true
+            for i = 1, 3 do
+              if custom_intervals[i] ~= standard_intervals[i] then
+                pass = false
+                break
+              end
+            end
+            if pass then
+              custom[editing_chord_y] = nil -- delete custom chord entry
+            end
+          end
+        end
+
         grid_interaction = nil
         screen_view_name = "Session"
 

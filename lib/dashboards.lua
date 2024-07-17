@@ -198,11 +198,9 @@ function dash_functions.chord_active_name()
   screen.fill()
 
   screen.level(lvl_pane_selected)
-  if chord_no > 0 then
-    screen.move(dash_x + 14, dash_y + 7) -- centered
-    screen.text_center(active_chord_name)
-  end
-
+  screen.move(dash_x + 14, dash_y + 7) -- centered
+  screen.text_center(dash_chord_name)--active_chord_name)
+  
   dash_y = dash_y + 10 -- position for next dash
 end
 
@@ -220,10 +218,8 @@ function dash_functions.chord_active_degree()
   screen.fill()
 
   screen.level(lvl_pane_selected)
-  if chord_no > 0 then
-    screen.move(dash_x + 14, dash_y + 7) -- centered
-    screen.text_center(active_chord_degree)
-  end
+  screen.move(dash_x + 14, dash_y + 7) -- centered
+  screen.text_center(dash_chord_degree)--active_chord_degree)
 
   dash_y = dash_y + 10 -- position for next dash
 end

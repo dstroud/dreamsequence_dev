@@ -4,48 +4,56 @@ theory = {}
 
 -- TODO reorder these:
 -- extended list of chords, intervals
--- quality is used to append to chord letter/degree roman numeral
+-- "quality" is technically quality+extension+alterations, used to append to chord letter
 theory.chords = {
-  {name = "Major", quality = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
-  {name = "Minor", quality = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
+  {name = "Major", quality = "", short = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
+  {name = "Minor", quality = "m", short = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
 
-  {name = "Sus2", quality = "sus2", intervals = {0, 2, 7}},
-  {name = "Seventh sus2", quality = "7sus2", intervals = {0, 2, 7, 10}},
+  {name = "Sus2", quality = "sus2", short = "ˢᵘˢ²", intervals = {0, 2, 7}},
 
-  {name = "Sus4", quality = "sus4", intervals = {0, 5, 7}},
-  {name = "Seventh sus4", quality = "7sus4", intervals = {0, 5, 7, 10}},
-  
-  {name = "Major 6", quality = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
+  -- this sounds pretty good but apparently is not common per https://strungoutfretnot.com/2010/06/15/chord-theory-4-sus-chords/
+  -- It is also uncommon to add a seventh to a sus2 chord. Sus2 chords do not have the harmonic momentum found in sus4 chords 
+  -- – adding an extra note on top would only further weaken the suspended effect and harmonic momentum.
+  {name = "Seventh sus2", quality = "7sus2", short = "⁷ˢᵘˢ²", intervals = {0, 2, 7, 10}}, -- some suggestion this is not common but it sounds good to me
+  {name = "Sus4", quality = "sus", short = "ˢᵘˢ⁴", intervals = {0, 5, 7}},                  -- implied 4 in short quality
+  {name = "Seventh sus4", quality = "7sus", short = "⁷ˢᵘˢ⁴", intervals = {0, 5, 7, 10}}, -- 2024-07-15 implied 4 in short quality
 
-  {name = "Major 7", quality = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
-  {name = "Major 69", quality = "6/9", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
-  {name = "Major 9", quality = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
-  {name = "Major 11", quality = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
-  {name = "Major 13", quality = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
-  {name = "Dominant 7", quality = "7", intervals = {0, 4, 7, 10}},
-  {name = "Ninth", quality = "9", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
-  {name = "Eleventh", quality = "11", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
-  {name = "Thirteenth", quality = "13", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
-  {name = "Augmented", quality = "+", intervals = {0, 4, 8}},
-  {name = "Augmented 7", quality = "+7", intervals = {0, 4, 8, 10}},
+  -- {name = "Ninth sus4", quality = "9sus", intervals = {0, 5, 7, 10, 14}}, -- 2024-07-15 implied 4 in short quality
+  -- no Eleventh sus4 as that's the 4th raised an octave
+  -- {name = "Thirteenth sus4", quality = "13sus", intervals = {0, 5, 7, 10, 14, 20}}, -- SOUNDS LIKE ASS LOL
 
 
-  {name = "Minor Major 7", quality = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
-  -- {name = "Minor", quality = "m", alt_names = {"Min"}, intervals = {0, 3, 7}}, -- moved up due to DS' chord selection method
-  {name = "Minor 6", quality = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
-  {name = "Minor 7", quality = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
-  {name = "Minor 69", quality = "m6/9", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
-  {name = "Minor 9", quality = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
-  {name = "Minor 11", quality = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
-  {name = "Minor 13", quality = "m13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
-  {name = "Diminished", quality = "°", alt_names = {"Dim"}, intervals = {0, 3, 6}},
-  {name = "Diminished 7", quality = "°7", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
-  {name = "Half Diminished 7", quality = "ø7", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- alt m7b5
-  {name = "Augmented Major 7", quality = "+M7", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
+  {name = "Major 6", quality = "6", short = "⁶", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
+
+  {name = "Major 7", quality = "M7", short = "ᴹ⁷", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
+  {name = "Major 69", quality = "69", short = "ᴹ⁶⁹", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
+  {name = "Major 9", quality = "M9", short = "ᴹ⁹", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
+  {name = "Major 11", quality = "M11", short = "ᴹ¹¹", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
+  {name = "Major 13", quality = "M13", short = "ᴹ¹³", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
+  {name = "Dominant 7", quality = "7", short = "⁷", intervals = {0, 4, 7, 10}},
+  {name = "Ninth", quality = "9", short = "⁹", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
+  {name = "Eleventh", quality = "11", short = "¹¹", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
+  {name = "Thirteenth", quality = "13", short = "¹³", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
+  {name = "Augmented", quality = "+", short = "⁺", intervals = {0, 4, 8}},
+  {name = "Augmented 7", quality = "+7", short = "⁺⁷", intervals = {0, 4, 8, 10}},
+
+
+  {name = "Minor Major 7", quality = "m♮7", short = "mᴹ⁷", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
+  {name = "Minor 6", quality = "m6", short = "m⁶", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
+  {name = "Minor 7", quality = "m7", short = "m⁷", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
+  {name = "Minor 69", quality = "m69", short = "m⁶⁹", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
+  {name = "Minor 9", quality = "m9", short = "m⁹", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
+  {name = "Minor 11", quality = "m11", short = "m¹¹", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
+  {name = "Minor 13", quality = "m13", short = "¹³", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
+  {name = "Diminished", quality = "°", short = "", alt_names = {"Dim"}, intervals = {0, 3, 6}}, -- superscript dim symbol in norns.ttf
+  {name = "Diminished 7", quality = "°7", short = "°⁷", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
+  {name = "Half Diminished 7", quality = "ø7", short = "⁷", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- superscript half-dim symbol in norns.ttf
+  {name = "Augmented Major 7", quality = "+M7", short = "⁺ᴹ⁷", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
 }
 -- Base data from https://github.com/fredericcormier/WesternMusicElements, extended by @dstroud
 
 
+-- todo technically not needed except for roman numerals lookup
 -- lookup for chord degrees and qualities, mirroring musicutil.SCALE_CHORD_DEGREES with breakout for chord roman numeral and "quality"
 -- indices 1-7 are triads, 8-14 are 7ths
 theory.chord_degree = {
@@ -227,19 +235,20 @@ end
 
 
 -- enforces the "alphabet rule" for chords and picks whichever key has fewer nonstandard chords (##, bb, B#, Cb, E#, Fb)
+-- todo update to use theory lib and work with additional scales
 local function gen_keys()
-  theory.chord_names = {}          -- chord names (letter + quality) for [mode][key]. 1-7 triad, 8-14 7th
-  theory.chord_letters = {}        -- chord letters for [mode][key]. 1-7 repeated for 8-14
+  theory.scale_chord_names = {}          -- chord names (letter + quality) for [mode][key]. 1-7 triad, 8-14 7th
+  theory.scale_chord_letters = {}        -- chord letters for [mode][key]. 1-7 repeated for 8-14
   local chords_renamed = {}
   local letters = {}
 
   for mode = 1, 9 do
-    theory.chord_names[mode] = {}
-    theory.chord_letters[mode] = {}
+    theory.scale_chord_names[mode] = {}
+    theory.scale_chord_letters[mode] = {}
 
     for transpose = 0, 11 do
-      theory.chord_names[mode][transpose] = {}
-      theory.chord_letters[mode][transpose] = {}
+      theory.scale_chord_names[mode][transpose] = {}
+      theory.scale_chord_letters[mode][transpose] = {}
       chords_renamed = {["flat"] = {}, ["sharp"] = {}, ["flat_rank"] = 0, ["sharp_rank"] = 0}
       letters = {["flat"] = {}, ["sharp"] = {}}
 
@@ -258,7 +267,7 @@ local function gen_keys()
           local chord_letter = string.sub(chord_name, 1, 1)
           local equivalent = chord_equivalent[chord_name]
           local new_chord_name = chord_name
-          local quality = theory.chord_degree[mode]["quality"][chord_no]
+          local quality = theory.chord_degree[mode]["quality"][chord_no] -- todo replace with generated names
 
           if prev_chord_name then
             if prev_letter == chord_letter then
@@ -280,11 +289,11 @@ local function gen_keys()
 
       -- keep the key that has a lower rank (fewer undesirable chord names)
       if (chords_renamed.flat_rank or 0) < (chords_renamed.sharp_rank or 0) then
-        theory.chord_names[mode][transpose] = chords_renamed.flat
-        theory.chord_letters[mode][transpose] = letters.flat
+        theory.scale_chord_names[mode][transpose] = chords_renamed.flat
+        theory.scale_chord_letters[mode][transpose] = letters.flat
       else
-        theory.chord_names[mode][transpose] = chords_renamed.sharp
-        theory.chord_letters[mode][transpose] = letters.sharp
+        theory.scale_chord_names[mode][transpose] = chords_renamed.sharp
+        theory.scale_chord_letters[mode][transpose] = letters.sharp
       end
     end
 
@@ -293,18 +302,45 @@ end
 gen_keys()
 
 
+
+
 -- generates base triad interval tables across 2 octaves for selected mode and key
 function gen_chord_tab()
   local mode = params:get("mode")
-  -- local key = params:get("transpose") -- todo incorporate key into this calc rather than do downstream
 
-  theory.chord_triads = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
+  theory.chord_triad_intervals = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
+
+  -- optional, WIP:
+  -- this would probably replace theory.chord_degree but needs work on degrees as well
+  -- theory.chord_triad_names = {} -- table containing chord names for degrees 1-7, repeated for 8-14
 
   for x = 1, 14 do
     local octave = ((x > 7) and 1 or 0) * 12
     local degree = util.wrap(x, 1, 7)
+    local intervals_raw = theory.lookup_scales[theory.base_scales[mode]]["intervals"]
+    local intervals = {}
+    local triad = {1, 3, 5}
 
-    theory.chord_triads[x] = musicutil.generate_chord_scale_degree(octave, mode, degree, false) -- disabling 7ths!
+    for i = degree, #intervals_raw do
+      table.insert(intervals, intervals_raw[i] + octave)
+    end
+
+    for i = 1, degree do -- rotate to end of table and increase by an octave
+      table.insert(intervals, (intervals_raw[i] + 12 + octave))
+    end
+
+    theory.chord_triad_intervals[x] = {}
+    -- theory.chord_triad_names[x] = {}
+
+    for i = 1, 3 do
+      theory.chord_triad_intervals[x][i] = intervals[triad[i]]
+    end
+
+    -- print("debug x = " .. x .. ":")
+    -- tab.print(theory.chord_triad_intervals[x])
+    -- -- this needs some work. need to wrap intervals and look up scale using base table... not sure it's worth it RN
+    -- print(find_chord(theory.chord_triad_intervals[x], theory.lookup_scales[27]["intervals"][util.wrap(x, 1, 7)]) or "chord not found")
+    -- print(" ")
   end
 
 end
@@ -333,13 +369,14 @@ function find_chord(intervals, root)
       end
       if chord_match then
         return(lookup[lookup_idx].name)
+        -- return(lookup[lookup_idx].short) -- can return ""
       end
     end
   end
 end
 
 
--- initialize tables where custom chords don't exist
+-- initialize tables where custom chords don't already exist
 if not theory.custom_chords then
   theory.custom_chords = {}
 end
@@ -361,6 +398,7 @@ end
 
 --#region scales
 -- collection of scales used to populate default custom scale tables
+-- will have chord_indices and chord_names inserted by separate function by gen_chord_lookups at library init
 -- Includes those in musicutil/https://github.com/fredericcormier/WesternMusicElements and some additions
 theory.lookup_scales = {
   -- {name = "Major", alt_names = {"Ionian"}, intervals = {0, 2, 4, 5, 7, 9, 11}},
@@ -488,8 +526,6 @@ for base_idx = 1, #dreamsequence.scales do
   end
 end
 
-
-
 -- generates valid chords for scales (currently just doing the 9 base scales)
 -- inserts table with chord names and indices into lookup_scales
 function gen_chord_lookups()
@@ -540,7 +576,7 @@ function gen_chord_lookups()
 
         if pass_chord then
           table.insert(scale_tab.chord_indices[degree], chord_idx)
-          table.insert(scale_tab.chord_names[degree], chord_tab.name)
+          table.insert(scale_tab.chord_names[degree], chord_tab.name) --.short)
         end
 
       end
@@ -742,4 +778,3 @@ end
 
 
 --#endregion scales
-
