@@ -2015,6 +2015,25 @@ end -- end of init
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
+ 
+-- shows a brief pop-up message
+function popup_message(message)
+  lvl = lvl_dimmed
+  update_dash_lvls()
+  screen_message = message
+  if (popup_countdown or 0) == 0 then -- start timer
+
+    clock.run(do_popup_timer,
+      function()
+        screen_message = nil
+        lvl = lvl_normal
+        update_dash_lvls()
+      end
+    )
+  else  -- timer is already running so just restart the countdown
+    popup_countdown = 7
+  end
+end
 
 
 -- param action function that saves current scales to global folder location
@@ -2120,15 +2139,26 @@ function do_timer(countdown, func)
   while true do
     countdown = countdown - 1
     if countdown == 0 then
-      func()
+        func()
       break
-    -- else
-      -- print(countdown)
     end
     clock.sleep(.1)
   end
 end
 
+-- generic timer that runs function after counter reaches 0
+-- eg: clock.run(do_timer, 10, function() print("copying") end)
+function do_popup_timer(func)
+  popup_countdown = 7
+  while true do
+    popup_countdown = popup_countdown - 1
+    if popup_countdown == 0 then
+        func()
+      break
+    end
+    clock.sleep(.1)
+  end
+end
 
 function pattern_key_timer()
   keydown_timer = 0
@@ -4368,6 +4398,7 @@ function grid_redraw()
     local editing_scale = editing_scale
     local enabled_level = 8         -- can layer in_mode tones(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
     local in_mode = {}  -- table containing 12 notes and t/f if they are in the current mode
+    local pattern_led = 0
 
     for x = 1, 12 do
       in_mode[x] = false
@@ -4383,38 +4414,34 @@ function grid_redraw()
       local in_scale = in_scale[y]
 
       for x = 1, 12 do
-        
-        -- low level highlight tones in mode
-        pattern_led = in_mode[x] and led_low or 0
-
-
-        -- draw enabled tones for each row/scale
-        pattern_led = pattern_led + (in_scale and in_scale[x] and enabled_level or 0)
-
-
-        -- pulse out-of-mode selections in editing scale/row
-        if y == editing_scale and in_scale[x] and not in_mode[x] then
+        pattern_led = in_mode[x] and led_low or 0 -- low level highlight tones in mode
+        pattern_led = pattern_led + (in_scale and in_scale[x] and enabled_level or 0) -- draw enabled tones for each row/scale
+        if y == editing_scale and in_scale[x] and not in_mode[x] then -- pulse out-of-mode selections in editing scale/row
           pattern_led = pattern_led - led_pulse
         end
-
         g:led(x, y, pattern_led)
       end
 
-      --draw selected scale keys on right side
-      g:led(16, y, y == editing_scale and led_high - led_pulse or led_low)
+      g:led(16, y, y == editing_scale and led_high - led_pulse or led_low) --draw selected scale keys on right side
     end
 
 
   elseif screen_view_name == "chord_editor" then
     local editing_chord_bools = editing_chord_bools
-    local in_mode = editing_chord_mode_intervals
-    
+    local mode_bool = editing_chord_mode_intervals
+    local enabled_level = 8
+    local pattern_led = 0
+
     for i = 1, 24 do -- 2 octaves split across 2 rows
-      pattern_led = in_mode[util.wrap(i, 1, 12)] and led_low or 0 -- highlight tones in mode, starting with root note
+      local in_mode = mode_bool[util.wrap(i, 1, 12)]
+      pattern_led = in_mode and led_low or 0 -- highlight tones in mode, starting with root note
       if editing_chord_bools[i] then
-        pattern_led = pattern_led + 7
+        pattern_led = pattern_led + enabled_level
       end
-      g:led(util.wrap(i, 1, 12), (i <= 12) and 8 or 7, pattern_led)
+      if pattern_led > 0 and not in_mode then
+        pattern_led = pattern_led - led_pulse
+      end
+      g:led(util.wrap(i, 1, 12), ((i <= 12) and 8 or 7), pattern_led)
     end
 
   elseif screen_view_name == "Events" then -- EVENT EDITOR
@@ -4815,14 +4842,16 @@ end
 
 
 -- generates bool table for selected intervals in chord
+-- generates chord menus
 function init_chord_editor()
   local pattern = editing_chord_pattern
   local x = editing_chord_x
   local y = editing_chord_y
   local root = editing_chord_root
-  gen_chord_menus()
   local name = "Custom"
   local intervals = {}
+
+  gen_chord_menus() -- generates chord_menu_names table
 
   -- set editing_chord_intervals table which gets the custom interval if available or the standard degree intervals
   local custom_chords = theory.custom_chords
@@ -4850,7 +4879,7 @@ function init_chord_editor()
   name = find_chord(intervals, root) or "Custom" -- pass root so intervals can be converted from absolute to relative to root
   gen_chord_bools(intervals)
   chord_menu_index = tab.key(chord_menu_names, name) or 0
-  pending_chord_disable = nil -- cancels turning off touched chord on key-up
+  -- pending_chord_disable = nil -- cancels turning off touched chord on key-up... MOVING from here
 
 end
 
@@ -5076,16 +5105,20 @@ function g.key(x, y, z)
       if x == 1 and y == 8 + extra_rows then
         if params:get("arranger") == 1 then
           params:set("arranger", 2)
+          popup_message("Arranger ON")
         else
           params:set("arranger", 1)
+          popup_message("Arranger OFF")
         end
 
       -- Switch between Arranger playback Loop or 1-shot mode
       elseif x == 2 and y == 8 + extra_rows then
         if params:get("playback") == 2 then
           params:set("playback", 1)
+          popup_message("Looping OFF")
         else
           params:set("playback", 2)
+          popup_message("Looping ON")
         end
         
       -- Arranger pagination jumps
@@ -5134,8 +5167,25 @@ function g.key(x, y, z)
         local x_wrapped = util.wrap(x, 1, 7)
         chord_key_count = chord_key_count + 1 -- used to determine when to reset chord readout
 
+
+        -- new chord is enabled on key down, but disabling happens conditionally on key up if chord was edited
+        if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
+          -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by chord editor
+          pending_chord_disable = {active_chord_pattern, x, y}
+        else
+          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
+          pending_chord_disable = nil -- will be for copy+paste
+        end
+
+        -- plays Chord when pressing on any Grid key (even turning chord off)
+        if transport_state == "stopped" or transport_state == "paused" then
+          update_chord(x, y)
+          play_chord()
+        end
+
+
         -- todo p0 need to do copy+paste and figure out complications there with simultaneous keypresses
-        if not grid_interaction then
+        if not grid_interaction then -- first keypress
           grid_interaction = "chord_key_held"
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
@@ -5157,22 +5207,7 @@ function g.key(x, y, z)
             dash_chord_degree = editing_chord_degree
           end
 
-        end
-
-        -- todo needs to be included in above logic but blocked when doing copy+paste in column...
-        -- new chord is enabled on key down, but disabling happens conditionally on key up if chord editor was not used
-        if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
-          -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by chord editor
-          pending_chord_disable = {active_chord_pattern, x, y}
-        else
-          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
-          pending_chord_disable = nil -- will be for copy+paste
-        end
-
-        -- plays Chord when pressing on any Grid key (even turning chord off)
-        if transport_state == "stopped" or transport_state == "paused" then
-          update_chord(x, y)
-          play_chord()
+          init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
         end
 
       
@@ -5527,10 +5562,41 @@ function bang_params()
   gen_menu() -- re-hide any menus we don't need
 end
 
+
 ----------------------
 -- NORNS KEY FUNCTIONS
 ----------------------
-function key(n,z)
+--#region key local sub functions
+-- check if the current custom intervals are the same as the default triad for this mode/degree
+-- if so, wipe the custom chord entry so we know it's default
+-- this could also be replaced with a name check (but needs to be generated for default triads)
+local function close_chord_editor()
+  local pattern = editing_chord_pattern
+  local custom = theory.custom_chords[pattern][editing_chord_x]
+  if custom[editing_chord_y] then -- x entry won't be created if keys/encoders aren't touched
+    local custom_intervals = custom[editing_chord_y].intervals
+    local standard_intervals = theory.chord_triad_intervals[editing_chord_x]
+
+    if #custom_intervals == 3 then -- triads only!
+      local pass = true
+      for i = 1, 3 do
+        if custom_intervals[i] ~= standard_intervals[i] then
+          pass = false
+          break
+        end
+      end
+      if pass then
+        custom[editing_chord_y] = nil -- delete custom chord entry
+      end
+    end
+  end
+
+  grid_interaction = nil
+  screen_view_name = "Session"
+end
+--#endregion key local sub functions
+
+function key(n, z)
   if z == 1 then
     -- keys[n] = 1
 
@@ -5557,32 +5623,28 @@ function key(n,z)
         screen_view_name = "Session"
 
       elseif screen_view_name == "chord_editor" then -- close and return to session
+        close_chord_editor()
 
-        -- check if the current custom intervals are the same as the default triad for this mode/degree
-        -- if so, wipe the custom chord entry so we know it's default
-        -- this could also be replaced with a name check (but needs to be generated for default triads)
-        local pattern = editing_chord_pattern
-        local custom = theory.custom_chords[pattern][editing_chord_x]
-        if custom[editing_chord_y] then -- x entry won't be created if keys/encoders aren't touched
-          local custom_intervals = custom[editing_chord_y].intervals
-          local standard_intervals = theory.chord_triad_intervals[editing_chord_x]
+      elseif grid_interaction == "chord_key_held" then
 
-          if #custom_intervals == 3 then -- triads only!
-            local pass = true
-            for i = 1, 3 do
-              if custom_intervals[i] ~= standard_intervals[i] then
-                pass = false
-                break
-              end
+        popup_message("Chord propagated") -- todo maybe replace with momentary rather than timed pop-up
+        pending_chord_disable = nil
+
+        local custom = theory.custom_chords[editing_chord_pattern][editing_chord_x]
+
+        if custom[editing_chord_y] then -- custom chord exists
+          for pattern = 1, 4 do
+            for y = 1, 16 do
+              theory.custom_chords[pattern][editing_chord_x][y] = custom[editing_chord_y]
             end
-            if pass then
-              custom[editing_chord_y] = nil -- delete custom chord entry
+          end
+        else
+          for pattern = 1, 4 do
+            for y = 1, 16 do
+              theory.custom_chords[pattern][editing_chord_x][y] = nil
             end
           end
         end
-
-        grid_interaction = nil
-        screen_view_name = "Session"
 
       elseif norns_interaction == "k1" then
         if params:get("sync_grid_norns") == 1 then
@@ -5591,17 +5653,9 @@ function key(n,z)
         else
           params:set("sync_grid_norns", 1)
         end
-        lvl = lvl_dimmed
-        update_dash_lvls()
-        screen_message = "sync_grid_norns_changed"
-        clock.run(do_timer, 7,
-          function()
-            screen_message = nil
-            lvl = lvl_normal
-            update_dash_lvls()
-          end
-        )
-    
+
+        popup_message(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+        
       elseif view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -5811,8 +5865,10 @@ function key(n,z)
 
     elseif n == 3 then -- KEY 3
 
-      if screen_view_name == "scale_editor" then
-        -- placeholder
+      if screen_view_name == "scale_editor" then -- close and return to session
+        screen_view_name = "Session"
+      elseif screen_view_name == "chord_editor" then -- close and return to session
+        close_chord_editor()
       elseif norns_interaction == "k1" then
         scale_menu_index = 0
         screen_view_name = "scale_editor"
@@ -5822,9 +5878,6 @@ function key(n,z)
         set_scale_menu()
 
       elseif grid_interaction == "chord_key_held" then
-        -- local pattern = editing_chord_pattern
-        -- local x = editing_chord_x
-        -- local y = editing_chord_y
         local root = editing_chord_root
 
         -- generate table of in-mode intervals for grid_redraw
@@ -5834,7 +5887,8 @@ function key(n,z)
         end
 
         screen_view_name = "chord_editor"
-        init_chord_editor()
+        pending_chord_disable = nil -- cancels turning off touched chord on key-up (such as when releasing held key in chord editor)
+
 
         ---------------------------------------------------------------------------
         -- Event Editor --
@@ -5856,12 +5910,13 @@ function key(n,z)
 
 
       elseif screen_view_name == "Events" then
-        if norns_interaction == "event_actions" then
-          local action = params:string("event_quick_actions")
+        if norns_interaction == "event_actions" then -- previously K3 could be used to fire quick action while keeping window open. Now, nothing.
+        --   local action = params:string("event_quick_actions")
 
-          if action == "Clear segment events" then
-            delete_events_in_segment("event_actions") -- pass arg to keep window open
-          end
+        --   if action == "Clear segment events" then
+        --     delete_events_in_segment("event_actions") -- pass arg to keep window open
+        --   end
+
           ---------------------------------------
           -- K3 TO SAVE EVENT
           ---------------------------------------
@@ -6166,7 +6221,48 @@ end
 
 -----------------------------------
 -- ENCODERS
-----------------------------------          
+-----------------------------------
+
+--#region local enc subfunctions
+
+-- select custom chord from menu, set value, and return chord name
+local function delta_chord(d)
+  local pattern = editing_chord_pattern
+  local x = editing_chord_x
+  local y = editing_chord_y
+  local root = editing_chord_root
+
+  -- gen_chord_menus() -- already done when 1st key is pressed so I think this is not needed
+  chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
+  local name = chord_menu_names[chord_menu_index]
+
+  -- generate intervals for the selected menu:
+  -- todo probably make this a theory function (replacement for generate_chord)
+  local intervals = {}
+  local chords = theory.chords
+  for c = 1, #chords do
+    if name == chords[c].name then
+      local c_int = chords[c].intervals
+      for i = 1, #c_int do
+        intervals[i] = c_int[i] + root
+      end
+      break
+    end
+  end
+
+  -- write intervals to chords_custom so they are available to sequencer
+  theory.custom_chords[pattern][x][y] = {intervals = {}}
+  for i = 1, #intervals do
+    theory.custom_chords[pattern][x][y]["intervals"][i] = intervals[i]
+  end
+
+  gen_chord_bools(intervals) -- update for grid leds
+  theory.custom_chords[pattern][x][y].name = name
+  return(name)
+end
+--#endregion local enc subfunctions
+
+
 function enc(n,d)
   -- Scrolling/extending Arranger, Chord, Seq patterns
   if n == 1 then
@@ -6225,39 +6321,13 @@ function enc(n,d)
         transpose_pattern(grid_view_name, d)
         grid_dirty = true
       end
-    
-    elseif screen_view_name == "chord_editor" then -- chord editor
-      local pattern = editing_chord_pattern
-      local x = editing_chord_x
-      local y = editing_chord_y
-      local root = editing_chord_root
+      
+    elseif screen_view_name == "chord_editor" then -- full chord editor screen
+      delta_chord(d)
 
-      gen_chord_menus()
-      chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
-      local name = chord_menu_names[chord_menu_index]
-
-      -- generate intervals for the selected menu:
-      -- todo probably make this a theory function (replacement for generate_chord)
-      local intervals = {}
-      local chords = theory.chords
-      for c = 1, #chords do
-        if name == chords[c].name then
-          local c_int = chords[c].intervals
-          for i = 1, #c_int do
-            intervals[i] = c_int[i] + root
-          end
-          break
-        end
-      end
-
-      -- write intervals to chords_custom so they are available to sequencer
-      theory.custom_chords[pattern][x][y] = {intervals = {}}
-      for i = 1, #intervals do
-        theory.custom_chords[pattern][x][y]["intervals"][i] = intervals[i]
-      end
-
-      gen_chord_bools(intervals) -- update for grid leds
-      theory.custom_chords[pattern][x][y].name = name
+    elseif grid_interaction == "chord_key_held" then -- quick chord editor
+      popup_message(delta_chord(d))
+      pending_chord_disable = nil -- cancels turning off touched chord on key-up
 
     elseif screen_view_name == "scale_editor" then  -- scale editor
       local mode = params:get("mode")
@@ -6790,6 +6860,7 @@ end
 -- rectangles and K2/K3 text
 local function footer(k2, k3) -- todo move out of redraw loop and pass lvl_pane_dark
   local lvl_pane_dark = lvl.pane_dark
+
   if k2 then
     screen.level(lvl_pane_dark)
     screen.rect(0, 55, 63, 9)
@@ -6908,7 +6979,7 @@ function redraw()
           screen.text("No events in lane")
         end
 
-        footer("EXIT") -- K3 also goes back to arranger 🤫. Might add footer but then its needs to be updated for quick menu.
+        footer(nil, "EXIT") -- K2 also goes back to arranger 🤫
 
       else -- EVENT EDITOR MENUS
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
@@ -7090,7 +7161,7 @@ function redraw()
       screen.level(paging and lvl_menu_deselected or lvl_menu_selected)
       screen.text("Scale: " .. (editing_scale_modified and "custom" or scale_name))
 
-      footer("EXIT")
+      footer(nil, "EXIT")
 
     elseif screen_view_name == "chord_editor" then
       local chord_menu_names = chord_menu_names
@@ -7103,7 +7174,7 @@ function redraw()
       screen.level(lvl_menu_selected)
       screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or editing_chord_letter .. " " .. chord_menu_names[chord_menu_index or 1]))
 
-      footer("EXIT")
+      footer(nil, "EXIT")
 
 
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
@@ -7212,13 +7283,13 @@ function redraw()
 
       elseif grid_interaction == "chord_key_held" then -- wag on placement here
         screen.level(0)             -- mask area behind footer
-        screen.rect(64, 54, 64, 10)
+        screen.rect(0, 54, 128, 10)
         screen.fill()
 
-        footer(nil, "EDIT CHORD")
+        footer("PROPAGATE", "EDIT CHORD")
       end
 
-      if screen_message == "sync_grid_norns_changed" then -- notify of sync change using K1+K2
+      if screen_message then -- == "sync_grid_norns_changed" then -- notify of sync change using K1+K2
         local border = 20 -- portion of lower layer still shown
         local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
 
@@ -7231,7 +7302,8 @@ function redraw()
 
         screen.level(15)
         screen.move(64, 34)
-        screen.text_center(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+        -- screen.text_center(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+        screen.text_center(screen_message)
       end
 
     end -- of event vs. non-event check

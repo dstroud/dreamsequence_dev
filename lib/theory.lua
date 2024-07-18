@@ -53,7 +53,8 @@ theory.chords = {
 -- Base data from https://github.com/fredericcormier/WesternMusicElements, extended by @dstroud
 
 
--- todo technically not needed except for roman numerals lookup
+-- todo technically this can now be genererated (see gen_chord_tab and gen_chord_lookups) but need something for roman numerals
+-- todo use chord glyphs from norns.ttf
 -- lookup for chord degrees and qualities, mirroring musicutil.SCALE_CHORD_DEGREES with breakout for chord roman numeral and "quality"
 -- indices 1-7 are triads, 8-14 are 7ths
 theory.chord_degree = {
