@@ -4902,7 +4902,7 @@ function set_scale_menu()
 end
         
         
-        -- GRID KEYS
+-- GRID KEYS
 ---@diagnostic disable-next-line: duplicate-set-field
 function g.key(x, y, z)
   if z == 1 then
@@ -4914,28 +4914,26 @@ function g.key(x, y, z)
         local editing_chord_y = editing_chord_y -- distinct from x/y coords!
         local root = editing_chord_root
         local editing_chord_bools = editing_chord_bools
+        local custom = theory.custom_chords[pattern][editing_chord_x]
 
-        -- todo look at whether to do this here or in init_chord_editor
-        if not theory.custom_chords[pattern][editing_chord_x][editing_chord_y] then
-          theory.custom_chords[pattern][editing_chord_x][editing_chord_y] = {intervals = {}}
+        if not custom[editing_chord_y] then
+          custom[editing_chord_y] = {intervals = {}}
         end
         
-        editing_chord_bools[interval] = not editing_chord_bools[interval] -- TODO P0 need to some some wrap/modulo stuff to turn x/y into index
+        editing_chord_bools[interval] = not editing_chord_bools[interval]
 
-        -- write back to custom_chords
-        theory.custom_chords[pattern][editing_chord_x][editing_chord_y]["intervals"] = {}
+        custom[editing_chord_y]["intervals"] = {} -- write back to custom_chords
 
         for i = 1, #editing_chord_bools do
           if editing_chord_bools[i] then
             local i = i - 1
-            table.insert(theory.custom_chords[pattern][editing_chord_x][editing_chord_y]["intervals"], i + root)
+            table.insert(custom[editing_chord_y]["intervals"], i + root)
           end
         end
 
-        -- TODO p0 need to do a name lookup and set menu as well
-        name = find_chord(theory.custom_chords[pattern][editing_chord_x][editing_chord_y].intervals, root) or "Custom" -- pass root so intervals can be converted from absolute to relative to root
+        local name = find_chord(custom[editing_chord_y].intervals, root) -- pass root so intervals can be converted from absolute to relative to root
         chord_menu_index = tab.key(chord_menu_names, name) or 0
-
+        custom[editing_chord_y].name = name
       end
 
     elseif screen_view_name == "scale_editor" then
@@ -5194,20 +5192,22 @@ function g.key(x, y, z)
 
           local mode = params:get("mode")
           local key = util.wrap(params:get("transpose"), 0, 11)
-          editing_chord_name = theory.scale_chord_names[mode][key][x_wrapped]           -- name+quality
+          editing_chord_letter = theory.scale_chord_names[mode][key][x_wrapped]           -- name+quality
           editing_chord_letter = theory.scale_chord_letters[mode][key][x_wrapped]       -- letter
           editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
 
           -- todo need to think about interaction with copy+paste and whether we show first or last key held
           if theory.custom_chords[editing_chord_pattern][editing_chord_x][editing_chord_y] then
-            dash_chord_name = editing_chord_name .. "*"
+            dash_chord_name = editing_chord_letter .. "*"
             dash_chord_degree = editing_chord_degree .. "*"
           else
-            dash_chord_name = editing_chord_name
+            dash_chord_name = editing_chord_letter
             dash_chord_degree = editing_chord_degree
           end
 
           init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
+          lvl = lvl_dimmed -- dim out everything behind popup
+          update_dash_lvls()
         end
 
       
@@ -5444,6 +5444,8 @@ function g.key(x, y, z)
         if chord_key_count == 0 then
           if grid_interaction == "chord_key_held" then
             grid_interaction = nil
+            lvl = lvl_normal
+            update_dash_lvls()
 
             -- restore dash chord readouts to whatever the active chord is
             dash_chord_name = active_chord_name or ""
@@ -5889,12 +5891,11 @@ function key(n, z)
         screen_view_name = "chord_editor"
         pending_chord_disable = nil -- cancels turning off touched chord on key-up (such as when releasing held key in chord editor)
 
+        lvl = lvl_normal
+        update_dash_lvls()
 
-        ---------------------------------------------------------------------------
-        -- Event Editor --
-        -- K3 with Event Timeline key held down enters Event editor / function key event editor
-        ---------------------------------------------------------------------------        
-      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
+    
+      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- Event Editor --
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -6225,8 +6226,8 @@ end
 
 --#region local enc subfunctions
 
--- select custom chord from menu, set value, and return chord name
-local function delta_chord(d)
+-- select custom chord from menu, set value
+function delta_chord(d)  -- todo p1 make local but needs to be placed above g.key which also uses this now
   local pattern = editing_chord_pattern
   local x = editing_chord_x
   local y = editing_chord_y
@@ -6235,7 +6236,7 @@ local function delta_chord(d)
   -- gen_chord_menus() -- already done when 1st key is pressed so I think this is not needed
   chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
   local name = chord_menu_names[chord_menu_index]
-
+  
   -- generate intervals for the selected menu:
   -- todo probably make this a theory function (replacement for generate_chord)
   local intervals = {}
@@ -6258,7 +6259,6 @@ local function delta_chord(d)
 
   gen_chord_bools(intervals) -- update for grid leds
   theory.custom_chords[pattern][x][y].name = name
-  return(name)
 end
 --#endregion local enc subfunctions
 
@@ -6326,7 +6326,7 @@ function enc(n,d)
       delta_chord(d)
 
     elseif grid_interaction == "chord_key_held" then -- quick chord editor
-      popup_message(delta_chord(d))
+      delta_chord(d)
       pending_chord_disable = nil -- cancels turning off touched chord on key-up
 
     elseif screen_view_name == "scale_editor" then  -- scale editor
@@ -6858,8 +6858,9 @@ end
 
 
 -- rectangles and K2/K3 text
-local function footer(k2, k3) -- todo move out of redraw loop and pass lvl_pane_dark
-  local lvl_pane_dark = lvl.pane_dark
+-- optional bool to override dynamic dimming
+local function footer(k2, k3, no_dim) -- todo move out of redraw loop and pass lvl_pane_dark
+  local lvl_pane_dark = no_dim and lvl_normal.pane_dark or lvl.pane_dark
 
   if k2 then
     screen.level(lvl_pane_dark)
@@ -6934,6 +6935,7 @@ function redraw()
         tooltips("SEQ " .. copied_seq_no .. ", PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: choose pattern"})
       end
     end
+
 
   else -- Standard priority (not momentary) menus
     -- NOTE: UI elements placed here appear in all views
@@ -7168,14 +7170,13 @@ function redraw()
     
       screen.move(header_x, header_y)
       screen.level(lvl_menu_deselected)
-      screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_name)
+      screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_letter)
 
       screen.move(header_x, menu_y + 10)
       screen.level(lvl_menu_selected)
       screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or editing_chord_letter .. " " .. chord_menu_names[chord_menu_index or 1]))
 
       footer(nil, "EXIT")
-
 
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
@@ -7248,7 +7249,7 @@ function redraw()
       end
       
 
-      -- MAIN MENUPAGE SELECTOR
+      -- MAIN MENU PAGE SELECTOR
       if paging then  -- if we want it to only appear when changing pages
         local width = (4 * #pages) - 1
         local x = math.ceil((dash_x - width) / 2)
@@ -7263,10 +7264,27 @@ function redraw()
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
 
-      -- if params:string("sync_grid_norns") == "On" then
-      --   screen.move(dash_x - 10, 7)
-      --   screen.text("▦")
-      -- end
+      -- WIP, optional glyph (todo norns.ttf required) to indicate when grid-norns syncing is enabled
+      if params:string("sync_grid_norns") == "On" then
+        screen.level(lvl_menu_deselected)
+
+        -- screen.move(dash_x - 10, 7)
+        -- screen.text("▦")
+
+        local x = dash_x - 10
+        screen.pixel(x, 2)
+        screen.pixel(x, 4)
+        screen.pixel(x, 6)
+        local x = dash_x - 8
+        screen.pixel(x, 2)
+        screen.pixel(x, 4)
+        screen.pixel(x, 6)
+        local x = dash_x - 6
+        screen.pixel(x, 2)
+        screen.pixel(x, 4)
+        screen.pixel(x, 6) 
+        screen.fill()
+      end
 
       -- iterate through list of modular dashboard functions
       dash_y = 0
@@ -7281,15 +7299,7 @@ function redraw()
 
         footer(params:get("sync_grid_norns") == 1 and "SYNC ON" or "SYNC OFF", "EDIT SCALE")
 
-      elseif grid_interaction == "chord_key_held" then -- wag on placement here
-        screen.level(0)             -- mask area behind footer
-        screen.rect(0, 54, 128, 10)
-        screen.fill()
-
-        footer("PROPAGATE", "EDIT CHORD")
-      end
-
-      if screen_message then -- == "sync_grid_norns_changed" then -- notify of sync change using K1+K2
+      elseif grid_interaction == "chord_key_held" then
         local border = 20 -- portion of lower layer still shown
         local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
 
@@ -7302,7 +7312,29 @@ function redraw()
 
         screen.level(15)
         screen.move(64, 34)
-        -- screen.text_center(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+        screen.text_center((chord_menu_index == 0 and "Custom" or editing_chord_letter .. " " .. chord_menu_names[chord_menu_index or 1]))
+
+        screen.level(0)             -- mask area behind footer
+        screen.rect(0, 54, 128, 10)
+        screen.fill()
+
+        footer("PROPAGATE", "EDIT CHORD", true) -- true overrides dimming to emphasize momentary keys
+
+      end
+
+      if screen_message then -- popup_message display
+        local border = 20
+        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+
+        screen.level(0)
+        screen.rect(table.unpack(rect))
+        screen.fill()
+        screen.level(15)
+        screen.rect(table.unpack(rect))
+        screen.stroke()
+
+        screen.level(15)
+        screen.move(64, 34)
         screen.text_center(screen_message)
       end
 
