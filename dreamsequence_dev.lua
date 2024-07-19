@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240717 @modularbeat
+-- 240719 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -28,7 +28,7 @@ dreamsequence = {} -- todo local
 
 -- layout and palette
 xy = {
-  dash_x = 99, -- todo draw dash first-- adjust var if dash is empty
+  dash_x = 97, -- 99, -- todo draw dash first-- adjust var if dash is empty
   header_x = 0,
   header_y = 7,
   menu_y = 9,
@@ -556,7 +556,7 @@ function init()
     local val = param:get()
 
     if val == 25 then
-      return("Uncapped")
+      return("Unlimited")
     else
       return(val)
     end
@@ -1065,8 +1065,8 @@ function init()
   current_chord_x = 1 -- WAG here now that we're using this rather than _c for readout. Might break something.
   current_chord_o = 0
   current_chord_c = 1 -- to default readout/note transformations
-  dash_chord_name = ""
-  dash_chord_degree = ""
+  -- dash_chord_name = ""
+  -- dash_chord_degree = ""
   next_chord_x = 0
   next_chord_o = 0
   next_chord_c = 1
@@ -3709,8 +3709,8 @@ function gen_chord_readout()
       active_chord_degree = theory.chord_degree[params:get("mode")]["chords"][x_wrapped]
     end
 
-    dash_chord_name = active_chord_name
-    dash_chord_degree = active_chord_degree
+    -- dash_chord_name = active_chord_name
+    -- dash_chord_degree = active_chord_degree
   end
 
 end
@@ -5169,7 +5169,7 @@ function g.key(x, y, z)
         -- new chord is enabled on key down, but disabling happens conditionally on key up if chord was edited
         if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
           -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by chord editor
-          pending_chord_disable = {active_chord_pattern, x, y}
+          pending_chord_disable = {active_chord_pattern, x, y + pattern_grid_offset}
         else
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
           pending_chord_disable = nil -- will be for copy+paste
@@ -5196,14 +5196,14 @@ function g.key(x, y, z)
           editing_chord_letter = theory.scale_chord_letters[mode][key][x_wrapped]       -- letter
           editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
 
-          -- todo need to think about interaction with copy+paste and whether we show first or last key held
-          if theory.custom_chords[editing_chord_pattern][editing_chord_x][editing_chord_y] then
-            dash_chord_name = editing_chord_letter .. "*"
-            dash_chord_degree = editing_chord_degree .. "*"
-          else
-            dash_chord_name = editing_chord_letter
-            dash_chord_degree = editing_chord_degree
-          end
+          -- -- todo need to think about interaction with copy+paste and whether we show first or last key held
+          -- if theory.custom_chords[editing_chord_pattern][editing_chord_x][editing_chord_y] then
+          --   dash_chord_name = editing_chord_letter .. "*"
+          --   dash_chord_degree = editing_chord_degree .. "*"
+          -- else
+          --   dash_chord_name = editing_chord_letter
+          --   dash_chord_degree = editing_chord_degree
+          -- end
 
           init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
           lvl = lvl_dimmed -- dim out everything behind popup
@@ -5448,8 +5448,8 @@ function g.key(x, y, z)
             update_dash_lvls()
 
             -- restore dash chord readouts to whatever the active chord is
-            dash_chord_name = active_chord_name or ""
-            dash_chord_degree = active_chord_degree or ""
+            -- dash_chord_name = active_chord_name or ""
+            -- dash_chord_degree = active_chord_degree or ""
           end
         end
 
@@ -5625,7 +5625,8 @@ function key(n, z)
         screen_view_name = "Session"
 
       elseif screen_view_name == "chord_editor" then -- close and return to session
-        close_chord_editor()
+        update_chord(editing_chord_x, editing_chord_y)
+        play_chord()
 
       elseif grid_interaction == "chord_key_held" then
 
@@ -6242,7 +6243,7 @@ function delta_chord(d)  -- todo p1 make local but needs to be placed above g.ke
   local intervals = {}
   local chords = theory.chords
   for c = 1, #chords do
-    if name == chords[c].name then
+    if name == chords[c].short_name then --     if name == chords[c].name then
       local c_int = chords[c].intervals
       for i = 1, #c_int do
         intervals[i] = c_int[i] + root
@@ -6754,7 +6755,7 @@ end
 function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
-  local stop = 23 -- width of chart
+  local stop = 26 -- width of chart
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
@@ -7174,9 +7175,9 @@ function redraw()
 
       screen.move(header_x, menu_y + 10)
       screen.level(lvl_menu_selected)
-      screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or editing_chord_letter .. " " .. chord_menu_names[chord_menu_index or 1]))
+      screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1]))
 
-      footer(nil, "EXIT")
+      footer("PREVIEW", "EXIT")
 
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
@@ -7250,9 +7251,10 @@ function redraw()
       
 
       -- MAIN MENU PAGE SELECTOR
+      -- todo look at having this disappear on a timer
       if paging then  -- if we want it to only appear when changing pages
         local width = (4 * #pages) - 1
-        local x = math.ceil((dash_x - width) / 2)
+        local x = math.ceil((dash_x - width) / 2) -- 35 calculated
         for i = 1, #pages do
           screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
           screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
@@ -7263,6 +7265,10 @@ function redraw()
       screen.move(header_x, header_y)
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
+      
+      -- screen.level(lvl_menu_deselected)
+      -- screen.rect(0, 9, screen.text_extents(page_name), 1)
+      -- screen.fill()
 
       -- WIP, optional glyph (todo norns.ttf required) to indicate when grid-norns syncing is enabled
       if params:string("sync_grid_norns") == "On" then
@@ -7301,7 +7307,8 @@ function redraw()
 
       elseif grid_interaction == "chord_key_held" then
         local border = 20 -- portion of lower layer still shown
-        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
+        local rect = {1 + border + 15, border, 127 - (border * 2) - 30, 63 - (border * 2)}
+        -- local rect = {24, 20, 45, 23}
 
         screen.level(0)
         screen.rect(table.unpack(rect))
@@ -7312,7 +7319,7 @@ function redraw()
 
         screen.level(15)
         screen.move(64, 34)
-        screen.text_center((chord_menu_index == 0 and "Custom" or editing_chord_letter .. " " .. chord_menu_names[chord_menu_index or 1]))
+        screen.text_center((chord_menu_index == 0 and editing_chord_letter .. "*" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1])) -- todo should "Custom"
 
         screen.level(0)             -- mask area behind footer
         screen.rect(0, 54, 128, 10)

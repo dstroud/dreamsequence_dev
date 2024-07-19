@@ -9,7 +9,7 @@ dash_name = {"Off"}
 
 -- x origin of chord and arranger dashes
 local dash_x = xy.dash_x
-local width = 29
+local width = 31 -- 29
 
 -- local lvl = lvl
 
@@ -62,7 +62,7 @@ function dash_functions.transport()
 
   -- glyph
   for i = 1, #glyphs[transport_state] do
-      screen.pixel(dash_x + 12 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
+      screen.pixel(dash_x + 13 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
       -- screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- left
   end
   screen.fill()
@@ -167,17 +167,17 @@ function dash_functions.chord_pattern()
 
   -- dim chart area
   screen.level(0)
-  screen.rect(dash_x + 9, dash_y + 2, 18, 5)
+  screen.rect(dash_x + 10, dash_y + 2, 18, 5)
   screen.fill()
 
   -- pattern length
   screen.level(lvl_chart_deselected)
-  screen.rect(dash_x + 10, dash_y + 3, chord_pattern_length[active_chord_pattern], 3)
+  screen.rect(dash_x + 11, dash_y + 3, chord_pattern_length[active_chord_pattern], 3)
   screen.fill()
 
   -- progress bar
   screen.level(lvl_menu_selected)
-  screen.rect(dash_x + 10, dash_y + 3, chord_pattern_position, 3)
+  screen.rect(dash_x + 11, dash_y + 3, chord_pattern_position, 3)
   screen.fill()
 
   dash_y = dash_y + 10 -- position for next dash
@@ -198,9 +198,8 @@ function dash_functions.chord_active_name()
   screen.fill()
 
   screen.level(lvl_pane_selected)
-  screen.move(dash_x + 14, dash_y + 7) -- centered
-  screen.text_center(dash_chord_name)--active_chord_name)
-  
+  screen.move(dash_x + 15.5, dash_y + 7) -- centered
+  screen.text_center(active_chord_name or "")
   dash_y = dash_y + 10 -- position for next dash
 end
 
@@ -218,8 +217,8 @@ function dash_functions.chord_active_degree()
   screen.fill()
 
   screen.level(lvl_pane_selected)
-  screen.move(dash_x + 14, dash_y + 7) -- centered
-  screen.text_center(dash_chord_degree)--active_chord_degree)
+  screen.move(dash_x + 15.5, dash_y + 7) -- centered
+  screen.text_center(active_chord_degree or "")
 
   dash_y = dash_y + 10 -- position for next dash
 end
@@ -296,16 +295,15 @@ function dash_functions.arranger_chart()
   -- todo norns.ttf
   if params:string("playback") == "Loop" then
     for i = 1, #glyphs.loop do
-    screen.pixel(dash_x + 21 + glyphs.loop[i][1], glyphs.loop[i][2] + dash_y + 2)
+    screen.pixel(dash_x + 23 + glyphs.loop[i][1], glyphs.loop[i][2] + dash_y + 2)
     end
   else
     for i = 1, #glyphs.one_shot do
-    screen.pixel(dash_x + 21 + glyphs.one_shot[i][1], glyphs.one_shot[i][2] + dash_y + 2)
+    screen.pixel(dash_x + 23 + glyphs.one_shot[i][1], glyphs.one_shot[i][2] + dash_y + 2)
     end
   end
 
   screen.fill() -- remove when switching to norns.ttf
-
 
 
   -- ARRANGER CHART
@@ -313,7 +311,7 @@ function dash_functions.arranger_chart()
   
   -- black chart background
   screen.level(0)
-  screen.rect(dash_x + 2, dash_y + 9, 25, 13)
+  screen.rect(dash_x + 2, dash_y + 9, 27, 13)
   screen.fill()
   
   -- Axis reference marks
@@ -336,7 +334,7 @@ function dash_functions.arranger_chart()
   for i = 1, #dash_patterns - reset_shift do
     -- arranger segment patterns
     screen.level(lvl[dash_levels[i]]) -- less efficient to access lvl but got to
-    screen.rect(arranger_dash_x , dash_y + 7 + ((dash_patterns[i] + 1) * 2), 1, 1)
+    screen.rect(arranger_dash_x, dash_y + 7 + ((dash_patterns[i] + 1) * 2), 1, 1)
     screen.fill()
 
     -- events pips
@@ -366,9 +364,8 @@ function dash_functions.time_remaining()
   screen.rect(dash_x, dash_y, width, 9)
   screen.fill()
 
-  -- pattern text a-d
   screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected)
-  screen.move(dash_x + 3, dash_y + 7)
+  screen.move(dash_x + 5, dash_y + 7)
   screen.text(seconds_remaining)
 
   dash_y = dash_y + 10 -- position for next dash
@@ -387,10 +384,16 @@ function dash_functions.time_elapsed()
   screen.rect(dash_x, dash_y, width, 9)
   screen.fill()
 
-  -- pattern text a-d
   screen.level(lvl_pane_selected)
-  screen.move(dash_x + 3, dash_y + 7)
+  screen.move(dash_x + 5, dash_y + 7)
   screen.text(seconds_elapsed or "00:00")
+  
+  -- -- todo center around :
+  -- screen.move(dash_x + 14, dash_y + 7)
+  -- screen.text_right("11")
+  -- screen.text(":10")
 
+
+  
   dash_y = dash_y + 10 -- position for next dash
 end

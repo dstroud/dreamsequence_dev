@@ -4,51 +4,48 @@ theory = {}
 
 -- TODO reorder these:
 -- extended list of chords, intervals
--- "quality" is technically quality+extension+alterations, used to append to chord letter
+-- name is used in full chord editor
+-- shortname is used for popup menu when chord key is held
+-- dash_name abbreviates long chords (sus to s) to fit in dash readout
+-- function at end of theory to check chord name lengths for scale/keys
 theory.chords = {
-  {name = "Major", quality = "", short = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
-  {name = "Minor", quality = "m", short = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
+  {name = "Major", short_name = "", dash_name = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
+  {name = "Minor", short_name = "m", dash_name = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
 
-  {name = "Sus2", quality = "sus2", short = "ˢᵘˢ²", intervals = {0, 2, 7}},
+  {name = "Sus2", short_name = "sus2", dash_name = "sus2", intervals = {0, 2, 7}},
+  {name = "Seventh sus2", short_name = "7sus2", dash_name = "7s2", intervals = {0, 2, 7, 10}}, 
+  {name = "Sus4", short_name = "sus4", dash_name = "s2", intervals = {0, 5, 7}},
+  {name = "Seventh sus4", short_name = "7sus4", dash_name = "7s4", intervals = {0, 5, 7, 10}},
 
-  -- this sounds pretty good but apparently is not common per https://strungoutfretnot.com/2010/06/15/chord-theory-4-sus-chords/
-  -- It is also uncommon to add a seventh to a sus2 chord. Sus2 chords do not have the harmonic momentum found in sus4 chords 
-  -- – adding an extra note on top would only further weaken the suspended effect and harmonic momentum.
-  {name = "Seventh sus2", quality = "7sus2", short = "⁷ˢᵘˢ²", intervals = {0, 2, 7, 10}}, -- some suggestion this is not common but it sounds good to me
-  {name = "Sus4", quality = "sus", short = "ˢᵘˢ⁴", intervals = {0, 5, 7}},                  -- implied 4 in short quality
-  {name = "Seventh sus4", quality = "7sus", short = "⁷ˢᵘˢ⁴", intervals = {0, 5, 7, 10}}, -- 2024-07-15 implied 4 in short quality
-
-  -- {name = "Ninth sus4", quality = "9sus", intervals = {0, 5, 7, 10, 14}}, -- 2024-07-15 implied 4 in short quality
+  -- {name = "Ninth sus4", short_name = "9sus", intervals = {0, 5, 7, 10, 14}}, -- 2024-07-15 implied 4 in short quality
   -- no Eleventh sus4 as that's the 4th raised an octave
-  -- {name = "Thirteenth sus4", quality = "13sus", intervals = {0, 5, 7, 10, 14, 20}}, -- SOUNDS LIKE ASS LOL
+  -- {name = "Thirteenth sus4", short_name = "13sus", intervals = {0, 5, 7, 10, 14, 20}}, -- SOUNDS LIKE ASS LOL
+
+  {name = "Major 6", short_name = "6", dash_name = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
+  {name = "Major 7", short_name = "maj7", dash_name = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
+  {name = "Major 6/9", short_name = "6/9", dash_name = "69", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
+  {name = "Major 9", short_name = "maj9", dash_name = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
+  {name = "Major 11", short_name = "maj11", dash_name = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
+  {name = "Major 13", short_name = "maj13", dash_name = "M11", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
+  {name = "Dominant 7", short_name = "7", dash_name = "7", intervals = {0, 4, 7, 10}},
+  {name = "Ninth", short_name = "9", dash_name = "9", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
+  {name = "Eleventh", short_name = "11", dash_name = "11", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
+  {name = "Thirteenth", short_name = "13", dash_name = "13", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
+  {name = "Augmented", short_name = "+", dash_name = "+", intervals = {0, 4, 8}},
+  {name = "Augmented 7", short_name = "+7", dash_name = "+7", intervals = {0, 4, 8, 10}},
+  {name = "Augmented Major 7", short_name = "+maj7", dash_name = "+M7", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
 
 
-  {name = "Major 6", quality = "6", short = "⁶", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
-
-  {name = "Major 7", quality = "M7", short = "ᴹ⁷", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
-  {name = "Major 69", quality = "69", short = "ᴹ⁶⁹", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
-  {name = "Major 9", quality = "M9", short = "ᴹ⁹", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
-  {name = "Major 11", quality = "M11", short = "ᴹ¹¹", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
-  {name = "Major 13", quality = "M13", short = "ᴹ¹³", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
-  {name = "Dominant 7", quality = "7", short = "⁷", intervals = {0, 4, 7, 10}},
-  {name = "Ninth", quality = "9", short = "⁹", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
-  {name = "Eleventh", quality = "11", short = "¹¹", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
-  {name = "Thirteenth", quality = "13", short = "¹³", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
-  {name = "Augmented", quality = "+", short = "⁺", intervals = {0, 4, 8}},
-  {name = "Augmented 7", quality = "+7", short = "⁺⁷", intervals = {0, 4, 8, 10}},
-
-
-  {name = "Minor Major 7", quality = "m♮7", short = "mᴹ⁷", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
-  {name = "Minor 6", quality = "m6", short = "m⁶", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
-  {name = "Minor 7", quality = "m7", short = "m⁷", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
-  {name = "Minor 69", quality = "m69", short = "m⁶⁹", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
-  {name = "Minor 9", quality = "m9", short = "m⁹", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
-  {name = "Minor 11", quality = "m11", short = "m¹¹", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
-  {name = "Minor 13", quality = "m13", short = "¹³", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
-  {name = "Diminished", quality = "°", short = "", alt_names = {"Dim"}, intervals = {0, 3, 6}}, -- superscript dim symbol in norns.ttf
-  {name = "Diminished 7", quality = "°7", short = "°⁷", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
-  {name = "Half Diminished 7", quality = "ø7", short = "⁷", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- superscript half-dim symbol in norns.ttf
-  {name = "Augmented Major 7", quality = "+M7", short = "⁺ᴹ⁷", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
+  {name = "Minor Major 7", short_name = "m♮7", dash_name = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
+  {name = "Minor 6", short_name = "m6", dash_name = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
+  {name = "Minor 7", short_name = "m7", dash_name = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
+  {name = "Minor 69", short_name = "m6/9", dash_name = "m69", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
+  {name = "Minor 9", short_name = "m9", dash_name = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
+  {name = "Minor 11", short_name = "m11", dash_name = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
+  {name = "Minor 13", short_name = "m13", dash_name = "13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
+  {name = "Diminished", short_name = "°", dash_name = "°", alt_names = {"Dim"}, intervals = {0, 3, 6}}, -- superscript dim symbol in norns.ttf
+  {name = "Diminished 7", short_name = "°7", dash_name = "°7", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
+  {name = "Half Diminished 7", short_name = "ø7", dash_name = "ø7", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- superscript half-dim symbol in norns.ttf
 }
 -- Base data from https://github.com/fredericcormier/WesternMusicElements, extended by @dstroud
 
@@ -369,7 +366,7 @@ function find_chord(intervals, root)
         end
       end
       if chord_match then
-        return(lookup[lookup_idx].name)
+        return(lookup[lookup_idx].short_name) --.name)
         -- return(lookup[lookup_idx].short) -- can return ""
       end
     end
@@ -577,7 +574,7 @@ function gen_chord_lookups()
 
         if pass_chord then
           table.insert(scale_tab.chord_indices[degree], chord_idx)
-          table.insert(scale_tab.chord_names[degree], chord_tab.name) --.short)
+          table.insert(scale_tab.chord_names[degree], chord_tab.short_name) --.name)
         end
 
       end
@@ -779,3 +776,35 @@ end
 
 
 --#endregion scales
+
+
+
+--#region R&D
+
+
+function print_all_chord_names()
+  for scale_idx = 1, #theory.base_scales do
+    local lookup_idx = theory.base_scales[scale_idx]
+    local scale_tab = theory.lookup_scales[lookup_idx]
+
+    for key = 0, 11 do
+      local key_names = theory.scale_chord_letters[scale_idx][key]
+
+      for degree = 1, 7 do
+        for i = 1, #scale_tab.chord_names[degree] do
+          local chordname = key_names[degree] .. scale_tab.chord_names[degree][i]
+          local length = screen.text_extents(chordname)
+
+          if length >= 26 then -- filter for longbois
+            print(length, chordname, key_names[1] .. " " .. scale_tab.name, "degree " .. degree)
+          end
+
+        end
+      end
+
+    end
+
+  end
+end
+
+--#endregion R&D
