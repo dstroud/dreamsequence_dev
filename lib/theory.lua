@@ -12,9 +12,9 @@ theory.chords = {
   {name = "Major", short_name = "", dash_name = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
   {name = "Minor", short_name = "m", dash_name = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
 
-  {name = "Sus2", short_name = "sus2", dash_name = "sus2", intervals = {0, 2, 7}},
+  {name = "Sus2", short_name = "sus2", dash_name = "s2", intervals = {0, 2, 7}},
   {name = "Seventh sus2", short_name = "7sus2", dash_name = "7s2", intervals = {0, 2, 7, 10}}, 
-  {name = "Sus4", short_name = "sus4", dash_name = "s2", intervals = {0, 5, 7}},
+  {name = "Sus4", short_name = "sus4", dash_name = "s4", intervals = {0, 5, 7}},
   {name = "Seventh sus4", short_name = "7sus4", dash_name = "7s4", intervals = {0, 5, 7, 10}},
 
   -- {name = "Ninth sus4", short_name = "9sus", intervals = {0, 5, 7, 10, 14}}, -- 2024-07-15 implied 4 in short quality
@@ -26,7 +26,7 @@ theory.chords = {
   {name = "Major 6/9", short_name = "6/9", dash_name = "69", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
   {name = "Major 9", short_name = "maj9", dash_name = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
   {name = "Major 11", short_name = "maj11", dash_name = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
-  {name = "Major 13", short_name = "maj13", dash_name = "M11", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
+  {name = "Major 13", short_name = "maj13", dash_name = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
   {name = "Dominant 7", short_name = "7", dash_name = "7", intervals = {0, 4, 7, 10}},
   {name = "Ninth", short_name = "9", dash_name = "9", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
   {name = "Eleventh", short_name = "11", dash_name = "11", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
@@ -309,8 +309,10 @@ function gen_chord_tab()
   theory.chord_triad_intervals = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
 
   -- optional, WIP:
+  -- lookup table with triad names to use as a lookup to replace chord_degrees
+  -- can be used to check if selected "custom" chord is actually standard (vs checking all intervals as we do currently)
   -- this would probably replace theory.chord_degree but needs work on degrees as well
-  -- theory.chord_triad_names = {} -- table containing chord names for degrees 1-7, repeated for 8-14
+  theory.chord_triad_names = {} -- table containing chord names for degrees 1-7, repeated for 8-14
 
   for x = 1, 14 do
     local octave = ((x > 7) and 1 or 0) * 12
@@ -328,17 +330,14 @@ function gen_chord_tab()
     end
 
     theory.chord_triad_intervals[x] = {}
-    -- theory.chord_triad_names[x] = {}
+    theory.chord_triad_names[x] = {}
+    -- todo chord_triad_degrees !
 
     for i = 1, 3 do
       theory.chord_triad_intervals[x][i] = intervals[triad[i]]
     end
 
-    -- print("debug x = " .. x .. ":")
-    -- tab.print(theory.chord_triad_intervals[x])
-    -- -- this needs some work. need to wrap intervals and look up scale using base table... not sure it's worth it RN
-    -- print(find_chord(theory.chord_triad_intervals[x], theory.lookup_scales[27]["intervals"][util.wrap(x, 1, 7)]) or "chord not found")
-    -- print(" ")
+    theory.chord_triad_names[x] = find_chord(theory.chord_triad_intervals[x], theory.chord_triad_intervals[x][1])
   end
 
 end
@@ -379,14 +378,20 @@ if not theory.custom_chords then
   theory.custom_chords = {}
 end
 
-for pattern = 1, 4 do
-  if not theory.custom_chords[pattern] then -- create pattern table if needed
-    theory.custom_chords[pattern] = {}
+for scale = 1, #dreamsequence.scales do
+  if not theory.custom_chords[scale] then -- create scale table if needed
+    theory.custom_chords[scale] = {}
   end
-  
-  for x = 1, 14 do
-    if not theory.custom_chords[pattern][x] then -- create col/degree table if needed
-      theory.custom_chords[pattern][x] = {}
+
+  for pattern = 1, 4 do
+    if not theory.custom_chords[scale][pattern] then -- create pattern table if needed
+      theory.custom_chords[scale][pattern] = {}
+    end
+    
+    for x = 1, 14 do
+      if not theory.custom_chords[scale][pattern][x] then -- create col/degree table if needed
+        theory.custom_chords[scale][pattern][x] = {}
+      end
     end
   end
 end
@@ -537,7 +542,6 @@ function gen_chord_lookups()
 
     local scale_tab = theory.lookup_scales[scale_idx]
     local scale_intervals = scale_tab.intervals
-
   
     scale_tab.chord_indices = {}
     scale_tab.chord_names = {}
@@ -780,7 +784,6 @@ end
 
 
 --#region R&D
-
 
 function print_all_chord_names()
   for scale_idx = 1, #theory.base_scales do

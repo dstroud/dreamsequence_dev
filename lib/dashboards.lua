@@ -200,6 +200,7 @@ function dash_functions.chord_active_name()
   screen.level(lvl_pane_selected)
   screen.move(dash_x + 15.5, dash_y + 7) -- centered
   screen.text_center(active_chord_name or "")
+  
   dash_y = dash_y + 10 -- position for next dash
 end
 
