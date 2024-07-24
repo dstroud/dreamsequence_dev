@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240721 @modularbeat
+-- 240724 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -23,15 +23,14 @@
 
 
 -- stuff needed by includes
-
 dreamsequence = {} -- todo local
 
 -- layout and palette
 xy = {
-  dash_x = 97, -- 99, -- todo draw dash first-- adjust var if dash is empty
+  dash_x = 89,
   header_x = 0,
-  header_y = 7,
-  menu_y = 9,
+  header_y = 10,
+  menu_y = 11,
   scrollbar_y = 12
 }
 
@@ -364,7 +363,7 @@ function init()
 
   -- params:add_separator("dashboard","dashboard")
 
-  local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Time remaining", nil}
+  local defaults = {"Transport", "Chord name", "Arranger chart", "Time remaining", nil, nil}
   -- todo probably a better way to do this rather than having these dummy funcs being called
   function init_dummy_funcs()
     function calc_seconds_remaining()
@@ -376,7 +375,7 @@ function init()
   end
   init_dummy_funcs()
 
-  for dash_no = 1, 6 do
+  for dash_no = 1, 6 do -- #defaults do
     params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, 1)
     params:set_save("dash_" .. dash_no, false)
     params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no] or defaults[dash_no]) or 1 )
@@ -1065,9 +1064,9 @@ function init()
   current_chord_x = 1 -- WAG here now that we're using this rather than _c for readout. Might break something.
   current_chord_o = 0
   current_chord_d = 1 -- to default readout/note transformations
-  next_chord_x = 0
-  next_chord_o = 0
-  next_chord_d = 1
+  -- next_chord_x = 0
+  -- next_chord_o = 0
+  -- next_chord_d = 1
   chord_pattern = {{},{},{},{}}
   for p = 1, 4 do
     for i = 1, max_chord_pattern_length do
@@ -1206,9 +1205,11 @@ function init()
   note_history = {}  -- todo p2 performance of having one vs dynamically created history for each voice
   dedupe_threshold()
   -- reset_clock() -- might need reset_lattice but it hasn't been intialized
-  get_next_chord()
-  chord_raw = next_chord
   
+  -- replacing
+  -- get_next_chord()
+  -- chord_raw = next_chord
+  preload_chord()
 
   --#region PSET callback functions
   -- table names we want pset callbacks to act on
@@ -1352,8 +1353,12 @@ function init()
         transport_state = "stopped" -- just flips to the stop icon so user knows they don't have to do this manually
       end
       build_scale() -- Have to run manually because mode bang comes after all of this for some reason
-      get_next_chord()
-      chord_raw = next_chord
+
+      -- replacing
+      -- get_next_chord()
+      -- chord_raw = next_chord
+      preload_chord()
+
       chord_no = 0 -- wipe chord readout
       gen_chord_readout()
       gen_arranger_dash_data("params.action_read")
@@ -1892,7 +1897,7 @@ function init()
         
       end,
       action = function(t)
-          -- get_next_chord()  -- Deprecated
+          -- get_next_chord()  -- Deprecated, in need of a new sprocket when ready to re-implement
           advance_chord_pattern()
         grid_dirty = true
       end,
@@ -2069,6 +2074,19 @@ local function sort_and_remove_duplicates(t)
   table.sort(t) -- Sort the table numerically
   return remove_duplicates(t) -- Remove duplicates
 end
+
+
+-- Used while transport is stopped to preview their first chord when we're on step 0
+function preload_chord()
+  if transport_state == "stopped" then
+    local x = chord_pattern[active_chord_pattern][1]
+    x = x == 0 and current_chord_x or x
+    local y = 1 -- should always be step 1 if we're stopped, pretty sure
+    update_chord(x, y)
+    gen_chord_readout() -- bit of a WAG but seems ok
+  end
+end
+
 
 -- function dump_params()
 --   local filepath = norns.state.data
@@ -3146,8 +3164,12 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   chord_pattern_position = 0
   reset_sprockets("reset_pattern")
   reset_lattice() -- reset_clock()
-  get_next_chord()
-  chord_raw = next_chord
+
+  -- replacing
+  -- get_next_chord()
+  -- chord_raw = next_chord
+  preload_chord()
+
   gen_arranger_dash_data("reset_pattern")
   grid_dirty = true
 end
@@ -3689,24 +3711,30 @@ function do_events()
 end
 
 -- generates short chord name/degree for chord readout dashboards
-function gen_chord_readout()
-    local x = current_chord_x
-    local x_wrapped = util.wrap(current_chord_x, 1, 7)
-    local scale = params:get("mode")
-    -- local pattern = active_chord_pattern
-    local custom = theory.custom_chords[scale][active_chord_pattern][x]
-    local y = chord_pattern_position
+function gen_chord_readout(y)
+  local x = current_chord_x
+  local x_wrapped = util.wrap(current_chord_x, 1, 7)
+  local scale = params:get("mode")
+  local custom = theory.custom_chords[scale][active_chord_pattern][x]
+  local y = chord_pattern_position == 0 and 1 or chord_pattern_position -- 0 to 1 so this can be used while transport is stopped to preview upcoming
 
-    if custom[y] then -- is a custom chord
-      active_chord_name = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"
-      -- active_chord_name = custom[y].dash_name -- wip but needs to be reworked to not store chord letter so it can be prepended here
+  if custom[y] then -- is a custom chord
+    if custom[y].name == "Custom" then -- unnamed custom chord
+      active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"
+      active_chord_name_2 = nil
 
-      active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped] .. "*"
-    else -- standard triad
-      active_chord_name = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
-      active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped]
+    else
+      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. (custom[y].dash_name_1 or "")
+      active_chord_name_2 = custom[y].dash_name_2 or nil
     end
 
+    -- todo:
+    active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped] .. "*"
+  else -- standard triad
+    active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
+    active_chord_name_2 = nil
+    active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped]
+  end
 end
 
 
@@ -3730,6 +3758,7 @@ function update_chord(x, y) -- y is optional when playing chord using g.key
     raw = theory.chord_triad_intervals[x]
   end
   chord_raw = raw
+  chord_triad = theory.chord_triad_intervals[x] -- trialing keeping the triad even if the chord is customized. needs to be updated elsewhere I suppose.
 
   local rawcount = #raw
   local max_interval = raw[rawcount]
@@ -3814,10 +3843,12 @@ function transform_chord()
 end
 
 
--- This triggers when mode param changes and allows seq and harmonizers to pick up the new mode immediately. Doesn't affect the chords and doesn't need chord transformations since the chord advancement will overwrite
+-- todo p0 this now requires chord transformation!
+-- This triggers when mode param changes and allows seq and harmonizers to pick up the new scale immediately. 
+-- Doesn't affect the chords and doesn't need chord transformations since the chord advancement will overwrite
 function update_chord_action()
   chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_d, true)
-  next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
+  -- next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
 end
 
 
@@ -3970,71 +4001,72 @@ function play_chord()
 end
 
 
--- Get upcoming chord. Was used for harmonizers but disabling for now..
--- Pre-load upcoming chord to address race condition around map_note() events occurring before chord change
-function get_next_chord()
-  local pre_arrangement_reset = false
-  local pre_arranger_position = arranger_position
-  local pre_arranger_retrig = arranger_retrig
-  local pre_chord_pattern_position = chord_pattern_position
-  local pre_chord_pattern_q = chord_pattern_q
-        pre_pattern = active_chord_pattern
+-- -- Get upcoming chord. Was used for harmonizers but disabling for now..
+-- -- Pre-load upcoming chord to address race condition around map_note() events occurring before chord change
+-- function get_next_chord()
+--   local pre_arrangement_reset = false
+--   local pre_arranger_position = arranger_position
+--   local pre_arranger_retrig = arranger_retrig
+--   local pre_chord_pattern_position = chord_pattern_position
+--   local pre_chord_pattern_q = chord_pattern_q
+--         pre_pattern = active_chord_pattern
 
-  -- Move arranger sequence if On
-  if params:get("arranger") == 2 then
+--   -- Move arranger sequence if On
+--   if params:get("arranger") == 2 then
 
-    -- If it's post-reset or at the end of chord sequence
-    if (pre_arranger_position == 0 and pre_chord_pattern_position == 0) or pre_chord_pattern_position >= chord_pattern_length[pre_pattern] then
+--     -- If it's post-reset or at the end of chord sequence
+--     if (pre_arranger_position == 0 and pre_chord_pattern_position == 0) or pre_chord_pattern_position >= chord_pattern_length[pre_pattern] then
       
-      -- Check if it's the last pattern in the arrangement.
-      if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
-        pre_arrangement_reset = true
-      else
-        pre_arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or util.wrap(pre_arranger_position + 1, 1, arranger_length)
-        pre_pattern = arranger_padded[pre_arranger_position]
+--       -- Check if it's the last pattern in the arrangement.
+--       if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
+--         pre_arrangement_reset = true
+--       else
+--         pre_arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or util.wrap(pre_arranger_position + 1, 1, arranger_length)
+--         pre_pattern = arranger_padded[pre_arranger_position]
         
-      end
+--       end
       
-      -- Indicates arranger has moved to new pattern.
-      pre_arranger_retrig = true
-    end
+--       -- Indicates arranger has moved to new pattern.
+--       pre_arranger_retrig = true
+--     end
     
-  end
+--   end
   
-  -- If arrangement was not just reset, update chord position. 
-  if pre_arrangement_reset == false then
-    if pre_chord_pattern_position >= chord_pattern_length[pre_pattern] or pre_arranger_retrig then
-      if pre_chord_pattern_q then
-        pre_pattern = pre_chord_pattern_q
-        pre_chord_pattern_q = false
-      end
-      pre_chord_pattern_position = 1
-      pre_arranger_retrig = false
-    else  
-      pre_chord_pattern_position = util.wrap(pre_chord_pattern_position + 1, 1, chord_pattern_length[pre_pattern])
-    end
+--   -- If arrangement was not just reset, update chord position. 
+--   if pre_arrangement_reset == false then
+--     if pre_chord_pattern_position >= chord_pattern_length[pre_pattern] or pre_arranger_retrig then
+--       if pre_chord_pattern_q then
+--         pre_pattern = pre_chord_pattern_q
+--         pre_chord_pattern_q = false
+--       end
+--       pre_chord_pattern_position = 1
+--       pre_arranger_retrig = false
+--     else  
+--       pre_chord_pattern_position = util.wrap(pre_chord_pattern_position + 1, 1, chord_pattern_length[pre_pattern])
+--     end
     
-    -- Arranger automation step. todo: examine impact of running some events here rather than in advance_chord_pattern
-    -- Could be important for anything that changes patterns but might also be weird for grid redraw
+--     -- Arranger automation step. todo: examine impact of running some events here rather than in advance_chord_pattern
+--     -- Could be important for anything that changes patterns but might also be weird for grid redraw
 
-    -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord. 
-    -- Mode is always updated in case no chord has been set but user has changed Mode param.
-    -- todo p3 efficiency test vs if/then
-      next_chord_x = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and chord_pattern[pre_pattern][pre_chord_pattern_position] or next_chord_x
-      next_chord_o = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and (chord_pattern[pre_pattern][pre_chord_pattern_position] > 7 and 1 or 0) or next_chord_o
-      next_chord_d = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and util.wrap(chord_pattern[pre_pattern][pre_chord_pattern_position], 1, 7) or next_chord_d
-      next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
-    
-  end
-end
+--     -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord. 
+--     -- Mode is always updated in case no chord has been set but user has changed Mode param.
+--     -- todo p3 efficiency test vs if/then
+--       next_chord_x = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and chord_pattern[pre_pattern][pre_chord_pattern_position] or next_chord_x
+--       next_chord_o = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and (chord_pattern[pre_pattern][pre_chord_pattern_position] > 7 and 1 or 0) or next_chord_o
+--       next_chord_d = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and util.wrap(chord_pattern[pre_pattern][pre_chord_pattern_position], 1, 7) or next_chord_d
+      
+--       -- equivalent of chord_raw but now kinda obsolete with custom chords in the mix
+--       next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
+
+--   end
+-- end
 
 
 local transform_note = {} -- table containing note transformation functions
 
 transform_note[1] = function(note_num, octave) -- triad chord mapping
   local chord_length = 3
-  -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
-  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
+  local quantized_note = chord_triad[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
@@ -4869,11 +4901,9 @@ function init_chord_editor()
     editing_chord_type = "standard"
   end
 
-  name = find_chord(intervals, root) or "Custom" -- pass root so intervals can be converted from absolute to relative to root
+  c = find_chord(intervals, root) -- pass root so intervals can be converted from absolute to relative to root
   gen_chord_bools(intervals)
-  chord_menu_index = tab.key(chord_menu_names, name) or 0
-  -- pending_chord_disable = nil -- cancels turning off touched chord on key-up... MOVING from here
-
+  chord_menu_index = c and tab.key(chord_menu_names, c.short_name) or 0
 end
 
 
@@ -4924,9 +4954,11 @@ function g.key(x, y, z)
           end
         end
 
-        local name = find_chord(custom[editing_chord_y].intervals, root) -- pass root so intervals can be converted from absolute to relative to root
-        chord_menu_index = tab.key(chord_menu_names, name) or 0
-        custom[editing_chord_y].name = name
+        local c = find_chord(custom[editing_chord_y].intervals, root) -- pass root so intervals can be converted from absolute to relative to root
+        chord_menu_index = c and tab.key(chord_menu_names, c.short_name) or 0
+        custom[editing_chord_y].name = c and c.short_name or "Custom"
+        custom[editing_chord_y].dash_name_1 = c and c.dash_name_1 --or (c.short_name .. "*") -- sub short_name if it's an unnamed chord
+        custom[editing_chord_y].dash_name_2 = c and c.dash_name_2 or nil
       end
 
     elseif screen_view_name == "scale_editor" then
@@ -5191,23 +5223,10 @@ function g.key(x, y, z)
           init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
           lvl = lvl_dimmed -- dim out everything behind popup
           update_dash_lvls()
-
-
-          -- thoughts on handling custom chords and converting to standard chords
-          -- 1. If quick chord editor selects default chord for scale/degree, convert to standard chord. Q: what about keypress w/no enc?
-          -- 2. If full chord editor enc or g.keys result in default chord for scale/degree, convert to standard chord BUT...
-          --    also give an option to force save as custom chord/intervals
-          --    this way we can program in a default chord that persists across scale changes, if needed
-
-
-          -- todo if we use this, also needs to be called from gen_chord_readout()
-          -- issue: only converts touched/played chords so untouched ones will be handled differently.
-          -- switching back-and-forth between scales and touching/playing some chords can result in 
-          -- some converting to the current scale/degree's default and some staying as "cusom"
-          -- default_chord_check_args(editing_chord_pattern, editing_chord_x, editing_chord_y) -- convert to default chord if needed (also needed in enc()???)
         end
 
-      
+        preload_chord()
+
       elseif x == 15 then -- set chord_pattern_length
         params:set("chord_pattern_length", y + pattern_grid_offset)
         gen_arranger_dash_data("g.key chord_pattern_length")
@@ -5243,10 +5262,11 @@ function g.key(x, y, z)
         end
       end
       
-      if transport_active == false then -- Pre-load chord for when play starts
-        get_next_chord()
-        chord_raw = next_chord
-      end
+      -- -- every time a key is pressed while on Chord grid view... needs work
+      -- if transport_active == false then -- Pre-load chord for when play starts
+      --   get_next_chord()
+      --   chord_raw = next_chord
+      -- end
       
     -- SEQ PATTERN KEYS
     elseif grid_view_name == "Seq" then
@@ -5881,6 +5901,7 @@ function key(n, z)
       elseif grid_interaction == "chord_key_held" then
         local root = editing_chord_root
 
+        -- todo generate when mode is selected so this can be used for dash
         -- generate table of in-mode intervals for grid_redraw
         editing_chord_mode_intervals = {}
         for i = 1, 7 do
@@ -6233,20 +6254,22 @@ local function delta_chord(d)
   local root = editing_chord_root
   local custom = theory.custom_chords[params:get("mode")][pattern][x]
 
-  -- gen_chord_menus() -- already done when 1st key is pressed so I think this is not needed
   chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
   local name = chord_menu_names[chord_menu_index]
-  -- local dash_name = "???"
+  local dash_name_1 = nil
+  local dash_name_2 = nil
 
-  -- generate intervals for the selected menu and grab dash_name:
+  -- generate intervals for the selected menu and populate dash_name_ fields:
   -- todo probably make this a theory function (replacement for generate_chord)
   local intervals = {}
   local chords = theory.chords
+
+  -- find selected chord in theory.chords
   for c = 1, #chords do
     if name == chords[c].short_name then
-
-      -- dash_name = editing_chord_letter .. chords[c].dash_name -- WIP, generate chord name for dash readout
-
+      dash_name_1 = (chords[c].dash_name_1 or nil) -- don't include editing_chord_letter as key change may occur
+      dash_name_2 = chords[c].dash_name_2 or nil
+      
       local c_int = chords[c].intervals
       for i = 1, #c_int do
         intervals[i] = c_int[i] + root
@@ -6263,7 +6286,10 @@ local function delta_chord(d)
 
   gen_chord_bools(intervals) -- update for grid leds
   custom[y].name = name -- todo this should be more like "chord_type" as it's just used to match against menu selection
-  -- custom[y].dash_name = dash_name -- abbreviated name used in dash chord_readout
+  custom[y].dash_name_1 = dash_name_1
+  custom[y].dash_name_2 = dash_name_2
+
+  preload_chord()
 end
 --#endregion local enc subfunctions
 
@@ -6760,7 +6786,7 @@ end
 function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
-  local stop = 26 -- width of chart
+  local stop = 32 -- width of chart
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
@@ -7197,7 +7223,6 @@ function redraw()
       local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
       local line = 1
 
-      -- OG style
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
         local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
@@ -7205,7 +7230,7 @@ function redraw()
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
         local y = line * 10 + menu_y - menu_offset
         
-        if y > 11 and y < 64 then
+        if y > 12 and y < 64 then
           screen.move(0, y)
        
           if menu_index == i then  -- Generate menu and draw ▶◀ indicators for scroll range
@@ -7255,47 +7280,54 @@ function redraw()
       end
       
 
-      -- MAIN MENU PAGE SELECTOR
-      -- todo look at having this disappear on a timer
-      if paging then  -- if we want it to only appear when changing pages
-        local width = (4 * #pages) - 1
-        local x = math.ceil((dash_x - width) / 2) -- 35 calculated
-        for i = 1, #pages do
-          screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
-          screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
-          screen.fill()
-        end
-      end
+      -- -- MAIN MENU PAGINATION
+      -- if paging then  -- if we want it to only appear when changing pages
+      --   local width = (4 * #pages) - 1
+      --   local x = math.ceil((dash_x - width) / 2) -- 35 calculated
+      --   for i = 1, #pages do
+      --     screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
+      --     screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
+      --     -- screen.rect(((i - 1) * 4), 0, 3, 1) -- small left-aligned pagination
+      --     screen.fill()
+      --   end
+      -- end
 
-      screen.move(header_x, header_y)
-      screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
-      screen.text(page_name)
+      -- screen.move(header_x, header_y)
+      -- screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      -- screen.text(page_name)
       
+      -- trialing the jumbotron
+      screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      screen.move(0, 10)
+      screen.font_size(16)
+      screen.text(page_name)
+      screen.font_size(8)
+
       -- screen.level(lvl_menu_deselected)
       -- screen.rect(0, 9, screen.text_extents(page_name), 1)
       -- screen.fill()
 
-      -- WIP, optional glyph (todo norns.ttf required) to indicate when grid-norns syncing is enabled
-      if params:string("sync_grid_norns") == "On" then
-        screen.level(lvl_menu_deselected)
+      -- -- WIP, optional glyph (todo norns.ttf required) to indicate when grid-norns syncing is enabled
+      -- if params:string("sync_grid_norns") == "On" then
+      --   screen.level(lvl_menu_deselected)
 
-        -- screen.move(dash_x - 10, 7)
-        -- screen.text("▦")
+      --   -- screen.move(dash_x - 10, 7)
+      --   -- screen.text("▦")
 
-        local x = dash_x - 10
-        screen.pixel(x, 2)
-        screen.pixel(x, 4)
-        screen.pixel(x, 6)
-        local x = dash_x - 8
-        screen.pixel(x, 2)
-        screen.pixel(x, 4)
-        screen.pixel(x, 6)
-        local x = dash_x - 6
-        screen.pixel(x, 2)
-        screen.pixel(x, 4)
-        screen.pixel(x, 6) 
-        screen.fill()
-      end
+      --   local x = dash_x - 10
+      --   screen.pixel(x, 2)
+      --   screen.pixel(x, 4)
+      --   screen.pixel(x, 6)
+      --   local x = dash_x - 8
+      --   screen.pixel(x, 2)
+      --   screen.pixel(x, 4)
+      --   screen.pixel(x, 6)
+      --   local x = dash_x - 6
+      --   screen.pixel(x, 2)
+      --   screen.pixel(x, 4)
+      --   screen.pixel(x, 6) 
+      --   screen.fill()
+      -- end
 
       -- iterate through list of modular dashboard functions
       dash_y = 0

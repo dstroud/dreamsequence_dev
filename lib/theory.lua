@@ -6,46 +6,47 @@ theory = {}
 -- extended list of chords, intervals
 -- name is used in full chord editor
 -- shortname is used for popup menu when chord key is held
--- dash_name abbreviates long chords (sus to s) to fit in dash readout
+-- dash_name_1 and dash_name_2 split some longer chord names across 2 rows
 -- function at end of theory to check chord name lengths for scale/keys
 theory.chords = {
-  {name = "Major", short_name = "", dash_name = "", alt_names = {"Maj"}, intervals = {0, 4, 7}}, -- blank quality!
-  {name = "Minor", short_name = "m", dash_name = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
+  {name = "Major", short_name = "", dash_name_1 = "", alt_names = {"Maj"}, intervals = {0, 4, 7}},
+  {name = "Minor", short_name = "m", dash_name_1 = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
 
-  {name = "Sus2", short_name = "sus2", dash_name = "s2", intervals = {0, 2, 7}},
-  {name = "Seventh sus2", short_name = "7sus2", dash_name = "7s2", intervals = {0, 2, 7, 10}}, 
-  {name = "Sus4", short_name = "sus4", dash_name = "s4", intervals = {0, 5, 7}},
-  {name = "Seventh sus4", short_name = "7sus4", dash_name = "7s4", intervals = {0, 5, 7, 10}},
+  {name = "Sus2", short_name = "sus2", dash_name_1 = "", dash_name_2 = "sus2", intervals = {0, 2, 7}},
+  {name = "Seventh sus2", short_name = "7sus2", dash_name_1 = "7", dash_name_2 = "sus2", intervals = {0, 2, 7, 10}}, 
+  {name = "Sus4", short_name = "sus4", dash_name_1 = "", dash_name_2 = "sus4", intervals = {0, 5, 7}},
+  {name = "Seventh sus4", short_name = "7sus4", dash_name_1 = "7", dash_name_2 = "sus4", intervals = {0, 5, 7, 10}},
 
   -- {name = "Ninth sus4", short_name = "9sus", intervals = {0, 5, 7, 10, 14}}, -- 2024-07-15 implied 4 in short quality
   -- no Eleventh sus4 as that's the 4th raised an octave
   -- {name = "Thirteenth sus4", short_name = "13sus", intervals = {0, 5, 7, 10, 14, 20}}, -- SOUNDS LIKE ASS LOL
 
-  {name = "Major 6", short_name = "6", dash_name = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
-  {name = "Major 7", short_name = "maj7", dash_name = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
-  {name = "Major 6/9", short_name = "6/9", dash_name = "69", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
-  {name = "Major 9", short_name = "maj9", dash_name = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
-  {name = "Major 11", short_name = "maj11", dash_name = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
-  {name = "Major 13", short_name = "maj13", dash_name = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
-  {name = "Dominant 7", short_name = "7", dash_name = "7", intervals = {0, 4, 7, 10}},
-  {name = "Ninth", short_name = "9", dash_name = "9", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
-  {name = "Eleventh", short_name = "11", dash_name = "11", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
-  {name = "Thirteenth", short_name = "13", dash_name = "13", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
-  {name = "Augmented", short_name = "+", dash_name = "+", intervals = {0, 4, 8}},
-  {name = "Augmented 7", short_name = "+7", dash_name = "+7", intervals = {0, 4, 8, 10}},
-  {name = "Augmented Major 7", short_name = "+maj7", dash_name = "+M7", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
+  {name = "5", short_name = "5", dash_name_1 = "5", intervals = {0, 7, 12}}, -- power chord, why not?!
 
+  {name = "Major 6", short_name = "6", dash_name_1 = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
+  {name = "Major 7", short_name = "maj7", dash_name_1 = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
+  {name = "Major 6/9", short_name = "6/9", dash_name_1 = "69", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
+  {name = "Major 9", short_name = "maj9", dash_name_1 = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
+  {name = "Major 11", short_name = "maj11", dash_name_1 = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
+  {name = "Major 13", short_name = "maj13", dash_name_1 = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
+  {name = "Dominant 7", short_name = "7", dash_name_1 = "7", intervals = {0, 4, 7, 10}},
+  {name = "Ninth", short_name = "9", dash_name_1 = "9", intervals = {0, 4, 7, 10, 14}}, -- Dominant 7th chord with extension
+  {name = "Eleventh", short_name = "11", dash_name_1 = "11", intervals = {0, 4, 7, 10, 14, 17}}, -- Dominant 7th chord with extension
+  {name = "Thirteenth", short_name = "13", dash_name_1 = "13", intervals = {0, 4, 7, 10, 14, 17, 21}}, -- Dominant 7th chord with extension
+  {name = "Augmented", short_name = "+", dash_name_1 = "+", intervals = {0, 4, 8}},
+  {name = "Augmented 7", short_name = "+7", dash_name_1 = "+7", intervals = {0, 4, 8, 10}},
+  {name = "Augmented Major 7", short_name = "+maj7", dash_name_1 = "+M7", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
 
-  {name = "Minor Major 7", short_name = "m♮7", dash_name = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
-  {name = "Minor 6", short_name = "m6", dash_name = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
-  {name = "Minor 7", short_name = "m7", dash_name = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
-  {name = "Minor 69", short_name = "m6/9", dash_name = "m69", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
-  {name = "Minor 9", short_name = "m9", dash_name = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
-  {name = "Minor 11", short_name = "m11", dash_name = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
-  {name = "Minor 13", short_name = "m13", dash_name = "13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
-  {name = "Diminished", short_name = "°", dash_name = "°", alt_names = {"Dim"}, intervals = {0, 3, 6}}, -- superscript dim symbol in norns.ttf
-  {name = "Diminished 7", short_name = "°7", dash_name = "°7", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
-  {name = "Half Diminished 7", short_name = "ø7", dash_name = "ø7", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- superscript half-dim symbol in norns.ttf
+  {name = "Minor Major 7", short_name = "m♮7", dash_name_1 = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
+  {name = "Minor 6", short_name = "m6", dash_name_1 = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
+  {name = "Minor 7", short_name = "m7", dash_name_1 = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
+  {name = "Minor 69", short_name = "m6/9", dash_name_1 = "m69", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
+  {name = "Minor 9", short_name = "m9", dash_name_1 = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
+  {name = "Minor 11", short_name = "m11", dash_name_1 = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
+  {name = "Minor 13", short_name = "m13", dash_name_1 = "13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
+  {name = "Diminished", short_name = "°", dash_name_1 = "°", alt_names = {"Dim"}, intervals = {0, 3, 6}}, -- superscript dim symbol in norns.ttf
+  {name = "Diminished 7", short_name = "°7", dash_name_1 = "°7", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
+  {name = "Half Diminished 7", short_name = "ø7", dash_name_1 = "ø7", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- superscript half-dim symbol in norns.ttf
 }
 -- Base data from https://github.com/fredericcormier/WesternMusicElements, extended by @dstroud
 
@@ -302,16 +303,12 @@ gen_keys()
 
 
 
--- generates base triad interval tables across 2 octaves for selected mode and key
+-- generates base triad interval tables across 2 octaves for selected mode
+-- will eventually replace chord_degrees but needs to have degrees portion completed
 function gen_chord_tab()
-  local mode = params:get("mode")
+  local mode = params.lookup["mode"] and params:get("mode") or 1
 
   theory.chord_triad_intervals = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
-
-  -- optional, WIP:
-  -- lookup table with triad names to use as a lookup to replace chord_degrees
-  -- can be used to check if selected "custom" chord is actually standard (vs checking all intervals as we do currently)
-  -- this would probably replace theory.chord_degree but needs work on degrees as well
   theory.chord_triad_names = {} -- table containing chord names for degrees 1-7, repeated for 8-14
 
   for x = 1, 14 do
@@ -337,15 +334,15 @@ function gen_chord_tab()
       theory.chord_triad_intervals[x][i] = intervals[triad[i]]
     end
 
-    theory.chord_triad_names[x] = find_chord(theory.chord_triad_intervals[x], theory.chord_triad_intervals[x][1])
+    local c = find_chord(theory.chord_triad_intervals[x], theory.chord_triad_intervals[x][1])
+    theory.chord_triad_names[x] = c.short_name
   end
 
 end
 
 
--- Accepts a table of chord intervals and returns matching chord name
+-- Accepts a table of intervals and returns chord table from theory.chords
 -- optional root arg converts absolute intervals to relative to root
--- look into: should this conversion happen here or upstream?
 function find_chord(intervals, root)
   local lookup = theory.chords
   local root = root or 0
@@ -365,8 +362,7 @@ function find_chord(intervals, root)
         end
       end
       if chord_match then
-        return(lookup[lookup_idx].short_name) --.name)
-        -- return(lookup[lookup_idx].short) -- can return ""
+        return(lookup[lookup_idx])
       end
     end
   end
@@ -811,3 +807,5 @@ function print_all_chord_names()
 end
 
 --#endregion R&D
+
+gen_chord_tab() -- run once at init
