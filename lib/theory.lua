@@ -2,7 +2,7 @@ theory = {}
 
 --#region chords
 
--- TODO reorder these:
+-- TODO reorder these and revise long names for consistency:
 -- extended list of chords, intervals
 -- name is used in full chord editor
 -- shortname is used for popup menu when chord key is held
@@ -12,20 +12,23 @@ theory.chords = {
   {name = "Major", short_name = "", dash_name_1 = "", alt_names = {"Maj"}, intervals = {0, 4, 7}},
   {name = "Minor", short_name = "m", dash_name_1 = "m", alt_names = {"Min"}, intervals = {0, 3, 7}},
 
+  -- sus2
   {name = "Sus2", short_name = "sus2", dash_name_1 = "", dash_name_2 = "sus2", intervals = {0, 2, 7}},
   {name = "Seventh sus2", short_name = "7sus2", dash_name_1 = "7", dash_name_2 = "sus2", intervals = {0, 2, 7, 10}}, 
+  -- no Ninth sus2 as that's the 2th raised an octave
+
+  -- sus4
   {name = "Sus4", short_name = "sus4", dash_name_1 = "", dash_name_2 = "sus4", intervals = {0, 5, 7}},
   {name = "Seventh sus4", short_name = "7sus4", dash_name_1 = "7", dash_name_2 = "sus4", intervals = {0, 5, 7, 10}},
-
-  -- {name = "Ninth sus4", short_name = "9sus", intervals = {0, 5, 7, 10, 14}}, -- 2024-07-15 implied 4 in short quality
+  {name = "Ninth sus4", short_name = "9sus4", dash_name_1 = "9", dash_name_2 = "sus4", intervals = {0, 5, 7, 10, 14}},
   -- no Eleventh sus4 as that's the 4th raised an octave
-  -- {name = "Thirteenth sus4", short_name = "13sus", intervals = {0, 5, 7, 10, 14, 20}}, -- SOUNDS LIKE ASS LOL
 
-  {name = "5", short_name = "5", dash_name_1 = "5", intervals = {0, 7, 12}}, -- power chord, why not?!
+  {name = "5", short_name = "5", dash_name_1 = "5", intervals = {0, 7, 12}}, -- power chord 🤘
 
   {name = "Major 6", short_name = "6", dash_name_1 = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
   {name = "Major 7", short_name = "maj7", dash_name_1 = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
-  {name = "Major 6/9", short_name = "6/9", dash_name_1 = "69", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
+  {name = "Add 9", short_name = "add9", dash_name_1 = "", dash_name_2 = "add9", intervals = {0, 4, 7, 14}},
+  {name = "Major 6/9", short_name = "6/9", dash_name_1 = "6/9", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
   {name = "Major 9", short_name = "maj9", dash_name_1 = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
   {name = "Major 11", short_name = "maj11", dash_name_1 = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
   {name = "Major 13", short_name = "maj13", dash_name_1 = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
@@ -40,7 +43,8 @@ theory.chords = {
   {name = "Minor Major 7", short_name = "m♮7", dash_name_1 = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
   {name = "Minor 6", short_name = "m6", dash_name_1 = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
   {name = "Minor 7", short_name = "m7", dash_name_1 = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
-  {name = "Minor 69", short_name = "m6/9", dash_name_1 = "m69", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
+  {name = "Minor add 9", short_name = "m(add9)", dash_name_1 = "m", dash_name_2 = "(add9)", intervals = {0, 3, 7, 14}}, -- kinda weird formatting but no superscript yet
+  {name = "Minor 6/9", short_name = "m6/9", dash_name_1 = "m6/9", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
   {name = "Minor 9", short_name = "m9", dash_name_1 = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
   {name = "Minor 11", short_name = "m11", dash_name_1 = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
   {name = "Minor 13", short_name = "m13", dash_name_1 = "13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
@@ -87,7 +91,7 @@ theory.chord_degree = {
     }
   },
   {
-    name = "Harmonic Minor",
+    name = "Harmonic Min.", -- abbreviated
     numeral = {
       "i",  "ii",  "III",  "iv",  "V",  "VI",  "vii",
       "i",  "ii",  "III",  "iv",  "V",  "VI",  "vii"
@@ -400,55 +404,6 @@ end
 -- will have chord_indices and chord_names inserted by separate function by gen_chord_lookups at library init
 -- Includes those in musicutil/https://github.com/fredericcormier/WesternMusicElements and some additions
 theory.lookup_scales = {
-  -- {name = "Major", alt_names = {"Ionian"}, intervals = {0, 2, 4, 5, 7, 9, 11}},
-  -- {name = "Natural Minor", alt_names = {"Minor", "Aeolian"}, intervals = {0, 2, 3, 5, 7, 8, 10}},
-  -- {name = "Harmonic Minor", intervals = {0, 2, 3, 5, 7, 8, 11}},
-  -- {name = "Melodic Minor", intervals = {0, 2, 3, 5, 7, 9, 11}},
-  -- {name = "Dorian", intervals = {0, 2, 3, 5, 7, 9, 10}},
-  -- {name = "Phrygian", intervals = {0, 1, 3, 5, 7, 8, 10}},
-  -- {name = "Lydian", intervals = {0, 2, 4, 6, 7, 9, 11}},
-  -- {name = "Mixolydian", intervals = {0, 2, 4, 5, 7, 9, 10}},
-  -- {name = "Locrian", intervals = {0, 1, 3, 5, 6, 8, 10}},
-  -- {name = "Whole Tone", intervals = {0, 2, 4, 6, 8, 10}},
-  -- {name = "Major Pentatonic", alt_names = {"Gagaku Ryo Sen Pou"}, intervals = {0, 2, 4, 7, 9}},
-  -- {name = "Minor Pentatonic", alt_names = {"Zokugaku Yo Sen Pou"}, intervals = {0, 3, 5, 7, 10}},
-  -- {name = "Major Bebop", intervals = {0, 2, 4, 5, 7, 8, 9, 11}},
-  -- {name = "Altered Scale", intervals = {0, 1, 3, 4, 6, 8, 10}},
-  -- {name = "Dorian Bebop", intervals = {0, 2, 3, 4, 5, 7, 9, 10}},
-  -- {name = "Mixolydian Bebop", intervals = {0, 2, 4, 5, 7, 9, 10, 11}},
-  -- {name = "Blues Scale", alt_names = {"Blues"}, intervals = {0, 3, 5, 6, 7, 10}},
-  -- {name = "Diminished Whole Half", intervals = {0, 2, 3, 5, 6, 8, 9, 11}},
-  -- {name = "Diminished Half Whole", intervals = {0, 1, 3, 4, 6, 7, 9, 10}},
-  -- {name = "Neapolitan Major", intervals = {0, 1, 3, 5, 7, 9, 11}},
-  -- {name = "Hungarian Major", intervals = {0, 3, 4, 6, 7, 9, 10}},
-  -- {name = "Harmonic Major", intervals = {0, 2, 4, 5, 7, 8, 11}},
-  -- {name = "Hungarian Minor", intervals = {0, 2, 3, 6, 7, 8, 11}},
-  -- {name = "Lydian Minor", intervals = {0, 2, 4, 6, 7, 8, 10}},
-  -- {name = "Neapolitan Minor", alt_names = {"Byzantine"}, intervals = {0, 1, 3, 5, 7, 8, 11}},
-  -- {name = "Major Locrian", intervals = {0, 2, 4, 5, 6, 8, 10}},
-  -- {name = "Leading Whole Tone", intervals = {0, 2, 4, 6, 8, 10, 11}},
-  -- {name = "Six Tone Symmetrical", intervals = {0, 1, 4, 5, 8, 9, 11}},
-  -- {name = "Balinese", intervals = {0, 1, 3, 7, 8}},
-  -- {name = "Persian", intervals = {0, 1, 4, 5, 6, 8, 11}},
-  -- {name = "East Indian Purvi", intervals = {0, 1, 4, 6, 7, 8, 11}},
-  -- {name = "Oriental", intervals = {0, 1, 4, 5, 6, 9, 10}},
-  -- {name = "Double Harmonic", intervals = {0, 1, 4, 5, 7, 8, 11}},
-  -- {name = "Enigmatic", intervals = {0, 1, 4, 6, 8, 10, 11}},
-  -- {name = "Overtone", intervals = {0, 2, 4, 6, 7, 9, 10}},
-  -- {name = "Eight Tone Spanish", intervals = {0, 1, 3, 4, 5, 6, 8, 10}},
-  -- {name = "Prometheus", intervals = {0, 2, 4, 6, 9, 10}},
-  -- {name = "Gagaku Rittsu Sen Pou", intervals = {0, 2, 5, 7, 9, 10}},
-  -- {name = "In Sen Pou", intervals = {0, 1, 5, 2, 8}},
-  -- {name = "Okinawa", intervals = {0, 4, 5, 7, 11}},
-  -- {name = "Chromatic", intervals = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
-  -- {name = "Minor Pentatonic ♭5", intervals = {0, 3, 5, 6, 10}},    -- DS 2024-07-06
-  -- {name = "Iwato", intervals = {0, 1, 5, 6, 10}},                  -- DS 2024-07-06
-  -- {name = "Blues Major Pentatonic", intervals = {0, 2, 5, 7, 9}},  -- DS 2024-07-06
-  -- {name = "Blues Minor Pentatonic", intervals = {0, 3, 5, 8, 10}}, -- DS 2024-07-06
-  -- {name = "Suspended Pentatonic", intervals = {0, 2, 5, 7, 10}},   -- DS 2024-07-06
-  -- -- {name = "Minor Tetratonic", intervals = {0, 3, 5, 7}},        -- DS 2024-07-06 (for Harmonic/Melodic Minor)
-
-
   -- alphabetical
   {name = "Altered Scale", intervals = {0, 1, 3, 4, 6, 8, 10}},
 
@@ -472,7 +427,7 @@ theory.lookup_scales = {
   {name = "Gagaku Rittsu Sen Pou", intervals = {0, 2, 5, 7, 9, 10}},
 
   {name = "Harmonic Major", intervals = {0, 2, 4, 5, 7, 8, 11}},
-  {name = "Harmonic Minor", intervals = {0, 2, 3, 5, 7, 8, 11}},
+  {name = "Harmonic Min.", intervals = {0, 2, 3, 5, 7, 8, 11}}, -- abbreviated to fit dash :/
   {name = "Hungarian Major", intervals = {0, 3, 4, 6, 7, 9, 10}},
   {name = "Hungarian Minor", intervals = {0, 2, 3, 6, 7, 8, 11}},
 
@@ -649,7 +604,7 @@ function find_matching_scales()
   local modes = {
     "Major", -- "Ionian", 
     "Natural Minor", -- "Aeolian", 
-    "Harmonic Minor",
+    "Harmonic Min.", -- abbreviated
     "Melodic Minor",
     "Dorian",
     "Phrygian",

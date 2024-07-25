@@ -2,36 +2,55 @@
 -- PATTERN TRANSFORMATIONS --
 --------------------------------------------
 
--- Rotate entire pattern
-function rotate_pattern(view, offset)
+-- -- Rotate entire pattern
+-- function rotate_pattern(view, offset)
+--   print("DEBUG rotate_pattern() called")
+--   if view == "Chord" then
+--     chord_pattern[active_chord_pattern] = rotate_tab_values(chord_pattern[active_chord_pattern], offset)
+--   elseif view == "Seq" then
+--     local pattern = seq_pattern[selected_seq_no]
+--     local active = active_seq_pattern[selected_seq_no]
+
+--     pattern[active] = rotate_tab_values(pattern[active], offset)
+--   end
+-- end
+
+
+-- Rotate pattern, including custom chords
+-- set loop == true to rotate only the looped portion of the pattern
+function rotate_pattern(view, offset, loop)
   if view == "Chord" then
-    chord_pattern[active_chord_pattern] = rotate_tab_values(chord_pattern[active_chord_pattern], offset)
-  elseif view == "Seq" then
-    local pattern = seq_pattern[selected_seq_no]
-    local active = active_seq_pattern[selected_seq_no]
-
-    pattern[active] = rotate_tab_values(pattern[active], offset)
-  end
-end
-
-
--- Rotate only the looped portion of the pattern
-function rotate_loop(view, offset)
-  if view == "Chord" then
-    local length = chord_pattern_length[active_chord_pattern]
+    local length = loop and chord_pattern_length[active_chord_pattern] or max_chord_pattern_length
     local temp_chord_pattern = {}
+    local temp_custom_chords = {}
 
-    for i = 1, length do
-      temp_chord_pattern[i] = chord_pattern[active_chord_pattern][i]
+    for x = 1, 14 do
+      temp_custom_chords[x] = {}
     end
-    for i = 1, length do
-      chord_pattern[active_chord_pattern][i] = temp_chord_pattern[util.wrap(i - offset,1,length)]
+
+    local custom = theory.custom_chords[params:get("mode")][active_chord_pattern]
+
+    for y = 1, length do
+      temp_chord_pattern[y] = chord_pattern[active_chord_pattern][y]
+      for x = 1, 14 do
+        if custom[x][y] then
+          temp_custom_chords[x][y] = custom[x][y]
+        end
+      end
+    end
+
+    for y = 1, length do
+      local offset_y = util.wrap(y - offset, 1, length)
+      chord_pattern[active_chord_pattern][y] = temp_chord_pattern[offset_y]
+      for x = 1, 14 do
+        custom[x][y] = temp_custom_chords[x][offset_y]
+      end
     end
 
   elseif view == "Seq" then
     local pattern = seq_pattern[selected_seq_no]
     local active = active_seq_pattern[selected_seq_no]
-    local length = seq_pattern_length[selected_seq_no][active]
+    local length = loop and seq_pattern_length[selected_seq_no][active] or max_seq_pattern_length
     local temp_seq_pattern = {}
 
     for i = 1, length do
@@ -167,11 +186,40 @@ end
 -- "Transposes" pattern by shifting left or right
 function transpose_pattern(view, offset)
   if view == "Chord" then
+    -- -- shift 1 degree:
+    -- for y = 1, max_chord_pattern_length do
+    --   if chord_pattern[active_chord_pattern][y] ~= 0 then
+    --     chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + offset, 1, 14)
+    --   end
+    -- end
+
+    -- shift 7 degrees/octave and custom chords
+    offset = offset * 7
+    -- local offset_wrapped = util.wrap(chord_pattern[active_chord_pattern][y] + offset, 1, 14)
     for y = 1, max_chord_pattern_length do
       if chord_pattern[active_chord_pattern][y] ~= 0 then
         chord_pattern[active_chord_pattern][y] = util.wrap(chord_pattern[active_chord_pattern][y] + offset, 1, 14)
       end
     end
+
+    -- shift custom_chords as well
+    local custom = theory.custom_chords[params:get("mode")] -- omit this bit for writing back: [active_chord_pattern]
+    custom[active_chord_pattern] = rotate_tab_values(custom[active_chord_pattern], offset)
+
+    -- adjust intervals
+      for x = 1, 14 do
+        local offset_semitones = util.wrap(x + offset, 1, 14) < x and 12 or -12
+        local custom = custom[active_chord_pattern][x]
+        for y = 1, 16 do
+          if custom[y] then
+            for i = 1, #custom[y].intervals do
+              custom[y]["intervals"][i] = custom[y]["intervals"][i] + offset_semitones
+            end
+          end
+        end
+      end
+
+
   elseif view == "Seq" then
     local pattern = seq_pattern[selected_seq_no][active_seq_pattern[selected_seq_no]]
     for y = 1, max_seq_pattern_length do
@@ -196,7 +244,7 @@ function quantize(value, quantum)
   return math.floor(value / quantum + 0.5) * quantum
 end
                   
-                  -- always use this to set the current chord pattern so we can also silently update the param as well
+-- always use this to set the current chord pattern so we can also silently update the param as well
 function set_chord_pattern(y)
   active_chord_pattern = y
   params:set("chord_pattern_length", chord_pattern_length[y], true) -- silent

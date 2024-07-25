@@ -79,7 +79,7 @@ dreamsequence.scales = {
 -- canonical scales
 "Major", -- "Ionian", 
 "Natural Minor", -- "Aeolian", 
-"Harmonic Minor",
+"Harmonic Min.", -- abbreviated to fit new dash :/
 "Melodic Minor",
 "Dorian",
 "Phrygian",
@@ -548,20 +548,20 @@ function init()
     end
   )
 
-  params:add_number("chord_inversion", "Inversion", 0, 16, 0) -- todo negative inversion
-
   params:add_number("chord_notes", "Max notes", 1, 25, 25,
   function(param)
     local val = param:get()
 
     if val == 25 then
-      return("Unlimited")
+      return("Range")
     else
       return(val)
     end
   end
   )
   
+  params:add_number("chord_inversion", "Inversion", 0, 16, 0) -- todo negative inversion
+
   params:add_option("chord_style", "Strum", {"Off", "Low-high", "High-low"}, 1)
   
   params:add_number("chord_strum_length", "Strum length", 1, 15, 15, function(param) return strum_length_string(param:get()) end)
@@ -1464,7 +1464,18 @@ function init()
   -- Some actions need to be added post-bang.
   params:set_action("arranger", function() update_arranger_active() end)
 
-  params:set_action("mode", function() gen_chord_tab(); build_scale(); update_chord_action() end)
+  params:set_action("mode", 
+    function()
+      gen_chord_tab()
+      build_scale()
+      if transport_state == "stopped" then
+        preload_chord()
+      else -- immediately update the active chord with whatever custom or triad is on this step (for downstream note sources)
+        update_chord(current_chord_x)
+        gen_chord_readout()
+      end
+    end
+  )
 
   -- Redefine div change actions, this time with lattice stuff
   -- WIP: needs some work! Currently blocks any changes unless stopped LOL
@@ -2379,7 +2390,7 @@ function gen_menu()
   table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
 
   -- CHORD MENU
-  table.insert(menus, {"chord_voice", "chord_octave", "chord_range", "chord_inversion", "chord_notes", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
+  table.insert(menus, {"chord_voice", "chord_octave", "chord_range", "chord_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
   if params:visible("chord_channel") or norns_interaction == "k1" then
     table.insert(menus[#menus], 2, "chord_channel")
   end
@@ -3843,20 +3854,10 @@ function transform_chord()
 end
 
 
--- todo p0 this now requires chord transformation!
--- This triggers when mode param changes and allows seq and harmonizers to pick up the new scale immediately. 
--- Doesn't affect the chords and doesn't need chord transformations since the chord advancement will overwrite
-function update_chord_action()
-  chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_d, true)
-  -- next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
-end
-
-
 -- variable curve formula from @dewb
 -- x == note number * .1
 -- to-do: can move upstream * 0.1 here but not sure what the implications are
 function curve_get_y(x, curve)
-  local curve = curve
   if curve == 0 then
     return x
   else
@@ -6318,7 +6319,7 @@ function enc(n,d)
     if grid_interaction == "view_switcher" then
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
         local d = util.clamp(d, -1, 1) -- no acceleration
-        rotate_loop(grid_view_name, d)
+        rotate_pattern(grid_view_name, d, true)
         grid_dirty = true
       end
    
