@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240724 @modularbeat
+-- 240726 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -30,7 +30,7 @@ xy = {
   dash_x = 89,
   header_x = 0,
   header_y = 10,
-  menu_y = 11,
+  menu_y = 10,
   scrollbar_y = 12
 }
 
@@ -87,10 +87,10 @@ dreamsequence.scales = {
 "Mixolydian",
 "Locrian",
 
--- some additions that work, too, but need to have some theory functions updated
--- "Altered Scale",
--- "Harmonic Major",
--- "Overtone",
+-- -- some additions that work, too, but need to have some theory functions updated
+"Altered Scale", -- double flats in F
+"Harmonic Major", -- TODO shorten and fix same with Harmonic Min. -- double flats in Db
+"Overtone",
 }
 
 -- pre-init bits n bobs
@@ -2638,7 +2638,6 @@ function reset_sprocket_cv_harm(from)
 end
 
 
--- todo p3 move with other musicutil functions
 function build_scale()
   local mode = params:get("mode")
 
@@ -2857,7 +2856,6 @@ end
 -- assumes A440 tuning on oscillator
 function volts_string_note(quantum, index)
   local notes = {"A#","B", "C", "C#","D","D#","E","F","F#","G","G#","A"}
-  -- return(round(index/quantum, 2) .. "v " .. notes[util.wrap(index, 1, 12)])  -- TODO p0 rounding is off?
   return(volts_string(quantum, index) .. ", " .. notes[util.wrap(index, 1, 12)] .. " @A440" )
 end
 
@@ -3740,11 +3738,13 @@ function gen_chord_readout(y)
     end
 
     -- todo:
-    active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped] .. "*"
+    -- active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped] .. "*"
   else -- standard triad
     active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
     active_chord_name_2 = nil
-    active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped]
+
+    -- todo:
+    -- active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped]
   end
 end
 
@@ -5220,7 +5220,10 @@ function g.key(x, y, z)
           local key = util.wrap(params:get("transpose"), 0, 11)
           -- editing_chord_name = theory.scale_chord_names[mode][key][x_wrapped]        -- name+quality not sure why this isn't being used
           editing_chord_letter = theory.scale_chord_letters[mode][key][x_wrapped]       -- letter
-          editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
+
+          -- todo p0!
+          -- editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
+          
           init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
           lvl = lvl_dimmed -- dim out everything behind popup
           update_dash_lvls()
@@ -5247,8 +5250,10 @@ function g.key(x, y, z)
           else-- if pattern_key_count > 1 then
             print("Copying pattern " .. pattern_name[copied_pattern] .. " to pattern " .. pattern_name[y])
             pattern_copy_performed[1] = true
-            for i = 1, max_chord_pattern_length do
-              chord_pattern[y][i] = chord_pattern[copied_pattern][i]
+            chord_pattern[y] = simplecopy(chord_pattern[copied_pattern])
+
+            for scale = 1, #dreamsequence.scales do             -- copy custom chords (for all scales)
+              theory.custom_chords[scale][y] = theory.custom_chords[scale][copied_pattern]
             end
 
             -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param/grid table.
@@ -5667,14 +5672,16 @@ function key(n, z)
         end
 
       elseif norns_interaction == "k1" then
-        if params:get("sync_grid_norns") == 1 then
-          params:set("sync_grid_norns", 2) -- on
-          set_page() -- set Grid view to current page
-        else
-          params:set("sync_grid_norns", 1)
-        end
 
-        popup_message(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+        -- moved to K3
+        -- if params:get("sync_grid_norns") == 1 then
+        --   params:set("sync_grid_norns", 2) -- on
+        --   set_page() -- set Grid view to current page
+        -- else
+        --   params:set("sync_grid_norns", 1)
+        -- end
+
+        -- popup_message(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
         
       elseif view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
@@ -5892,12 +5899,24 @@ function key(n, z)
         grid_interaction = nil
         screen_view_name = "Session"
       elseif norns_interaction == "k1" then
-        scale_menu_index = 0
-        screen_view_name = "scale_editor"
-        norns_interaction = nil
-        grid_interaction = nil
-        bang_params() -- apply any defered param edits. could also ignore but this feels okay
-        set_scale_menu()
+
+        if params:get("sync_grid_norns") == 1 then
+          params:set("sync_grid_norns", 2) -- on
+          set_page() -- set Grid view to current page
+        else
+          params:set("sync_grid_norns", 1)
+        end
+
+        popup_message(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+
+
+        -- open scale editor
+        -- scale_menu_index = 0
+        -- screen_view_name = "scale_editor"
+        -- norns_interaction = nil
+        -- grid_interaction = nil
+        -- bang_params() -- apply any defered param edits. could also ignore but this feels okay
+        -- set_scale_menu()
 
       elseif grid_interaction == "chord_key_held" then
         local root = editing_chord_root
@@ -5916,7 +5935,20 @@ function key(n, z)
         update_dash_lvls()
 
     
-      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- Event Editor --
+      elseif view_key_count > 0 and grid_view_name == "Arranger" then -- Grid view key held down
+        -- if grid_view_name == "Arranger" then
+
+        -- open scale editor
+        view_key_count = 0
+        scale_menu_index = 0
+        screen_view_name = "scale_editor"
+        norns_interaction = nil
+        grid_interaction = nil
+        bang_params() -- apply any defered param edits. could also ignore but this feels okay
+        set_scale_menu()
+        -- end
+
+        elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- Event Editor --
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -6874,8 +6906,6 @@ end
 
 
 
-
-
 -- pop-up tooltips when certain grid keys are held down
 local function tooltips(header, strings)
   local strings = strings or ""
@@ -6897,18 +6927,22 @@ local function footer(k2, k3, no_dim) -- todo move out of redraw loop and pass l
 
   if k2 then
     screen.level(lvl_pane_dark)
-    screen.rect(0, 55, 63, 9)
+    screen.rect(0, 55, 63, 9) -- 2px border
+    -- screen.rect(0, 53, 63, 11) -- 3px border
     screen.fill()
     screen.level(1)
-    screen.move(31, 62)
+    screen.move(31, 62) -- 2px border
+    -- screen.move(31, 61) -- 3px border
     screen.text_center("K2 ".. k2)
   end
   if k3 then
     screen.level(lvl_pane_dark)
-    screen.rect(65, 55, 63, 9)
+    screen.rect(65, 55, 63, 9) -- 2px border
+    -- screen.rect(65, 53, 63, 11) -- 3px border
     screen.fill()
     screen.level(1)
-    screen.move(96, 62)
+    screen.move(96, 62) -- 2px border
+    -- screen.move(96, 61) -- 3px border
     screen.text_center("K3 " .. k3)
   end
 end
@@ -6943,11 +6977,12 @@ function redraw()
     --   footer("GENERATE") -- technically this should indicate generating patterns for chord+seq
     if grid_view_name == "Arranger" then
       tooltips("SONG ARRANGER GRID")
+      footer(nil,"EDIT SCALE")
     elseif grid_view_name == "Chord" then
-      tooltips("CHORD GRID FUNCTIONS", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
+      tooltips("CHORD GRID", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
       footer("GENERATE")
     elseif grid_view_name == "Seq" then
-      tooltips("SEQ " .. selected_seq_no .. " GRID FUNCTIONS", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
+      tooltips("SEQ " .. selected_seq_no .. " GRID", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
       footer("GENERATE")
     end
 
@@ -6959,7 +6994,7 @@ function redraw()
     footer("JUMP", "EVENTS")
   
   elseif grid_interaction == "pattern_switcher" then
-    if page_name == "CHORD" then
+    if grid_view_name == "Chord" then -- if page_name == "CHORD" then
       tooltips("CHORD PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: cue pattern", "Tap 2x while stopped: jump"})
     else
       if simultaneous then
@@ -7203,7 +7238,7 @@ function redraw()
     
       screen.move(header_x, header_y)
       screen.level(lvl_menu_deselected)
-      screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_letter)
+      -- screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_letter)
 
       screen.move(header_x, menu_y + 10)
       screen.level(lvl_menu_selected)
@@ -7336,14 +7371,16 @@ function redraw()
         func()
       end
 
-      if norns_interaction == "k1" then
-        screen.level(0)             -- mask area behind footer
-        screen.rect(0, 54, 128, 10)
-        screen.fill()
+      -- turning this off to clean up the view a bit. K3 will still toggle norns-grid link
+      -- if norns_interaction == "k1" then
+      --   screen.level(0)             -- mask area behind footer
+      --   screen.rect(0, 54, 128, 10)
+      --   screen.fill()
 
-        footer(params:get("sync_grid_norns") == 1 and "SYNC ON" or "SYNC OFF", "EDIT SCALE")
+      --   footer(params:get("sync_grid_norns") == 1 and "SYNC ON" or "SYNC OFF", "EDIT SCALE")
 
-      elseif grid_interaction == "chord_key_held" then
+      -- elseif
+        if grid_interaction == "chord_key_held" then
         local border = 20 -- portion of lower layer still shown
         local rect = {1 + border + 15, border, 127 - (border * 2) - 30, 63 - (border * 2)}
         -- local rect = {24, 20, 45, 23}

@@ -2,20 +2,6 @@
 -- PATTERN TRANSFORMATIONS --
 --------------------------------------------
 
--- -- Rotate entire pattern
--- function rotate_pattern(view, offset)
---   print("DEBUG rotate_pattern() called")
---   if view == "Chord" then
---     chord_pattern[active_chord_pattern] = rotate_tab_values(chord_pattern[active_chord_pattern], offset)
---   elseif view == "Seq" then
---     local pattern = seq_pattern[selected_seq_no]
---     local active = active_seq_pattern[selected_seq_no]
-
---     pattern[active] = rotate_tab_values(pattern[active], offset)
---   end
--- end
-
-
 -- Rotate pattern, including custom chords
 -- set loop == true to rotate only the looped portion of the pattern
 function rotate_pattern(view, offset, loop)
@@ -23,27 +9,37 @@ function rotate_pattern(view, offset, loop)
     local length = loop and chord_pattern_length[active_chord_pattern] or max_chord_pattern_length
     local temp_chord_pattern = {}
     local temp_custom_chords = {}
+    local custom = theory.custom_chords
+    local scale_count = #dreamsequence.scales
 
-    for x = 1, 14 do
-      temp_custom_chords[x] = {}
+    for scale = 1, scale_count do
+      temp_custom_chords[scale] = {}
+      for x = 1, 14 do
+        temp_custom_chords[scale][x] = {} -- omit chord pattern in hierarchy
+      end
     end
 
-    local custom = theory.custom_chords[params:get("mode")][active_chord_pattern]
-
     for y = 1, length do
-      temp_chord_pattern[y] = chord_pattern[active_chord_pattern][y]
-      for x = 1, 14 do
-        if custom[x][y] then
-          temp_custom_chords[x][y] = custom[x][y]
+      temp_chord_pattern[y] = chord_pattern[active_chord_pattern][y] -- pattern
+      
+      for scale = 1, #dreamsequence.scales do -- shift custom chords across ALL scales
+        local c = custom[scale][active_chord_pattern]
+        for x = 1, 14 do
+          if c[x][y] then
+            temp_custom_chords[scale][x][y] = c[x][y]
+          end
         end
       end
     end
 
     for y = 1, length do
       local offset_y = util.wrap(y - offset, 1, length)
-      chord_pattern[active_chord_pattern][y] = temp_chord_pattern[offset_y]
-      for x = 1, 14 do
-        custom[x][y] = temp_custom_chords[x][offset_y]
+      chord_pattern[active_chord_pattern][y] = temp_chord_pattern[offset_y] -- pattern
+      
+      for scale = 1, scale_count do
+        for x = 1, 14 do
+          custom[scale][active_chord_pattern][x][y] = temp_custom_chords[scale][x][offset_y]
+        end
       end
     end
 
@@ -193,7 +189,7 @@ function transpose_pattern(view, offset)
     --   end
     -- end
 
-    -- shift 7 degrees/octave and custom chords
+    -- shift 7 degrees/octave
     offset = offset * 7
     -- local offset_wrapped = util.wrap(chord_pattern[active_chord_pattern][y] + offset, 1, 14)
     for y = 1, max_chord_pattern_length do
@@ -202,23 +198,24 @@ function transpose_pattern(view, offset)
       end
     end
 
-    -- shift custom_chords as well
-    local custom = theory.custom_chords[params:get("mode")] -- omit this bit for writing back: [active_chord_pattern]
-    custom[active_chord_pattern] = rotate_tab_values(custom[active_chord_pattern], offset)
+    -- shift custom_chords for all scales
+    for scale = 1, #dreamsequence.scales do
+      local custom = theory.custom_chords[scale] -- omit this bit for writing back to table: [active_chord_pattern]
+      custom[active_chord_pattern] = rotate_tab_values(custom[active_chord_pattern], offset)
 
-    -- adjust intervals
+      -- adjust intervals
       for x = 1, 14 do
         local offset_semitones = util.wrap(x + offset, 1, 14) < x and 12 or -12
-        local custom = custom[active_chord_pattern][x]
+        local c = custom[active_chord_pattern][x]
         for y = 1, 16 do
-          if custom[y] then
-            for i = 1, #custom[y].intervals do
-              custom[y]["intervals"][i] = custom[y]["intervals"][i] + offset_semitones
+          if c[y] then
+            for i = 1, #c[y].intervals do
+              c[y]["intervals"][i] = c[y]["intervals"][i] + offset_semitones
             end
           end
         end
       end
-
+    end
 
   elseif view == "Seq" then
     local pattern = seq_pattern[selected_seq_no][active_seq_pattern[selected_seq_no]]

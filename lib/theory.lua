@@ -1,6 +1,90 @@
 theory = {}
 
---#region chords
+
+-- collection of scales used to populate default custom scale tables
+-- lookup_scales.chord_indices and lookup_scales.chord_names inserted by gen_chord_lookups at library init
+-- Includes those in musicutil/https://github.com/fredericcormier/WesternMusicElements and some additions
+theory.lookup_scales = {
+  -- alphabetical
+  {name = "Altered Scale", intervals = {0, 1, 3, 4, 6, 8, 10}},
+
+  {name = "Balinese", intervals = {0, 1, 3, 7, 8}},
+  {name = "Blues Major Pentatonic", intervals = {0, 2, 5, 7, 9}},  -- DS 2024-07-06
+  {name = "Blues Minor Pentatonic", intervals = {0, 3, 5, 8, 10}}, -- DS 2024-07-06
+  {name = "Blues Scale", alt_names = {"Blues"}, intervals = {0, 3, 5, 6, 7, 10}},
+
+  {name = "Chromatic", intervals = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
+
+  {name = "Diminished Half Whole", intervals = {0, 1, 3, 4, 6, 7, 9, 10}},
+  {name = "Diminished Whole Half", intervals = {0, 2, 3, 5, 6, 8, 9, 11}},
+  {name = "Dorian", intervals = {0, 2, 3, 5, 7, 9, 10}},
+  {name = "Dorian Bebop", intervals = {0, 2, 3, 4, 5, 7, 9, 10}},
+  {name = "Double Harmonic", intervals = {0, 1, 4, 5, 7, 8, 11}},
+
+  {name = "East Indian Purvi", intervals = {0, 1, 4, 6, 7, 8, 11}},
+  {name = "Eight Tone Spanish", intervals = {0, 1, 3, 4, 5, 6, 8, 10}},
+  {name = "Enigmatic", intervals = {0, 1, 4, 6, 8, 10, 11}},
+
+  {name = "Gagaku Rittsu Sen Pou", intervals = {0, 2, 5, 7, 9, 10}},
+
+  {name = "Harmonic Major", intervals = {0, 2, 4, 5, 7, 8, 11}},
+  {name = "Harmonic Min.", intervals = {0, 2, 3, 5, 7, 8, 11}}, -- abbreviated to fit dash :/
+  {name = "Hungarian Major", intervals = {0, 3, 4, 6, 7, 9, 10}},
+  {name = "Hungarian Minor", intervals = {0, 2, 3, 6, 7, 8, 11}},
+
+  {name = "In Sen Pou", intervals = {0, 1, 5, 2, 8}},
+  {name = "Iwato", intervals = {0, 1, 5, 6, 10}},                  -- DS 2024-07-06
+
+  {name = "Melodic Minor", intervals = {0, 2, 3, 5, 7, 9, 11}},
+
+  {name = "Leading Whole Tone", intervals = {0, 2, 4, 6, 8, 10, 11}},
+  {name = "Locrian", intervals = {0, 1, 3, 5, 6, 8, 10}},
+  {name = "Lydian", intervals = {0, 2, 4, 6, 7, 9, 11}},
+  {name = "Lydian Minor", intervals = {0, 2, 4, 6, 7, 8, 10}},
+
+  {name = "Major", alt_names = {"Ionian"}, intervals = {0, 2, 4, 5, 7, 9, 11}},
+  {name = "Major Bebop", intervals = {0, 2, 4, 5, 7, 8, 9, 11}},
+  {name = "Major Locrian", intervals = {0, 2, 4, 5, 6, 8, 10}},
+  {name = "Major Pentatonic", alt_names = {"Gagaku Ryo Sen Pou"}, intervals = {0, 2, 4, 7, 9}},
+  {name = "Minor Pentatonic", alt_names = {"Zokugaku Yo Sen Pou"}, intervals = {0, 3, 5, 7, 10}},
+  {name = "Minor Pentatonic ♭5", intervals = {0, 3, 5, 6, 10}},    -- DS 2024-07-06
+  {name = "Mixolydian", intervals = {0, 2, 4, 5, 7, 9, 10}},
+  {name = "Mixolydian Bebop", intervals = {0, 2, 4, 5, 7, 9, 10, 11}},
+
+  {name = "Natural Minor", alt_names = {"Minor", "Aeolian"}, intervals = {0, 2, 3, 5, 7, 8, 10}},
+  {name = "Neapolitan Major", intervals = {0, 1, 3, 5, 7, 9, 11}},
+  {name = "Neapolitan Minor", alt_names = {"Byzantine"}, intervals = {0, 1, 3, 5, 7, 8, 11}},
+
+  {name = "Okinawa", intervals = {0, 4, 5, 7, 11}},
+  {name = "Oriental", intervals = {0, 1, 4, 5, 6, 9, 10}},
+  {name = "Overtone", intervals = {0, 2, 4, 6, 7, 9, 10}},
+
+  {name = "Persian", intervals = {0, 1, 4, 5, 6, 8, 11}},
+  {name = "Phrygian", intervals = {0, 1, 3, 5, 7, 8, 10}},
+  {name = "Prometheus", intervals = {0, 2, 4, 6, 9, 10}},
+
+  {name = "Six Tone Symmetrical", intervals = {0, 1, 4, 5, 8, 9, 11}},
+  {name = "Suspended Pentatonic", intervals = {0, 2, 5, 7, 10}},   -- DS 2024-07-06
+
+  {name = "Whole Tone", intervals = {0, 2, 4, 6, 8, 10}},
+
+}
+
+
+--#region dreamsequence-specific stuff
+-- lookup table to translate between 9 core DS scales and their index in the main lookup_scales table
+theory.base_scales = {}
+for base_idx = 1, #dreamsequence.scales do
+  for scale_idx = 1, #theory.lookup_scales do
+    if dreamsequence.scales[base_idx] == theory.lookup_scales[scale_idx].name then
+      theory.base_scales[base_idx] = scale_idx
+      break
+    end
+  end
+end
+--#endregion dreamsequence-specific stuff
+
+
 
 -- TODO reorder these and revise long names for consistency:
 -- extended list of chords, intervals
@@ -43,7 +127,7 @@ theory.chords = {
   {name = "Minor Major 7", short_name = "m♮7", dash_name_1 = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
   {name = "Minor 6", short_name = "m6", dash_name_1 = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
   {name = "Minor 7", short_name = "m7", dash_name_1 = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
-  {name = "Minor add 9", short_name = "m(add9)", dash_name_1 = "m", dash_name_2 = "(add9)", intervals = {0, 3, 7, 14}}, -- kinda weird formatting but no superscript yet
+  {name = "Minor add 9", short_name = "m(add9)", dash_name_1 = "m", dash_name_2 = "add9", intervals = {0, 3, 7, 14}}, -- kinda weird formatting for short_name but no superscript yet
   {name = "Minor 6/9", short_name = "m6/9", dash_name_1 = "m6/9", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
   {name = "Minor 9", short_name = "m9", dash_name_1 = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
   {name = "Minor 11", short_name = "m11", dash_name_1 = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
@@ -237,83 +321,17 @@ local function chord_offset(chord, offset)
 end
 
 
--- enforces the "alphabet rule" for chords and picks whichever key has fewer nonstandard chords (##, bb, B#, Cb, E#, Fb)
--- todo update to use theory lib and work with additional scales
-local function gen_keys()
-  theory.scale_chord_names = {}          -- chord names (letter + quality) for [mode][key]. 1-7 triad, 8-14 7th
-  theory.scale_chord_letters = {}        -- chord letters for [mode][key]. 1-7 repeated for 8-14
-  local chords_renamed = {}
-  local letters = {}
 
-  for mode = 1, 9 do
-    theory.scale_chord_names[mode] = {}
-    theory.scale_chord_letters[mode] = {}
-
-    for transpose = 0, 11 do
-      theory.scale_chord_names[mode][transpose] = {}
-      theory.scale_chord_letters[mode][transpose] = {}
-      chords_renamed = {["flat"] = {}, ["sharp"] = {}, ["flat_rank"] = 0, ["sharp_rank"] = 0}
-      letters = {["flat"] = {}, ["sharp"] = {}}
-
-      for _ , option in pairs({"flat", "sharp"}) do
-        local prev_chord_name = nil
-        local prev_letter = nil
-        
-        for chord_no = 1, 14 do
-          local chord_name = musicutil.NOTE_NAMES[util.wrap((musicutil.SCALES[mode]["intervals"][util.wrap(chord_no, 1, 7)] + 1) + transpose, 1, 12)]
-        
-          if chord_no == 1 and option == "flat" and string.sub(chord_name, 2, 2) == "#" then
-            chords_renamed[option .. "_rank"] = (chords_renamed[option .. "_rank"] or 0) + chord_equivalent[chord_name].rank_flat
-            chord_name = chord_equivalent[chord_name].flat
-          end
-
-          local chord_letter = string.sub(chord_name, 1, 1)
-          local equivalent = chord_equivalent[chord_name]
-          local new_chord_name = chord_name
-          local quality = theory.chord_degree[mode]["quality"][chord_no] -- todo replace with generated names
-
-          if prev_chord_name then
-            if prev_letter == chord_letter then
-              new_chord_name = equivalent.flat
-              chords_renamed[option .. "_rank"] = (chords_renamed[option .. "_rank"] or 0) + equivalent.rank_flat
-            elseif prev_letter == chord_offset(chord_letter, -2) then
-              new_chord_name = equivalent.sharp
-              chords_renamed[option .. "_rank"] = (chords_renamed[option .. "_rank"] or 0) + equivalent.rank_sharp
-            end
-          end
-
-          prev_chord_name = new_chord_name
-          prev_letter = string.sub(new_chord_name, 1, 1)
-          chords_renamed[option][chord_no] =  new_chord_name .. quality
-          letters[option][chord_no] = new_chord_name
-
-        end
-      end
-
-      -- keep the key that has a lower rank (fewer undesirable chord names)
-      if (chords_renamed.flat_rank or 0) < (chords_renamed.sharp_rank or 0) then
-        theory.scale_chord_names[mode][transpose] = chords_renamed.flat
-        theory.scale_chord_letters[mode][transpose] = letters.flat
-      else
-        theory.scale_chord_names[mode][transpose] = chords_renamed.sharp
-        theory.scale_chord_letters[mode][transpose] = letters.sharp
-      end
-    end
-
-  end
-end
-gen_keys()
-
-
-
-
--- generates base triad interval tables across 2 octaves for selected mode
+-- generates base triad interval tables across 2 octaves for selected scale
+-- called when scale is changed
 -- will eventually replace chord_degrees but needs to have degrees portion completed
-function gen_chord_tab()
-  local mode = params.lookup["mode"] and params:get("mode") or 1
+-- needs to fire before alphabet rule stuff
+-- optional scale_idx will use this arg rather than song's current scale (todo: this uses dreamsequence.scales index which should be revisited)
+function gen_chord_tab(scale_idx)
+  local mode = scale_idx or params.lookup["mode"] and params:get("mode") or 1
 
   theory.chord_triad_intervals = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
-  theory.chord_triad_names = {} -- table containing chord names for degrees 1-7, repeated for 8-14
+  theory.chord_triad_names = {} -- table containing chord type (m,°, etc..) for degrees 1-7, repeated for 8-14
 
   for x = 1, 14 do
     local octave = ((x > 7) and 1 or 0) * 12
@@ -396,89 +414,7 @@ for scale = 1, #dreamsequence.scales do
   end
 end
 
---#endregion chords
 
-
---#region scales
--- collection of scales used to populate default custom scale tables
--- will have chord_indices and chord_names inserted by separate function by gen_chord_lookups at library init
--- Includes those in musicutil/https://github.com/fredericcormier/WesternMusicElements and some additions
-theory.lookup_scales = {
-  -- alphabetical
-  {name = "Altered Scale", intervals = {0, 1, 3, 4, 6, 8, 10}},
-
-  {name = "Balinese", intervals = {0, 1, 3, 7, 8}},
-  {name = "Blues Major Pentatonic", intervals = {0, 2, 5, 7, 9}},  -- DS 2024-07-06
-  {name = "Blues Minor Pentatonic", intervals = {0, 3, 5, 8, 10}}, -- DS 2024-07-06
-  {name = "Blues Scale", alt_names = {"Blues"}, intervals = {0, 3, 5, 6, 7, 10}},
-
-  {name = "Chromatic", intervals = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
-
-  {name = "Diminished Half Whole", intervals = {0, 1, 3, 4, 6, 7, 9, 10}},
-  {name = "Diminished Whole Half", intervals = {0, 2, 3, 5, 6, 8, 9, 11}},
-  {name = "Dorian", intervals = {0, 2, 3, 5, 7, 9, 10}},
-  {name = "Dorian Bebop", intervals = {0, 2, 3, 4, 5, 7, 9, 10}},
-  {name = "Double Harmonic", intervals = {0, 1, 4, 5, 7, 8, 11}},
-
-  {name = "East Indian Purvi", intervals = {0, 1, 4, 6, 7, 8, 11}},
-  {name = "Eight Tone Spanish", intervals = {0, 1, 3, 4, 5, 6, 8, 10}},
-  {name = "Enigmatic", intervals = {0, 1, 4, 6, 8, 10, 11}},
-
-  {name = "Gagaku Rittsu Sen Pou", intervals = {0, 2, 5, 7, 9, 10}},
-
-  {name = "Harmonic Major", intervals = {0, 2, 4, 5, 7, 8, 11}},
-  {name = "Harmonic Min.", intervals = {0, 2, 3, 5, 7, 8, 11}}, -- abbreviated to fit dash :/
-  {name = "Hungarian Major", intervals = {0, 3, 4, 6, 7, 9, 10}},
-  {name = "Hungarian Minor", intervals = {0, 2, 3, 6, 7, 8, 11}},
-
-  {name = "In Sen Pou", intervals = {0, 1, 5, 2, 8}},
-  {name = "Iwato", intervals = {0, 1, 5, 6, 10}},                  -- DS 2024-07-06
-
-  {name = "Melodic Minor", intervals = {0, 2, 3, 5, 7, 9, 11}},
-
-  {name = "Leading Whole Tone", intervals = {0, 2, 4, 6, 8, 10, 11}},
-  {name = "Locrian", intervals = {0, 1, 3, 5, 6, 8, 10}},
-  {name = "Lydian", intervals = {0, 2, 4, 6, 7, 9, 11}},
-  {name = "Lydian Minor", intervals = {0, 2, 4, 6, 7, 8, 10}},
-
-  {name = "Major", alt_names = {"Ionian"}, intervals = {0, 2, 4, 5, 7, 9, 11}},
-  {name = "Major Bebop", intervals = {0, 2, 4, 5, 7, 8, 9, 11}},
-  {name = "Major Locrian", intervals = {0, 2, 4, 5, 6, 8, 10}},
-  {name = "Major Pentatonic", alt_names = {"Gagaku Ryo Sen Pou"}, intervals = {0, 2, 4, 7, 9}},
-  {name = "Minor Pentatonic", alt_names = {"Zokugaku Yo Sen Pou"}, intervals = {0, 3, 5, 7, 10}},
-  {name = "Minor Pentatonic ♭5", intervals = {0, 3, 5, 6, 10}},    -- DS 2024-07-06
-  {name = "Mixolydian", intervals = {0, 2, 4, 5, 7, 9, 10}},
-  {name = "Mixolydian Bebop", intervals = {0, 2, 4, 5, 7, 9, 10, 11}},
-
-  {name = "Natural Minor", alt_names = {"Minor", "Aeolian"}, intervals = {0, 2, 3, 5, 7, 8, 10}},
-  {name = "Neapolitan Major", intervals = {0, 1, 3, 5, 7, 9, 11}},
-  {name = "Neapolitan Minor", alt_names = {"Byzantine"}, intervals = {0, 1, 3, 5, 7, 8, 11}},
-
-  {name = "Okinawa", intervals = {0, 4, 5, 7, 11}},
-  {name = "Oriental", intervals = {0, 1, 4, 5, 6, 9, 10}},
-  {name = "Overtone", intervals = {0, 2, 4, 6, 7, 9, 10}},
-
-  {name = "Persian", intervals = {0, 1, 4, 5, 6, 8, 11}},
-  {name = "Phrygian", intervals = {0, 1, 3, 5, 7, 8, 10}},
-  {name = "Prometheus", intervals = {0, 2, 4, 6, 9, 10}},
-
-  {name = "Six Tone Symmetrical", intervals = {0, 1, 4, 5, 8, 9, 11}},
-  {name = "Suspended Pentatonic", intervals = {0, 2, 5, 7, 10}},   -- DS 2024-07-06
-
-  {name = "Whole Tone", intervals = {0, 2, 4, 6, 8, 10}},
-
-}
-
--- lookup table to translate between 9 core DS scales and their index in the main lookup_scales table
-theory.base_scales = {}
-for base_idx = 1, #dreamsequence.scales do
-  for scale_idx = 1, #theory.lookup_scales do
-    if dreamsequence.scales[base_idx] == theory.lookup_scales[scale_idx].name then
-      theory.base_scales[base_idx] = scale_idx
-      break
-    end
-  end
-end
 
 -- generates valid chords for scales (currently just doing the 9 base scales)
 -- inserts table with chord names and indices into lookup_scales
@@ -543,13 +479,12 @@ gen_chord_lookups()
 
 -- handling of custom scales:
 -- 1. If globals dust/data/dreamsequence/scales.data file exists, use it
--- 2. Otherwise, generate default scale tables (but don't save to dust so these can be updates with new releases)
+-- 2. Otherwise, DS calls gen_default_scales() to generate default scale tables (but don't save to dust so these can be updates with new releases)
 -- 3. If pset folder contains scales.data, load it
 -- 4. Build derivative scales_bool table
 
--- Default scales for each of the 9 "modes"
+-- Default scales for each of the base scales
 function gen_default_scales()
-
   -- option a: populates all scales that fit within selected mode
   -- -- keep around in case we need to re-check or do alternate defaults
   -- local scales = find_matching_scales()
@@ -567,9 +502,10 @@ function gen_default_scales()
 
 
   -- option b:
-  -- hardcoding a single scale so we can drop the somewhat iffy named tetratonic variant of minor pentatonic
+  -- hardcoding a single custom scale for the selected base scales so we can drop the somewhat iffy named tetratonic variant of minor pentatonic
   local scales = {}
 
+  -- todo maybe clean this up so folks can drop in other base scales and it just defaults customs
   local default_scales = { -- open-ended so user can define notes entirely outside of scale
     {0, 2, 4, 7, 9},    -- major, major pentatonic
     {0, 3, 5, 7, 10},   -- natural minor, minor pentatonic
@@ -580,11 +516,16 @@ function gen_default_scales()
     {0, 2, 4, 7, 9},    -- lydian, major pentatonic
     {0, 2, 4, 7, 9},    -- mixolydian, major pentatonic
     {0, 3, 5, 6, 10},   -- locrian, minor pentatonic ♭5
+
+    -- todo p0 flesh these out:
+    -- {0,}, -- "Altered Scale",
+    -- {0},   -- "Harmonic Major",
+    -- {0},    -- "Overtone",
   }
 
-for mode = 1, 9 do
+for mode = 1, #theory.base_scales do
   scales[mode] = {}
-  scales[mode][1] = default_scales[mode]
+  scales[mode][1] = default_scales[mode] or {}
   for i = 2, 8 do
     scales[mode][i] = {}
   end
@@ -598,7 +539,7 @@ end
 
 -- procedurally check for matching scales
 -- this is cool but I'd rather folks just play around with discovering their own scales
--- her for reference or whatever
+-- here for reference
 function find_matching_scales()
   local lookup = theory.lookup_scales
   local modes = {
@@ -667,17 +608,19 @@ function find_matching_scales()
 end
 
 
--- initialize tables where custom scales don't exist
+-- initialize tables where custom scales don't exist (DS-specific)
 if not theory.scales then
   theory.scales = {}
 end
 
-for mode_no = 1, 9 do
+print("DEBUG #theory.base_scales: " .. #theory.base_scales)
+for mode_no = 1, #theory.base_scales do
+  -- print("DEBUG generating custom scale tables for base_scale idx " .. mode_no)
   if not theory.scales[mode_no] then -- create mode table if needed
     theory.scales[mode_no] = {}
   end
   
-  for scale_no = 1, 8 do
+  for scale_no = 1, 8 do -- custom scales
     if not theory.scales[mode_no][scale_no] then -- create scale table if needed
       theory.scales[mode_no][scale_no] = {}
     end
@@ -686,12 +629,14 @@ for mode_no = 1, 9 do
 end
 
 
-
 -- working table with bools to set state for LEDs.
--- Containts custom scales 1-8 for the current mode
+-- Contains custom scales 1-8 for the current mode
 function gen_custom_scale()
   theory.scales_bool = {}
   
+  print("DEBUG gen_custom_scales called. Checking theory.scales:")
+  tab.print(theory.scales)
+
   for y = 1, 8 do
     local custom = theory.scales[params:get("mode")][y] -- todo hook up to notes param somehow
 
@@ -730,7 +675,84 @@ function find_scale_name(intervals)
 end
 
 
---#endregion scales
+-- enforces the "alphabet rule" for chords and picks whichever key has fewer nonstandard chords (##, bb, B#, Cb, E#, Fb)
+local function gen_keys()
+  theory.scale_chord_names = {}          -- chord names (letter + quality) for [mode][key]. 1-7 triad, 8-14 7th
+  theory.scale_chord_letters = {}        -- chord letters for [mode][key]. 1-7 repeated for 8-14
+  local chords_renamed = {}
+  local letters = {}
+  local note_names = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+
+  for mode = 1, #theory.base_scales do
+    local intervals = theory.lookup_scales[theory.base_scales[mode]].intervals
+    theory.scale_chord_names[mode] = {}
+    theory.scale_chord_letters[mode] = {}
+
+    for transpose = 0, 11 do
+      theory.scale_chord_names[mode][transpose] = {}
+      theory.scale_chord_letters[mode][transpose] = {}
+      chords_renamed = {["flat"] = {}, ["sharp"] = {}, ["flat_rank"] = 0, ["sharp_rank"] = 0}
+      letters = {["flat"] = {}, ["sharp"] = {}}
+
+      for _ , option in pairs({"flat", "sharp"}) do
+        local prev_chord_name = nil
+        local prev_letter = nil
+        
+        for chord_no = 1, 7 do -- 14 -- drop 7ths
+          local chord_name = note_names[util.wrap((intervals[util.wrap(chord_no, 1, 7)] + 1) + transpose, 1, 12)]
+        
+          if chord_no == 1 and option == "flat" and string.sub(chord_name, 2, 2) == "#" then
+            chords_renamed[option .. "_rank"] = (chords_renamed[option .. "_rank"] or 0) + chord_equivalent[chord_name].rank_flat
+            chord_name = chord_equivalent[chord_name].flat
+          end
+
+          local chord_letter = string.sub(chord_name, 1, 1)
+          local equivalent = chord_equivalent[chord_name]
+          local new_chord_name = chord_name
+
+          -- todo: replace with generated "qualities" or short_name for degrees 1-7
+          -- local quality = theory.chord_degree[mode]["quality"][chord_no]
+
+
+        
+          -- we generate triads in gen_chord_tab() but they're for the selected scale only. Could iterate on that function here, perhaps?
+          gen_chord_tab(mode) -- run function to temporarily generate chord_triad_names for this mode
+          local quality = theory.chord_triad_names[chord_no]
+
+          if prev_chord_name then
+            if prev_letter == chord_letter then
+              new_chord_name = equivalent.flat
+              chords_renamed[option .. "_rank"] = (chords_renamed[option .. "_rank"] or 0) + equivalent.rank_flat
+            elseif prev_letter == chord_offset(chord_letter, -2) then
+              new_chord_name = equivalent.sharp
+              chords_renamed[option .. "_rank"] = (chords_renamed[option .. "_rank"] or 0) + equivalent.rank_sharp
+            end
+          end
+
+          prev_chord_name = new_chord_name
+          prev_letter = string.sub(new_chord_name, 1, 1)
+          chords_renamed[option][chord_no] =  new_chord_name .. quality
+          letters[option][chord_no] = new_chord_name
+
+        end
+      end
+
+      -- keep the key that has a lower rank (fewer undesirable chord names)
+      if (chords_renamed.flat_rank or 0) < (chords_renamed.sharp_rank or 0) then
+        theory.scale_chord_names[mode][transpose] = chords_renamed.flat
+        theory.scale_chord_letters[mode][transpose] = letters.flat
+      else
+        theory.scale_chord_names[mode][transpose] = chords_renamed.sharp
+        theory.scale_chord_letters[mode][transpose] = letters.sharp
+      end
+    end
+
+  end
+end
+gen_keys()
+
+
+gen_chord_tab() -- DS run once at init
 
 
 
@@ -762,5 +784,3 @@ function print_all_chord_names()
 end
 
 --#endregion R&D
-
-gen_chord_tab() -- run once at init
