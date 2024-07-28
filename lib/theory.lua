@@ -1,6 +1,5 @@
 theory = {}
 
-
 -- collection of scales used to populate default custom scale tables
 -- lookup_scales.chord_indices and lookup_scales.chord_names inserted by gen_chord_lookups at library init
 -- Includes those in musicutil/https://github.com/fredericcormier/WesternMusicElements and some additions
@@ -139,10 +138,10 @@ theory.chords = {
 -- Base data from https://github.com/fredericcormier/WesternMusicElements, extended by @dstroud
 
 
--- todo technically this can now be genererated (see gen_chord_tab and gen_chord_lookups) but need something for roman numerals
--- todo use chord glyphs from norns.ttf
 -- lookup for chord degrees and qualities, mirroring musicutil.SCALE_CHORD_DEGREES with breakout for chord roman numeral and "quality"
 -- indices 1-7 are triads, 8-14 are 7ths
+-- todo technically this can now be genererated (see gen_chord_tab and gen_chord_lookups) except for the roman numerals which need work
+-- todo use chord glyphs from norns.ttf
 theory.chord_degree = {
   {
     name = "Major",
@@ -152,7 +151,7 @@ theory.chord_degree = {
     },
     chords = {
       "I",  "ii",  "iii",  "IV",  "V",  "vi",  "vii°",
-      "IM7", "ii7", "iii7", "IVM7", "V7", "vi7", "viiø7"
+      "IM7", "ii7", "iii7", "IVM7", "V7", "vi7", "viiø7" -- issue: convention is to not distinguish between maj and dom 7 so this is kinda wrong
     },
     quality = {
       "",  "m",  "m",  "",  "",  "m",  "°",
