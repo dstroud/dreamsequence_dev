@@ -948,7 +948,7 @@ function init()
   params:hide("event_operation")
 
   -- todo p1 needs paramcontrol if this is even still used?
-  params:add_number("event_value", "Value", -9999, 9999, get_default_event_value())
+  params:add_number("event_value", "Value", -999999, 999999, get_default_event_value())
   params:hide("event_value")
 
   params:add_number("event_probability", "Probability", 0, 100, 100, function(param) return percent(param:get()) end)
@@ -962,10 +962,10 @@ function init()
   params:set_action("event_op_limit_random",function() gen_menu_events() end)
   params:hide("event_op_limit_random")
 
-  params:add_number("event_op_limit_min", "Min", -9999, 9999, 0)
+  params:add_number("event_op_limit_min", "Min", -999999, 999999, 0)
   params:hide("event_op_limit_min")
   
-  params:add_number("event_op_limit_max", "Max", -9999, 9999, 0)
+  params:add_number("event_op_limit_max", "Max", -999999, 999999, 0)
   params:hide("event_op_limit_max")
 
 
@@ -1059,6 +1059,7 @@ function init()
   chord_pattern_q = false
   chord_no = 0
   chord_key_count = 0
+  pending_chord_disable = {} -- [x][y][chord_pattern] chord pattern to disable on key up
   chord_pattern_position = 0
   chord_raw = {}
   current_chord_x = 1 -- WAG here now that we're using this rather than _c for readout. Might break something.
@@ -2778,21 +2779,15 @@ function transport_multi_stop()
   for i in pairs(midi_transport_ports) do  
     local transport_midi = midi.connect(midi_transport_ports[i].port)
     transport_midi:stop()
-  end  
-  -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_measure.phase or ""), "sprocket_measure action")  
+  end
 end
 
 
 -- check which ports the global midi clock is being sent to and sends a spp and continue message there
 function transport_multi_continue(source)
-  -- print("DEBUG transport_multi_continue called by " .. source)
   for i = 1, #midi_transport_ports do
-    -- local port midi_transport_ports[i].port
     if params:string("midi_continue_" .. midi_transport_ports[i].port) == "song" then
       local transport_midi = midi.connect(midi_transport_ports[i].port)
-      -- print("-------SENDING SPP bytes-----")
-      -- print(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
-      -- print("-----------------------------")
       transport_midi:song_position(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
       transport_midi:continue()
     end
@@ -3427,7 +3422,11 @@ function do_events_pre(arranger_pos,chord_pos)
                         -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
                         -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
                   
-                        -- This comparison can fail because of floating point precision, but is probably not worth addressing with the following workaround because of the nature of controlspec, to begin with. Even carefully-crafted and output-quantized controlspec params seem to output different values depending on whether your point of origin is the param default, incrementing from param min, or decrementing from param max.
+                        -- This comparison can fail because of floating point precision, but is probably not worth 
+                        -- addressing with the following workaround because of the nature of controlspec, to begin with. 
+                        -- Even carefully-crafted and output-quantized controlspec params seem to output different values 
+                        -- depending on whether your point of origin is the param default, incrementing from param min, 
+                        -- or decrementing from param max.
                         -- if params:get(event_name) - limit_max >= -0.00000001 then
                         if params:get(event_name) >= limit_max then
                           reset = true
@@ -5098,8 +5097,7 @@ function g.key(x, y, z)
             end
           end
 
-          print("Copy+paste event from segment " .. event_edit_segment .. "." .. event_edit_step .. " lane " .. event_edit_lane  .. " to " .. event_edit_segment .. "." .. (y + pattern_grid_offset) .. " lane " .. x)
-
+          popup_message("COPIED " .. event_edit_step .. "." .. event_edit_lane  .. " TO " .. (y + pattern_grid_offset) .. "." .. x )
           update_lanes(x) -- update the lanes we've pasted into
         end
       end
@@ -5162,7 +5160,7 @@ function g.key(x, y, z)
         -- allow pasting of events while setting patterns (but not the other way around)
         if grid_interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
-          print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
+          popup_message("COPIED " .. event_edit_segment .. " TO " .. x)
           gen_arranger_dash_data("Event copy+paste")
         end
         
@@ -5180,7 +5178,7 @@ function g.key(x, y, z)
           -- implicit here that more than 1 key is held down so we're pasting
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
-            print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
+            popup_message("COPIED " .. event_edit_segment .. " TO " .. x)
             gen_arranger_dash_data("Event copy+paste")
           end
         end
@@ -5190,31 +5188,18 @@ function g.key(x, y, z)
     elseif grid_view_name == "Chord" then
       if x < 15 then -- chord degrees
         local x_wrapped = util.wrap(x, 1, 7)
-        chord_key_count = chord_key_count + 1 -- used to determine when to reset chord readout
+        chord_key_count = chord_key_count + 1 -- used to determine "chord_key_held" grid_interaction
 
-        -- new chord is enabled on key down, but disabling happens conditionally on key up if chord was edited
-        -- todo p0 handle multiple disables
-        -- todo p0 think about what happens if active_chord_pattern changes between keydown and key_up...fffff
+        -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by some other action
         if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
-          -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by chord editor
-          pending_chord_disable = {active_chord_pattern, x, y + pattern_grid_offset}
-
-          
-          -- if not pending_chord_disable_pattern then -- don't allow to be set more than once
-          --   pending_chord_disable_pattern = active_chord_pattern
-          -- end
-
-          -- idea: maybe store these in separate tables based on active_chord_pattern, then process across all active_chord_patterns on key up...
-
-          -- if not pending_chord_disable then
-          --   pending_chord_disable = {}
-          -- end
-          -- table.insert(pending_chord_disable, {active_chord_pattern, x, y + pattern_grid_offset})
-
+          if not pending_chord_disable[x] then
+            pending_chord_disable[x] = {}
+          end
+          pending_chord_disable[x][y + pattern_grid_offset] = active_chord_pattern
 
         else
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
-          pending_chord_disable = nil -- will be for copy+paste
+          -- pending_chord_disable = nil -- will be for copy+paste
         end
 
         -- plays Chord when pressing on any Grid key (even turning chord off)
@@ -5261,8 +5246,9 @@ function g.key(x, y, z)
           pattern_keys[1][y] = true -- pattern_keys is used by seqs as well so when in chord mode, always use table 1
           if pattern_key_count == 1 then
             copied_pattern = y
-          else-- if pattern_key_count > 1 then
-            print("Copying pattern " .. pattern_name[copied_pattern] .. " to pattern " .. pattern_name[y])
+          else -- if pattern_key_count > 1 then
+            popup_message("COPIED " ..  pattern_name[copied_pattern] .. " TO " .. pattern_name[y])
+
             pattern_copy_performed[1] = true
             chord_pattern[y] = simplecopy(chord_pattern[copied_pattern])
 
@@ -5281,12 +5267,6 @@ function g.key(x, y, z)
           end
         end
       end
-      
-      -- -- every time a key is pressed while on Chord grid view... needs work
-      -- if transport_active == false then -- Pre-load chord for when play starts
-      --   get_next_chord()
-      --   chord_raw = next_chord
-      -- end
       
     -- SEQ PATTERN KEYS
     elseif grid_view_name == "Seq" then
@@ -5360,9 +5340,8 @@ function g.key(x, y, z)
                 else
                   seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
                 end
+                popup_message("COPIED " ..  copied_seq_no .. "." .. pattern_name[copied_pattern] .. " TO " .. seq_no .. "." .. pattern_name[y])
 
-                print("Copying Seq " .. copied_seq_no .. " pattern " .. pattern_name[copied_pattern] .. " to Seq " .. seq_no .. " pattern " .. pattern_name[y])
-              -- end
             else -- simultaneous keypresses in other seq columns are interpreted as intent to switch patterns
               update_seq_pattern[seq_no] = y -- sets pattern we need to update seq_no/index to on key-up
             end
@@ -5378,7 +5357,7 @@ function g.key(x, y, z)
   elseif z == 0 then
     -- Events key up
     if screen_view_name == "scale_editor" then
-      -- reserved but might need to do some cleanup on key counts
+      -- reserved
     
     elseif screen_view_name == "Events" then
 
@@ -5468,23 +5447,22 @@ function g.key(x, y, z)
       elseif x < 15 then -- chord degrees
         chord_key_count = math.max(chord_key_count - 1, 0)
 
-        if pending_chord_disable then
-          local off = pending_chord_disable -- {pattern, x, y}
-
-          -- todo p0 how to handle multiple key-downs and copying and scrolling and aghhhh
-          -- might need to check x/y(and offset) against the pending values
-          -- if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
-          chord_pattern[off[1]][off[3]] = 0
-          pending_chord_disable = nil
+        local p = pending_chord_disable
+        if p[x] and p[x][y] then
+          local pattern = p[x][y]
+          chord_pattern[pattern][y] = 0
+          p[x][y] = nil
+          if count_table_entries(p[x]) == 0 then
+            p[x] = nil
+          end
         end
-
+      
         if chord_key_count == 0 then
           if grid_interaction == "chord_key_held" then
             grid_interaction = nil
           end
         end
 
-        -- process chord changes on key up now so holding can be used to make custom chords
       end
 
     elseif grid_view_name == "Seq" then -- Seq key up
@@ -5663,7 +5641,8 @@ function key(n, z)
         local scale = params:get("mode")
 
         popup_message("CHORD PROPAGATED") -- todo maybe replace with momentary rather than timed pop-up
-        pending_chord_disable = nil
+        pending_chord_disable = {} -- cancel any help chord disables to be safe
+
 
         local custom = theory.custom_chords[scale][editing_chord_pattern][editing_chord_x]
 
@@ -5920,7 +5899,7 @@ function key(n, z)
         end
 
         screen_view_name = "chord_editor"
-        pending_chord_disable = nil -- cancels turning off touched chord on key-up (such as when releasing held key in chord editor)
+        pending_chord_disable = {} -- cancel any help chord disables to be safe
 
         lvl = lvl_normal
         update_dash_lvls()
@@ -5931,6 +5910,7 @@ function key(n, z)
 
         -- open scale editor
         view_key_count = 0
+        grid_view_keys = {}
         scale_menu_index = 0
         screen_view_name = "scale_editor"
         norns_interaction = nil
@@ -6387,7 +6367,7 @@ function enc(n,d)
     elseif grid_interaction == "chord_key_held" then -- quick chord editor
       delta_chord(d)
       default_chord_check()
-      pending_chord_disable = nil -- cancels turning off touched chord on key-up
+      pending_chord_disable = {} -- cancel any help chord disables to be safe
 
     elseif screen_view_name == "scale_editor" then  -- scale editor
       local mode = params:get("mode")
@@ -6511,8 +6491,8 @@ function enc(n,d)
 end
 
 
--- utility function for enc deltas
--- Performs a similar operation to params:delta with a couple of differences:
+-- utility functions for enc deltas:
+
 -- 1. Can accept optional arguments for min/max for parameters that don't have this set
 -- 2. Calls edit_status_edited() as a psuedo param action (that we only want to run for encoder-initiaded set/deltas)
 -- 3. Returns whether or not the value changed so that we can call followup change_xxxxx functions
@@ -6531,7 +6511,7 @@ function delta_menu(d, minimum, maximum)
 end
 
 
--- alt of delta_menu used when selected_events_menu == "event_value" to handle preview
+-- alt of delta_menu used when previewing selected_events_menu == "event_value" and we're using "set" op
 function delta_menu_set(d, minimum, maximum)
   local prev_value = params:get(selected_events_menu)
   local minimum = minimum or params:get_range(selected_events_menu)[1]
@@ -6553,6 +6533,13 @@ end
 -- 2. set current preview value to min/max
 -- 3. use delta to adjust and return delta'd preview value as min/max
 -- 4. restore preview value from step 1 (or just clone_param())
+-- Doesn't seem like this actually needs to return anything unlike the other delta_menu funcs
+
+-- TODO P0 issue with controlspec params
+-- controlspec params can't use .value to check if param changed since the value returned is mapped
+-- on top of .raw which is the "true" value. There are cases where .raw changes but .value does not (e.g. polyperc_cutoff_1)
+-- same issue probably with delta_menu
+
 function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
   local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
 
@@ -7411,16 +7398,12 @@ function redraw()
     end -- of event vs. non-event check
   end
 
-
   if screen_message then -- footer-area popup_message display
-    screen.level(0)
-    screen.rect(0, 54, 128, 12)
+    screen.level(15)
+    screen.rect(0, 53, 128, 12)
     screen.fill()
 
-    screen.level(15)
-    screen.rect(1, 54, 127, 10)
-    screen.stroke()
-
+    screen.level(0)
     screen.move(64, 61)
     screen.text_center(screen_message)
   end
