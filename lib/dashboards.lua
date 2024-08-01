@@ -105,7 +105,6 @@ function dash_functions.chord_active_name()
   screen.fill()
 
   screen.level(lvl_pane_selected)
-
   if active_chord_name_2 then                           -- 2-row chord
     screen.move(dash_x + 19, dash_y + 8)
     screen.text_center(active_chord_name_1 or "")

@@ -232,6 +232,15 @@ end
 --- UTILITY FUNCTIONS
 
 
+function count_table_entries(tbl)
+  local count = 0
+  for _, _ in pairs(tbl) do
+    count = count + 1
+  end
+  return count
+end
+
+
 function random_float(limit_min, limit_max)
   return limit_min + math.random() * (limit_max - limit_min)
 end
