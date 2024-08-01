@@ -9,7 +9,7 @@ dash_name = {"Off"}
 
 -- x origin of chord and arranger dashes
 local dash_x = xy.dash_x
-local width = 39
+local width = 35
 
 local lvl_pane = lvl.pane
 local lvl_pane_selected = lvl.pane_selected
@@ -34,137 +34,11 @@ function update_dash_lvls()
   lvl_chart_area = lvl.chart_area
 end
 
-----------------------------------------------------
--- TRANSPORT STATE/METRONOME, CHORD PATTERN PROGRESS
-----------------------------------------------------
-table.insert(dash_ids, "transport")
-table.insert(dash_name, "Transport")
-
-function dash_functions.transport()
-  -- pane
-  screen.level(lvl_pane)
-  screen.rect(dash_x, dash_y, width, 11)
-  screen.fill()
-
-  -- chord pattern text A-D
-  screen.level(lvl_pane_selected)
-  screen.move(dash_x + 3, dash_y + 8)
-  screen.text(pattern_name[active_chord_pattern])
-
-  -- CHORD PATTERN PROGRESS BAR
-  -- dim chart area
-  screen.level(0)
-  screen.rect(dash_x + 10, dash_y + 3, 18, 5)
-  screen.fill()
-
-  -- pattern length
-  screen.level(lvl_chart_deselected)
-  screen.rect(dash_x + 11, dash_y + 4, chord_pattern_length[active_chord_pattern], 3)
-  screen.fill()
-
-  -- progress bar
-  screen.level(lvl_menu_selected)
-  screen.rect(dash_x + 11, dash_y + 4, chord_pattern_position, 3)
-  screen.fill()
-
-  -- transport state/metro glyph level
-  if transport_state == "starting" and params:string("clock_source") == "link" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
-    screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
-  elseif transport_state == "playing" then -- metronome with emphasis on new measure
-    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane - 2)
-  else
-    screen.level(lvl_pane_selected)
-  end
-
-  -- redefine/simplify for glyphs
-  local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
-
-  -- glyph
-  for i = 1, #glyphs[transport_state] do
-    -- screen.pixel(dash_x + 13 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- centered
-    -- screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 2 + glyphs[transport_state][i][2]) -- left
-    screen.pixel(120 + glyphs[transport_state][i][1], dash_y + 3 + glyphs[transport_state][i][2]) -- right
-  end
-  screen.fill()
-
-  dash_y = dash_y + 12 -- position for next dash
-end
-
-
-
----------------------
--- CHORD READOUT: NAME
----------------------
-table.insert(dash_ids, "chord_active_name")
-table.insert(dash_name, "Chord name")
-
-function dash_functions.chord_active_name()
-  -- pane
-  screen.level(lvl_pane)
-  screen.rect(dash_x, dash_y, width, 17)
-  screen.fill()
-
-  screen.level(lvl_pane_selected)
-  if active_chord_name_2 then                           -- 2-row chord
-    screen.move(dash_x + 19, dash_y + 8)
-    screen.text_center(active_chord_name_1 or "")
-    screen.move(dash_x + 19, dash_y + 14)
-    screen.text_center(active_chord_name_2)
-  else                                                  -- 1-row chord
-    screen.move(dash_x + 19, dash_y + 11)
-    screen.text_center(active_chord_name_1 or "")
-  end
-
-  -- -- INTEGER NOTATION mockup/WIP
-  -- screen.level(lvl_pane_deselected)
-  -- for i = 0, 11 do
-  --   local x =  i * 2
-  --   for o = 0, 1 do
-  --     screen.pixel(dash_x + 8 + x, (o * 2) + dash_y + 16)
-  --     screen.fill()
-  --   end
-  -- end
-  -- screen.fill()
-
-  -- -- todo p1 optimize this. no way we should do this 60x a second lol
-  -- screen.level(0)
-  -- local chord_raw = chord_raw
-  -- local root = chord_raw[1]
-  -- for i = 1, #chord_raw do
-  --   -- chord_raw[i] = chord_raw - root
-  --   local i = chord_raw[i] - root
-  --   screen.pixel(dash_x + 8 + i, dash_y + 18 - ((math.floor(i / 12)) * 2))
-  -- end
-  -- screen.fill()
-
-  dash_y = dash_y + 18 -- position for next dash
-end
-
-
--- ---------------------
--- -- CHORD READOUT: DEGREE
--- ---------------------
--- table.insert(dash_ids, "chord_active_degree")
--- table.insert(dash_name, "Chord degree")
-
--- function dash_functions.chord_active_degree()
---   -- pane
---   screen.level(lvl_pane)
---   screen.rect(dash_x, dash_y, width, 9)
---   screen.fill()
-
---   screen.level(lvl_pane_selected)
---   screen.move(dash_x + 15.5, dash_y + 7) -- centered
---   screen.text_center(active_chord_degree or "")
-
---   dash_y = dash_y + 10 -- position for next dash
--- end
-
 
 
 
 --------------------------------------------
--- ARRANGER DASH M INVERTED(2+3 rows)
+-- ARRANGER DASH
 --------------------------------------------
 table.insert(dash_ids, "arranger_chart")
 table.insert(dash_name,"Arranger chart")
@@ -249,12 +123,12 @@ function dash_functions.arranger_chart()
   -- -- todo break into sub-function so we can do a variation without chart portion (just seg and glyph)
   
   -- black chart background
-  screen.level(0)
-  screen.rect(dash_x + 3, dash_y + 10, 33, 9)
+  screen.level(on and 0 or 1)
+  screen.rect(dash_x + 3, dash_y + 10, 29, 9)
   screen.fill()
   
   -- Axis reference marks
-  screen.level(lvl_chart_deselected)
+  screen.level(on and lvl_chart_deselected or lvl_chart_deselected + 1)
   for i = 1, 4 do
     screen.rect(dash_x + 4, dash_y + 9 + i * 2, 1, 1)
   end
@@ -274,7 +148,7 @@ function dash_functions.arranger_chart()
     local y = dash_patterns[i]
     if y > 0 and (arranger_dash_x < 125) then -- todo p1 optimize this
       -- arranger segment patterns
-      screen.level(lvl[dash_levels[i]]) -- less efficient to access lvl but got to
+      screen.level(lvl[dash_levels[i]] + (on and 0 or 1)) -- less efficient to access lvl but got to
       screen.rect(arranger_dash_x, dash_y + 7 + ((y + 1) * 2), 1, 1)
       screen.fill()
     end
@@ -293,50 +167,150 @@ end
 
 
 
------------------------------
--- ARRANGER TIME REMAINING COUNTDOWN
------------------------------
-table.insert(dash_ids, "time_remaining")
-table.insert(dash_name, "Time remaining")
 
-function dash_functions.time_remaining()
-  -- local on = params:string("arranger") == "On"
-  -- pane
-  -- screen.level(on and lvl_pane or lvl_pane - 9)
-  screen.level(lvl_pane)
-  screen.rect(dash_x, dash_y, width, 11)
-  screen.fill()
+---------------------
+-- CHORD READOUT: NAME
+---------------------
+table.insert(dash_ids, "chord_active_name")
+table.insert(dash_name, "Chord name")
 
-  screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected)
-  screen.move(dash_x + 3, dash_y + 8)
-  screen.text("-0:" .. seconds_remaining) -- todo re-add hour digit
-
-  dash_y = dash_y + 10 -- position for next dash
-end
-
-
------------------------------
--- ELAPSED PLAY TIME
------------------------------
-table.insert(dash_ids, "time_elapsed")
-table.insert(dash_name, "Time elapsed")
-
-function dash_functions.time_elapsed()
+function dash_functions.chord_active_name()
   -- pane
   screen.level(lvl_pane)
-  screen.rect(dash_x, dash_y, width, 11)
+  screen.rect(dash_x, dash_y, width, 17)
   screen.fill()
 
   screen.level(lvl_pane_selected)
-  screen.move(dash_x + 5, dash_y + 8)
-  screen.text(seconds_elapsed or "00:00") -- todo p0 add hour
-  
-  -- -- todo center around :
-  -- screen.move(dash_x + 14, dash_y + 7)
-  -- screen.text_right("11")
-  -- screen.text(":10")
+  if active_chord_name_2 then                           -- 2-row chord
+    screen.move(dash_x + 17, dash_y + 8)
+    screen.text_center(active_chord_name_1 or "")
+    screen.move(dash_x + 17, dash_y + 14)
+    screen.text_center(active_chord_name_2)
+  else                                                  -- 1-row chord
+    screen.move(dash_x + 17, dash_y + 11)
+    screen.text_center(active_chord_name_1 or "")
+  end
+
+  dash_y = dash_y + 18 -- position for next dash
+end
 
 
+
+
+----------------------------------------------------
+-- CHORD PATTERN PROGRESS
+----------------------------------------------------
+table.insert(dash_ids, "chord_progress")
+table.insert(dash_name, "Chord progress")
+
+function dash_functions.chord_progress()
+  -- pane
+  screen.level(lvl_pane)
+  screen.rect(dash_x, dash_y, width, 11)
+  screen.fill()
+
+  -- chord pattern text A-D
+  screen.level(lvl_pane_selected)
+  screen.move(dash_x + 3, dash_y + 8)
+  screen.text(pattern_name[active_chord_pattern])
+
+  -- CHORD PATTERN PROGRESS BAR
+  -- dim chart area
+  screen.level(0)
+  screen.rect(dash_x + 12, dash_y + 3, 18, 5)
+  screen.fill()
+
+  -- pattern length
+  screen.level(lvl_chart_deselected)
+  screen.rect(dash_x + 13, dash_y + 4, chord_pattern_length[active_chord_pattern], 3)
+  screen.fill()
+
+  -- progress bar
+  screen.level(lvl_menu_selected)
+  screen.rect(dash_x + 13, dash_y + 4, chord_pattern_position, 3)
+  screen.fill()
+
+  dash_y = dash_y + 12 -- position for next dash
+end
+
+
+
+
+----------------------------------------------------
+-- METRONOME, TIME ELAPSED
+----------------------------------------------------
+table.insert(dash_ids, "metro_elapsed")
+table.insert(dash_name, "Metro T+")
+
+function dash_functions.metro_elapsed()
+  -- pane
+  screen.level(lvl_pane)
+  screen.rect(dash_x, dash_y, width, 11)
+  screen.fill()
+
+  -- transport state/metro glyph level
+  if transport_state == "starting" and params:string("clock_source") == "link" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
+    screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
+  elseif transport_state == "playing" then -- metronome with emphasis on new measure
+    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane - 2)
+  else
+    screen.level(lvl_pane_selected)
+  end
+
+  -- redefine/simplify for glyphs
+  local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
+
+  -- glyph
+  for i = 1, #glyphs[transport_state] do
+    screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 3 + glyphs[transport_state][i][2]) -- left
+  end
+  screen.fill()
   
-  dash_y = dash_y + 10 -- position for next dash
+  -- time elapsed text
+  screen.level(lvl_pane_selected)
+  screen.move(dash_x + 11, dash_y + 8)
+  screen.text(seconds_elapsed or "00:00")
+
+  dash_y = dash_y + 12 -- position for next dash
+end
+
+
+
+
+----------------------------------------------------
+-- METRONOME, TIME REMAINING IN ARRANGEMENT
+----------------------------------------------------
+table.insert(dash_ids, "metro_remaining")
+table.insert(dash_name, "Metro T-")
+
+function dash_functions.metro_remaining()
+  -- pane
+  screen.level(lvl_pane)
+  screen.rect(dash_x, dash_y, width, 11)
+  screen.fill()
+
+  -- transport state/metro glyph level
+  if transport_state == "starting" and params:string("clock_source") == "link" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
+    screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
+  elseif transport_state == "playing" then -- metronome with emphasis on new measure
+    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane - 2)
+  else
+    screen.level(lvl_pane_selected)
+  end
+
+  -- redefine/simplify for glyphs
+  local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
+
+  -- glyph
+  for i = 1, #glyphs[transport_state] do
+    screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 3 + glyphs[transport_state][i][2]) -- left
+  end
+  screen.fill()
+  
+  -- time elapsed text
+  screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected) -- dim if arranger is off
+  screen.move(dash_x + 11, dash_y + 8)
+  screen.text(seconds_remaining or "00:00")
+
+  dash_y = dash_y + 12 -- position for next dash
 end

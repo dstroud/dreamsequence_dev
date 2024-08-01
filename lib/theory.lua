@@ -27,7 +27,7 @@ theory.lookup_scales = {
   {name = "Gagaku Rittsu Sen Pou", intervals = {0, 2, 5, 7, 9, 10}},
 
   {name = "Harmonic Major", intervals = {0, 2, 4, 5, 7, 8, 11}},
-  {name = "Harmonic Min.", intervals = {0, 2, 3, 5, 7, 8, 11}}, -- abbreviated to fit dash :/
+  {name = "Harmonic Minor", intervals = {0, 2, 3, 5, 7, 8, 11}},
   {name = "Hungarian Major", intervals = {0, 3, 4, 6, 7, 9, 10}},
   {name = "Hungarian Minor", intervals = {0, 2, 3, 6, 7, 8, 11}},
 
@@ -418,7 +418,6 @@ end
 -- generates valid chords for scales (currently just doing the 9 base scales)
 -- inserts table with chord names and indices into lookup_scales
 function gen_chord_lookups()
-
   -- option a: iterate through every scale to generate list of valid chords per degree
   -- for scale_idx = 1, #theory.lookup_scales do
   
@@ -612,7 +611,6 @@ if not theory.scales then
   theory.scales = {}
 end
 
-print("DEBUG #theory.base_scales: " .. #theory.base_scales)
 for mode_no = 1, #theory.base_scales do
   -- print("DEBUG generating custom scale tables for base_scale idx " .. mode_no)
   if not theory.scales[mode_no] then -- create mode table if needed
@@ -632,10 +630,6 @@ end
 -- Contains custom scales 1-8 for the current mode
 function gen_custom_scale()
   theory.scales_bool = {}
-  
-  print("DEBUG gen_custom_scales called. Checking theory.scales:")
-  tab.print(theory.scales)
-
   for y = 1, 8 do
     local custom = theory.scales[params:get("mode")][y] -- todo hook up to notes param somehow
 
@@ -650,7 +644,6 @@ function gen_custom_scale()
       end
     end
   end
-
 end
 
 
@@ -770,9 +763,20 @@ function print_all_chord_names()
           local chordname = key_names[degree] .. scale_tab.chord_names[degree][i]
           local length = screen.text_extents(chordname)
 
-          if length >= 26 then -- filter for longbois
-            print(length, chordname, key_names[1] .. " " .. scale_tab.name, "degree " .. degree)
+          -- filter for longbois
+          -------------------------------------------
+          if length >= 28 then
+            
+            local function contains(str, substr)
+              return string.find(str, substr) ~= nil
+            end
+
+            if not contains(chordname, "sus") and not contains(chordname, "add") then
+              print(length, chordname, key_names[1] .. " " .. scale_tab.name, "degree " .. degree)
+            end
           end
+          -------------------------------------------
+
 
         end
       end

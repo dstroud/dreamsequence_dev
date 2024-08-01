@@ -27,7 +27,7 @@ dreamsequence = {}
 
 -- layout and palette
 xy = {
-  dash_x = 89,
+  dash_x = 93,
   header_x = 0,
   header_y = 8,
   menu_y = 8,
@@ -79,7 +79,7 @@ dreamsequence.scales = {
 -- canonical scales
 "Major", -- "Ionian", 
 "Natural Minor", -- "Aeolian", 
-"Harmonic Min.", -- abbreviated to fit new dash. todo abbreviations table
+"Harmonic Minor",
 "Melodic Minor",
 "Dorian",
 "Phrygian",
@@ -87,9 +87,9 @@ dreamsequence.scales = {
 "Mixolydian",
 "Locrian",
 
--- -- -- some additions that work, too, but need to think about handling degree readout
--- "Altered Scale", -- double flats in F
--- "Harmonic Major", -- TODO shorten and fix same with Harmonic Min. -- double flats in Db
+-- -- some nice additions that work, too, but needs to think about handling degree readout
+-- "Altered Scale",  -- double flats in F, might wait for norns.ttf
+-- "Harmonic Major", -- double flats in Db, might wait for norns.ttf
 -- "Overtone",
 }
 
@@ -334,7 +334,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 17 + 16) -- 16 midi ports
+  params:add_group("preferences", "PREFERENCES", 15 + 16) -- 16 midi ports
 
   -- params:add_separator("pset","pset")
 
@@ -367,19 +367,17 @@ function init()
 
   -- params:add_separator("dashboard","dashboard")
 
-  local defaults = {"Transport", "Chord name", "Arranger chart", "Time remaining", nil, nil}
+  local defaults = {"Metro T+", "Arranger chart", "Chord progress", "Chord name"}
   -- todo probably a better way to do this rather than having these dummy funcs being called
-  function init_dummy_funcs()
-    function calc_seconds_remaining()
-    end
-
-    function calc_seconds_elapsed()
-    end
-
+  local function init_dummy_funcs()
+    function calc_seconds_remaining() end
+    function calc_seconds_elapsed() end
   end
   init_dummy_funcs()
+  xy.dash_x = 129 -- kinda silly but in case user has no dashboards, shift over the scrollbar
 
-  for dash_no = 1, 6 do -- #defaults do
+  max_dashboards = 4
+  for dash_no = 1, max_dashboards do -- limiting to 4 dashboards for now
     params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, 1)
     params:set_save("dash_" .. dash_no, false)
     params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no] or defaults[dash_no]) or 1 )
@@ -388,15 +386,16 @@ function init()
         save_prefs()
         dash_list[dash_no] = dash_functions[dash_ids[val]]
 
-        -- enable/disable dash functions depending on selection
+        -- redefine dash functions depending on selection
 
         -- init functions in inactive states
         init_dummy_funcs()
         seconds_remaining = "00:00"
         seconds_elapsed_raw = 0
 
-        for dash_no = 1, 6 do -- check every param each time one is changed
-          if params:string("dash_" .. dash_no) == "Time remaining" then
+        for dash_no = 1, max_dashboards do -- check every param each time one is changed
+          local dash = params:string("dash_" .. dash_no)
+          if dash == "Metro T-" then
 
             function calc_seconds_remaining()
               if arranger_active then
@@ -408,12 +407,18 @@ function init()
               seconds_remaining = s_to_min_sec(math.ceil(seconds_remaining))
             end
 
-          elseif params:string("dash_" .. dash_no) == "Time elapsed" then
+            xy.dash_x = 93
+
+          elseif dash == "Metro T+" then --redefine function if needed
             function calc_seconds_elapsed()
               seconds_elapsed_raw = seconds_elapsed_raw + .1
               seconds_elapsed = s_to_min_sec(seconds_elapsed_raw)
             end
 
+            xy.dash_x = 93
+
+          elseif dash ~= "Off" then
+            xy.dash_x = 93
           end
         end
 
@@ -1424,7 +1429,7 @@ function init()
     prefs.default_pset = params:string("default_pset")
     prefs.sync_views = params:string("sync_views")
     prefs.notifications = params:string("notifications")
-    for dash_no = 1, 6 do
+    for dash_no = 1, max_dashboards do
       local id = "dash_" .. dash_no
       prefs[id] = params:string(id)
     end
@@ -6697,7 +6702,7 @@ end
 function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
-  local stop = 32 -- width of chart
+  local stop = 29 -- width of chart
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
@@ -7258,7 +7263,14 @@ function redraw()
     end -- of event vs. non-event check
   end
 
-  if screen_message then -- footer-area notification display
+
+  if screen_message then
+    -- footer-area notification display
+    -- 1px border
+    screen.level(0)
+    screen.rect(0, 52, 128, 1)
+    screen.fill()
+
     screen.level(15)
     screen.rect(0, 53, 128, 12)
     screen.fill()
