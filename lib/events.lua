@@ -14,11 +14,6 @@ table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	even
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	event_type= 'function', 	id= 'event_chord_gen', 	name= 'Chord gen', 	action= 'event_chord_gen()', 		})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	event_type= 'function', 	id= 'event_seq_gen', 	name= 'Seq gen', 	action= 'event_seq_gen()', 		})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	event_type= 'function', 	id= 'event_gen', 	name= 'C+S gen', 	action= 'event_gen()', 		})
-table.insert(events_lookup, {	category= 'Test', 	subcategory= 'Test', 	event_type= 'param', 	id= 'test_event_trigger', 	name= 'test_event_trigger', 			})
-table.insert(events_lookup, {	category= 'Test', 	subcategory= 'Test', 	event_type= 'param', 	id= 'test_binary_trigger', 	name= 'test_binary_trigger', 			})
-table.insert(events_lookup, {	category= 'Test', 	subcategory= 'Test', 	event_type= 'param', 	id= 'test_binary_momentary', 	name= 'test_binary_momentary', 			})
-table.insert(events_lookup, {	category= 'Test', 	subcategory= 'Test', 	event_type= 'param', 	id= 'test_binary_toggle', 	name= 'test_binary_toggle', 			})
-table.insert(events_lookup, {	category= 'Test', 	subcategory= 'Test', 	event_type= 'param', 	id= 'test_number_0_1', 	name= 'test_number_0_1', 			})
 -- Chord								
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Pattern', 	event_type= 'param', 	id= 'chord_div_index', 	name= 'Step length', 		order= '1', 	})
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Pattern', 	event_type= 'param', 	id= 'chord_pattern_length', 	name= 'Pattern length', 			})

@@ -334,7 +334,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 16 + 16) -- 16 midi ports
+  params:add_group("preferences", "PREFERENCES", 17 + 16) -- 16 midi ports
 
   -- params:add_separator("pset","pset")
 
@@ -348,7 +348,6 @@ function init()
 
   params:add_option("default_pset", "Load pset", {"Off", "Last", "Template"}, 1)
   params:set_save("default_pset", false)
-
   -- don't load last/template if it's a new version, assuming breaking changes
   -- param_option_to_index is used rather than set_param_string to handle any invalid/changed saved values
   params:set("default_pset", prefs.last_version == version and param_option_to_index("default_pset", prefs.default_pset) or 1)
@@ -356,10 +355,15 @@ function init()
   
   -- params:add_separator("interaction","interaction")
 
-  params:add_option("sync_grid_norns", "Sync Grid/Norns", {"Off", "On"}, 2)
-  params:set_save("sync_grid_norns", false)
-  params:set("sync_grid_norns", param_option_to_index("sync_grid_norns", prefs.sync_grid_norns) or 2)
-  params:set_action("sync_grid_norns", function() save_prefs() end)
+  params:add_option("sync_views", "Sync views", {"Off", "On"}, 2)
+  params:set_save("sync_views", false)
+  params:set("sync_views", param_option_to_index("sync_views", prefs.sync_views) or 2)
+  params:set_action("sync_views", function() save_prefs() end)
+
+  params:add_option("notifications", "Notifications", {"Off", "Brief", "Extended"}, 2)
+  params:set_save("notifications", false)
+  params:set("notifications", param_option_to_index("notifications", prefs.notifications) or 2)
+  params:set_action("notifications", function() save_prefs() end)
 
   -- params:add_separator("dashboard","dashboard")
 
@@ -1418,7 +1422,8 @@ function init()
     prefs.timestamp = os.date()
     prefs.last_version = version
     prefs.default_pset = params:string("default_pset")
-    prefs.sync_grid_norns = params:string("sync_grid_norns")
+    prefs.sync_views = params:string("sync_views")
+    prefs.notifications = params:string("notifications")
     for dash_no = 1, 6 do
       local id = "dash_" .. dash_no
       prefs[id] = params:string(id)
@@ -1472,7 +1477,7 @@ function init()
         sprocket_measure:set_division(val / params:string("ts_denominator"))
       else
         params:set("ts_numerator", ts_numerator or 4)
-        popup_message("STOP TRANSPORT FIRST")
+        notification("STOP TRANSPORT FIRST")
       end
     end
   )
@@ -1485,7 +1490,7 @@ function init()
         sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
       else
         params:set("ts_denominator", ts_denominator or 3)
-        popup_message("STOP TRANSPORT FIRST")
+        notification("STOP TRANSPORT FIRST")
       end
     end
   )
@@ -1990,7 +1995,8 @@ function init()
   end
   
   
-  -- todo: seeing some issues with grid freezing still. I thought this would fix it but maybe lower rate further.
+  -- todo: seeing some intermittent issues with grid freezing still. I thought this would fix it but maybe lower rate further.
+  -- libmonome: error in write: Input/output error
   grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
   grid_dirty = true
   grid_redraw_metro:start()
@@ -2019,22 +2025,29 @@ end -- end of init
 -----------------------------------------------
  
 -- shows a brief pop-up message
-function popup_message(message)
-  lvl = lvl_dimmed
-  update_dash_lvls()
-  screen_message = message
-  if (popup_countdown or 0) == 0 then -- start timer
+function notification(message)
+  local pref = params:get("notifications")
 
-    clock.run(do_popup_timer,
-      function()
-        screen_message = nil
-        lvl = lvl_normal
-        update_dash_lvls()
-      end
-    )
-  else  -- timer is already running so just restart the countdown
-    popup_countdown = 15
+  if pref ~= 1 then -- not "Off"
+    local time = (pref - 1) * 8
+    lvl = lvl_dimmed
+    update_dash_lvls()
+    screen_message = message
+    if (popup_countdown or 0) == 0 then -- start timer
+
+      clock.run(do_notification_timer, 
+      time, -- 1st arg (display time)
+        function() -- 2nd arg, function
+          screen_message = nil
+          lvl = lvl_normal
+          update_dash_lvls()
+        end
+      )
+    else  -- timer is already running so just restart the countdown
+      popup_countdown = time
+    end
   end
+
 end
 
 
@@ -2128,8 +2141,8 @@ end
 
 -- generic timer that runs function after counter reaches 0
 -- eg: clock.run(do_timer, 10, function() print("copying") end)
-function do_popup_timer(func)
-  popup_countdown = 7
+function do_notification_timer(countdown, func)
+  popup_countdown = countdown
   while true do
     popup_countdown = popup_countdown - 1
     if popup_countdown == 0 then
@@ -2177,7 +2190,6 @@ function delete_events_in_segment(new_action)
   norns_interaction = "event_actions_done"
   clock.run(reset_norns_interaction, new_action)
 end
-
 
 function count_keys(tbl)
   local count = 0
@@ -3498,9 +3510,9 @@ function do_events(arranger_pos, chord_pos)
 end
 
 -- generates short chord name/degree for chord readout dashboards
-function gen_chord_readout(y)
+function gen_chord_readout()
   local x = current_chord_x
-  local x_wrapped = util.wrap(current_chord_x, 1, 7)
+  local x_wrapped = util.wrap(x, 1, 7)
   local scale = params:get("mode")
   local custom = theory.custom_chords[scale][active_chord_pattern][x]
   local y = chord_pattern_position == 0 and 1 or chord_pattern_position -- 0 to 1 so this can be used while transport is stopped to preview upcoming
@@ -3527,6 +3539,26 @@ function gen_chord_readout(y)
 end
 
 
+-- similar to gen_chord_readout, but this generates long chord name for held chord quick-editor and detailed chord editor menu
+function gen_chord_name()
+  local p = editing_chord_pattern
+  local x = editing_chord_x
+  local y = editing_chord_y
+  local x_wrapped = util.wrap(x, 1, 7)
+  local scale = params:get("mode")
+  local custom = theory.custom_chords[scale][p][x]
+
+  if custom[y] then -- is a custom chord
+    if custom[y].name == "Custom" then -- unnamed custom chord
+      editing_chord_name = editing_chord_letter .. "*"
+    else
+      editing_chord_name = editing_chord_letter .. custom[y].name
+    end
+  else -- standard triad
+    editing_chord_name = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
+  end
+end
+
 -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
 -- Todo optimization: cached table of intervals at the scale>>pattern>>y level
 -- Also used for previewing chords with g.key while transport is stopped/paused
@@ -3550,8 +3582,8 @@ function update_chord(x, y) -- y is optional when playing chord using g.key
   chord_triad = theory.chord_triad_intervals[x] -- trialing keeping the triad even if the chord is customized. needs to be updated elsewhere I suppose.
 
   local rawcount = #raw
-  local max_interval = raw[rawcount]
-  local min_interval = raw[1]
+  local max_interval = raw[rawcount] or 0
+  local min_interval = raw[1] or 0
 
   if max_interval - min_interval > 11 then -- Chords with intervals spanning more than an octave need special tables for transform_note fns
     -- generate densified table of chord intervals in 1 octave, reordering notes as necessary
@@ -3854,37 +3886,32 @@ end
 
 
 transform_note[2] = function(note_num, octave) -- custom chords, densified to extend 2 octaves if necessary
-  local chord_length = #chord_extended
+  local chord_length = #chord_extended or 0
 
   -- jump to next octave if difference from chord min/max intervals is >1 octave.
   -- local additional_octave = (chord_raw[chord_length] - chord_raw[1]) >= 12 and 1 or 0 -- fine if we have just 12 seq rows
-  local additional_octave = math.floor((chord_extended[chord_length] - chord_extended[1]) / 12) -- in anticipation of variable max_seqs
-  local quantized_note = chord_extended[util.wrap(note_num, 1, chord_length)]
+  local additional_octave = math.floor(((chord_extended[chord_length] or 0) - (chord_extended[1] or 0)) / 12) -- in anticipation of variable max_seqs
+  local quantized_note = chord_extended[util.wrap(note_num, 1, chord_length)] or 0
   local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
 
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
-
 end
 
 
 transform_note[3] = function(note_num, octave) -- custom chords, tones arranged into one octave
-  local chord_length = #chord_densified
-  local quantized_note = chord_densified[util.wrap(note_num, 1, chord_length)]
+  local chord_length = #chord_densified or 0
+  local quantized_note = chord_densified[util.wrap(note_num, 1, chord_length)] or 0
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
 transform_note[4] = function(note_num, octave) -- custom chords, spanning multiple octaves
-  local chord_length = #chord_raw
-
-  -- jump to next octave if difference from chord min/max intervals is >1 octave.
-  -- local additional_octave = (chord_raw[chord_length] - chord_raw[1]) >= 12 and 1 or 0 -- fine if we have just 12 seq rows
-  local additional_octave = math.floor((chord_raw[chord_length] - chord_raw[1]) / 12) -- in anticipation of variable max_seqs
-  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
-  local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
+  local chord_length = #chord_raw or 0
+  local additional_octave = math.floor(((chord_raw[chord_length] or 0) - (chord_raw[1] or 0)) / 12) or 0 -- in anticipation of variable max_seqs
+  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)] or 0
+  local quantized_octave = (math.floor((note_num - 1) / chord_length) * (additional_octave + 1)) or 0 -- no work on 24
 
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
-
 end
 
 transform_note[5] = function(note_num, octave) -- mode mapping + diatonic transposition
@@ -4099,7 +4126,7 @@ function est_jf_time()
       clock.sleep(0.005) -- a small hold for usb round-trip
       local jf_time_s = math.exp(-0.694351 * jf_time + 3.0838) -- jf_time_v_to_s.
       print("jf_time_s = " .. jf_time_s)
-      -- return(jf_time_s)   
+      -- return(jf_time_s)
       end
   )
 end
@@ -4552,7 +4579,7 @@ function set_page()
   local new_view = nil  
   local new_pattern = selected_seq_no
 
-  if params:string("sync_grid_norns") == "On" then 
+  if params:string("sync_views") == "On" then 
     if page_name == "SONG" then
       new_view = "Arranger"
     elseif page_name == "CHORD" then
@@ -4585,7 +4612,7 @@ function set_grid_view(new_view, new_seq_no) -- optional 2nd arg for seq no
     selected_seq_no = new_seq_no
     grid_dirty = true
 
-    if params:string("sync_grid_norns") == "On" then -- sync norns screen view with grid view
+    if params:string("sync_views") == "On" then -- sync norns screen view with grid view
       local new_page = nil
 
       if new_view == "Arranger" then
@@ -4739,6 +4766,8 @@ function g.key(x, y, z)
         custom[editing_chord_y].name = c and c.short_name or "Custom"
         custom[editing_chord_y].dash_name_1 = c and c.dash_name_1 --or (c.short_name .. "*") -- sub short_name if it's an unnamed chord
         custom[editing_chord_y].dash_name_2 = c and c.dash_name_2 or nil
+
+        gen_chord_name()
       end
 
     elseif screen_view_name == "scale_editor" then
@@ -4778,7 +4807,7 @@ function g.key(x, y, z)
         -- Setting of events beyond the pattern length is permitted
         event_key_count = event_key_count + 1
       
-        -- function g.key events loading
+        -- load events
         -- First touched event is the one we edit, effectively resetting on key_count = 0
         if event_key_count == 1 then
           event_edit_step = y + pattern_grid_offset
@@ -4883,7 +4912,7 @@ function g.key(x, y, z)
             end
           end
 
-          popup_message("COPIED " .. event_edit_step .. "." .. event_edit_lane  .. " TO " .. (y + pattern_grid_offset) .. "." .. x )
+          notification("COPIED " .. event_edit_step .. "." .. event_edit_lane  .. " TO " .. (y + pattern_grid_offset) .. "." .. x )
           update_lanes(x) -- update the lanes we've pasted into
         end
       end
@@ -4914,20 +4943,20 @@ function g.key(x, y, z)
       if x == 1 and y == 8 + extra_rows then
         if params:get("arranger") == 1 then
           params:set("arranger", 2)
-          popup_message("ARRANGER ON")
+          notification("ARRANGER ON")
         else
           params:set("arranger", 1)
-          popup_message("ARRANGER OFF")
+          notification("ARRANGER OFF")
         end
 
       -- Switch between Arranger playback Loop or 1-shot mode
       elseif x == 2 and y == 8 + extra_rows then
         if params:get("playback") == 2 then
           params:set("playback", 1)
-          popup_message("LOOPING OFF")
+          notification("LOOPING OFF")
         else
           params:set("playback", 2)
-          popup_message("LOOPING ON")
+          notification("LOOPING ON")
         end
         
       -- Arranger pagination jumps
@@ -4946,7 +4975,7 @@ function g.key(x, y, z)
         -- allow pasting of events while setting patterns (but not the other way around)
         if grid_interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
-          popup_message("COPIED " .. event_edit_segment .. " TO " .. x_offset)
+          notification("COPIED " .. event_edit_segment .. " TO " .. x_offset)
           gen_arranger_dash_data("Event copy+paste")
         end
         
@@ -4964,7 +4993,7 @@ function g.key(x, y, z)
           -- implicit here that more than 1 key is held down so we're pasting
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
-            popup_message("COPIED " .. event_edit_segment .. " TO " .. x_offset)
+            notification("COPIED " .. event_edit_segment .. " TO " .. x_offset)
             gen_arranger_dash_data("Event copy+paste")
           end
         end
@@ -4994,9 +5023,8 @@ function g.key(x, y, z)
           play_chord()
         end
 
-
         -- todo p0 need to do copy+paste and figure out complications there with simultaneous keypresses
-        if not grid_interaction then -- first keypress
+        if not grid_interaction then -- first keypress which defines editing_chord
           grid_interaction = "chord_key_held"
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
@@ -5011,6 +5039,7 @@ function g.key(x, y, z)
           -- todo p0!
           editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
           
+          gen_chord_name()
           init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
         end
 
@@ -5033,7 +5062,7 @@ function g.key(x, y, z)
           if pattern_key_count == 1 then
             copied_pattern = y
           else -- if pattern_key_count > 1 then
-            popup_message("COPIED " ..  pattern_name[copied_pattern] .. " TO " .. pattern_name[y])
+            notification("COPIED " ..  pattern_name[copied_pattern] .. " TO " .. pattern_name[y])
 
             pattern_copy_performed[1] = true
             chord_pattern[y] = simplecopy(chord_pattern[copied_pattern])
@@ -5126,7 +5155,7 @@ function g.key(x, y, z)
                 else
                   seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
                 end
-                popup_message("COPIED " ..  copied_seq_no .. "." .. pattern_name[copied_pattern] .. " TO " .. seq_no .. "." .. pattern_name[y])
+                notification("COPIED " ..  copied_seq_no .. "." .. pattern_name[copied_pattern] .. " TO " .. seq_no .. "." .. pattern_name[y])
 
             else -- simultaneous keypresses in other seq columns are interpreted as intent to switch patterns
               update_seq_pattern[seq_no] = y -- sets pattern we need to update seq_no/index to on key-up
@@ -5407,6 +5436,7 @@ function key(n, z)
         lvl = lvl_dimmed
         -- end
       elseif not grid_interaction and not norns_interaction then
+        notification("HOLD TO DEFER EDITS")
         norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
@@ -5426,7 +5456,7 @@ function key(n, z)
       elseif grid_interaction == "chord_key_held" then -- propagate chord
         local scale = params:get("mode")
 
-        popup_message("CHORD PROPAGATED") -- todo maybe replace with momentary rather than timed pop-up
+        notification("CHORD PROPAGATED") -- todo maybe replace with momentary rather than timed pop-up
         pending_chord_disable = {} -- cancel any help chord disables to be safe
 
 
@@ -5663,16 +5693,17 @@ function key(n, z)
         default_chord_check()
         grid_interaction = nil
         screen_view_name = "Session"
+        gen_chord_readout() -- in case we're editing 1st step while stopped
       elseif norns_interaction == "k1" then
 
-        if params:get("sync_grid_norns") == 1 then
-          params:set("sync_grid_norns", 2) -- on
+        if params:get("sync_views") == 1 then
+          params:set("sync_views", 2) -- on
           set_page() -- set Grid view to current page
         else
-          params:set("sync_grid_norns", 1)
+          params:set("sync_views", 1)
         end
 
-        popup_message(params:get("sync_grid_norns") == 1 and "GRID LINK OFF" or "GRID LINK ON")
+        notification(params:get("sync_views") == 1 and "SYNC VIEWS OFF" or "SYNC VIEWS ON")
 
       elseif grid_interaction == "chord_key_held" then
         local root = editing_chord_root
@@ -6003,7 +6034,7 @@ function key(n, z)
           
         else -- crow/midi clock source
           -- todo look at crow although I think you're better off just using Internal
-          popup_message("N/A (" .. string.upper(params:string("clock_source")) .. " CLOCK)")
+          notification("N/A (" .. string.upper(params:string("clock_source")) .. " CLOCK)")
 
           -- todo p0 untested in 1.3
           -- elseif params:string("clock_source") == "crow" then
@@ -6160,12 +6191,12 @@ function enc(n,d)
       
     elseif screen_view_name == "chord_editor" then -- full chord editor screen
       delta_chord(d)
-
+      gen_chord_name()
     elseif grid_interaction == "chord_key_held" then -- quick chord editor
       delta_chord(d)
       default_chord_check()
-      pending_chord_disable = {} -- cancel any help chord disables to be safe
-
+      pending_chord_disable = {} -- cancel any held chord disables to be safe
+      gen_chord_name()
     elseif screen_view_name == "scale_editor" then  -- scale editor
       local mode = params:get("mode")
 
@@ -6627,20 +6658,36 @@ end
 
 -- Alternative for more digits up to 9 hours LETSGOOOOOOO
 function s_to_min_sec(seconds)
-    -- hours = (string.format("%02.f", math.floor(seconds/3600));
-    hours_raw = math.floor(seconds/3600);
-    hours = string.format("%1.f", hours_raw);
-    mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
-    secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
-    -- Modify hours if it's 2+ digits
-    -- hours = hours < 10 and string.format("%2.f",hours) or ">";
-    if hours_raw < 1 then
-      return mins .. ":" .. secs
-    elseif hours_raw < 10 then
-      return hours .. "h:" .. mins .. "m"
-    else
-      return hours .. "h+"
-    end
+
+  
+  -- local seconds = tonumber(seconds)
+  -- hours_raw = math.floor(seconds/3600);
+  -- hours = string.format("%1.f", hours_raw);
+  -- mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
+  -- secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
+  -- -- Modify hours if it's 2+ digits
+  -- -- hours = hours < 10 and string.format("%2.f",hours) or ">";
+  -- if hours_raw < 10 then
+  --   return hours..":"..mins..":"..secs
+  -- else
+  --   return ">" .. hours .. "hrs"
+  -- end
+
+  -- hours = (string.format("%02.f", math.floor(seconds/3600));
+  hours_raw = math.floor(seconds/3600);
+  hours = string.format("%1.f", hours_raw);
+  mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
+  secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
+  -- Modify hours if it's 2+ digits
+  -- hours = hours < 10 and string.format("%2.f",hours) or ">";
+  if hours_raw < 1 then
+    return mins .. ":" .. secs
+  elseif hours_raw < 10 then
+    return hours .. "h:" .. mins .. "m"
+  else
+    return hours .. "h+"
+  end
+
 end
 
 
@@ -7069,23 +7116,16 @@ function redraw()
 
       footer(nil, "EXIT")
 
-    elseif screen_view_name == "chord_editor" then
-      local chord_menu_names = chord_menu_names
-    
+    elseif screen_view_name == "chord_editor" then    
       screen.move(header_x, header_y)
       screen.level(lvl_menu_deselected)
       screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_triad_name)
 
       screen.move(header_x, menu_y + 10)
       screen.level(lvl_menu_selected)
-      screen.text("Chord: " .. (chord_menu_index == 0 and "Custom" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1]))
+      screen.text("Chord: " .. editing_chord_name)
 
       footer("PREVIEW", "EXIT")
-
-    -- if we want to use a traditional tooltip-style quick chord editor:
-    -- elseif grid_interaction == "chord_key_held" then
-    --   tooltips("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_triad_name, {nil, nil ,"E3: " .. (chord_menu_index == 0 and editing_chord_letter .. "*" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1])})
-    --   footer("PROPAGATE", "EDIT CHORD", true) -- true overrides dimming to emphasize momentary keys
 
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
@@ -7174,7 +7214,7 @@ function redraw()
       -- screen.fill()
 
       -- -- WIP, optional glyph (todo norns.ttf required) to indicate when grid-norns syncing is enabled
-      -- if params:string("sync_grid_norns") == "On" then
+      -- if params:string("sync_views") == "On" then
       --   screen.level(lvl_menu_deselected)
 
       --   -- screen.move(dash_x - 10, 7)
@@ -7201,58 +7241,24 @@ function redraw()
         func()
       end
 
-      -- turning this off to clean up the view a bit. K3 will still toggle norns-grid link
-      -- if norns_interaction == "k1" then
-      --   screen.level(0)             -- mask area behind footer
-      --   screen.rect(0, 54, 128, 10)
-      --   screen.fill()
-
-      --   footer(params:get("sync_grid_norns") == 1 and "SYNC ON" or "SYNC OFF", "EDIT SCALE")
-
-      -- elseif
-      if grid_interaction == "chord_key_held" then
-        
-          -- bits to borrow if we want to show chord degree/base:
-          -- tooltips("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_triad_name, {nil, nil ,"E3: " .. (chord_menu_index == 0 and editing_chord_letter .. "*" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1])})
-
-        -- local border = 20 -- portion of lower layer still shown
-        -- local rect = {1 + border + 15, border, 127 - (border * 2) - 30, 63 - (border * 2)}
-
-        -- screen.level(0)
-        -- screen.rect(table.unpack(rect))
-        -- screen.fill()
-        -- screen.level(15)
-        -- screen.rect(table.unpack(rect))
-        -- screen.stroke()
-
-        -- screen.level(15)
-        -- screen.move(64, 34)
-        -- screen.text_center((chord_menu_index == 0 and editing_chord_letter .. "*" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1])) -- todo should "Custom"
-
-        -- screen.level(0)             -- mask area behind footer
-        -- screen.rect(0, 54, 128, 10)
-        -- screen.fill()
-
+      if grid_interaction == "chord_key_held" then       
         screen.level(0)
         screen.rect(0, 0, dash_x - 2, 52)
         screen.rect(0, 52, 128, 12) -- 1-px footer mask (3-border footer)
-        -- screen.fill()
         screen.fill()
         screen.level(lvl_menu_selected)
         screen.rect(1, 1, dash_x - 2, 51)
         screen.stroke()
         screen.move(44, 28)
-        screen.text_center((chord_menu_index == 0 and editing_chord_letter .. "*" or editing_chord_letter .. chord_menu_names[chord_menu_index or 1])) -- todo should "Custom"
-
+        screen.text_center(editing_chord_name)
 
         footer("PROPAGATE", "EDIT CHORD", true) -- true overrides dimming to emphasize momentary keys
-
       end
 
     end -- of event vs. non-event check
   end
 
-  if screen_message then -- footer-area popup_message display
+  if screen_message then -- footer-area notification display
     screen.level(15)
     screen.rect(0, 53, 128, 12)
     screen.fill()
