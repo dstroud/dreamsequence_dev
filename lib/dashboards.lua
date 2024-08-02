@@ -31,7 +31,7 @@ function update_dash_lvls()
   lvl_pane_deselected = lvl.pane_deselected
   lvl_chart_deselected = lvl.chart_deselected
   lvl_menu_selected = lvl.menu_selected
-  lvl_chart_area = lvl.chart_area
+  -- lvl_chart_area = lvl.chart_area
 end
 
 
@@ -125,7 +125,7 @@ function dash_functions.arranger_chart()
   -- -- todo break into sub-function so we can do a variation without chart portion (just seg and glyph)
   
   -- black chart background
-  screen.level(on and 0 or 1)
+  screen.level(on and lvl_pane_selected or 1)
   screen.rect(dash_x + 3, dash_y + 10, 29, 9)
   screen.fill()
   
@@ -217,17 +217,17 @@ function dash_functions.chord_progress()
   screen.text(pattern_name[active_chord_pattern])
 
   -- CHORD PATTERN PROGRESS BAR
-  -- dim chart area
-  screen.level(0)
+  -- dim chart area (black)
+  screen.level(lvl_pane_selected)
   screen.rect(dash_x + 12, dash_y + 3, 18, 5)
   screen.fill()
 
-  -- pattern length
+  -- pattern length (gray)
   screen.level(lvl_chart_deselected)
   screen.rect(dash_x + 13, dash_y + 4, chord_pattern_length[active_chord_pattern], 3)
   screen.fill()
 
-  -- progress bar
+  -- progress bar (white)
   screen.level(lvl_menu_selected)
   screen.rect(dash_x + 13, dash_y + 4, chord_pattern_position, 3)
   screen.fill()

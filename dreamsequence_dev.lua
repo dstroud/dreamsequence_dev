@@ -38,22 +38,20 @@ local lvl_normal = {
   menu_selected = 15,
   menu_deselected = 4,
   pane = 15,
-  pane_selected = 0,
+  pane_selected = 0,  -- also chart black
   pane_deselected = 3,
   pane_dark = 7,
-  chart_deselected = 2, -- slightly prefer 2 but 3 has less banding
-  chart_area = 0
+  chart_deselected = 3,
 }
 
 local lvl_dimmed = {
   menu_selected = 7,
   menu_deselected = 2,
   pane = 7,
-  pane_selected = 0,
+  pane_selected = 1,
   pane_deselected = 3, -- not dimmed
   pane_dark = 3,
-  chart_deselected = 1,
-  chart_area = 0
+  chart_deselected = 2,
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
@@ -334,7 +332,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 15 + 16) -- 16 midi ports
+  params:add_group("preferences", "PREFERENCES", 16 + 16) -- 16 midi ports
 
   -- params:add_separator("pset","pset")
 
@@ -2901,7 +2899,7 @@ function dedupe_threshold()
   local index = params:get("dedupe_threshold")
   dedupe_threshold_int = (index == 0) and 1 or division_names[index][1]
   dedupe_threshold_s = (index == 0) and 1 or duration_sec(dedupe_threshold_int) * .95
-end  
+end
 
 
 -- function chord_preload(index)
@@ -2934,7 +2932,7 @@ end
 function clock.tempo_change_handler()  
   dedupe_threshold()  
   -- crow_clock_offset = ms_to_beats(params:get("crow_clock_offset"))
-end  
+end
 
 
 -- Pads out arranger where it has 0 val segments
@@ -5039,6 +5037,8 @@ function g.key(x, y, z)
         -- todo p0 need to do copy+paste and figure out complications there with simultaneous keypresses
         if not grid_interaction then -- first keypress which defines editing_chord
           grid_interaction = "chord_key_held"
+          lvl = lvl_dimmed
+          update_dash_lvls()
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
           editing_chord_y = y -- used for chord editor
@@ -5288,6 +5288,8 @@ function g.key(x, y, z)
         if chord_key_count == 0 then
           if grid_interaction == "chord_key_held" then
             grid_interaction = nil
+            lvl = lvl_normal
+            update_dash_lvls()
           end
         end
 
@@ -6771,8 +6773,8 @@ function gen_arranger_dash_data(source)
       -- insert blanks between segments
       if dash_steps < stop then
         table.insert(dash_patterns, 0)
-        table.insert(dash_events, "chart_area")
-        table.insert(dash_levels, "chart_area")
+        table.insert(dash_events, "pane_selected")
+        table.insert(dash_levels, "pane_selected")
         dash_steps = dash_steps + 1 -- and 1 to grow on!
       end
 
@@ -6800,25 +6802,22 @@ end
 -- rectangles and K2/K3 text
 -- optional bool to override dynamic dimming
 local function footer(k2, k3, no_dim) -- todo move out of redraw loop and pass lvl_pane_dark
-  local lvl_pane_dark = no_dim and lvl_normal.pane_dark or lvl.pane_dark
-
+  local lvl_pane = no_dim and lvl_normal.pane_dark or lvl.pane_dark
+  local lvl_txt = no_dim and 0 or lvl.pane_selected
   if k2 then
-    screen.level(lvl_pane_dark)
+    screen.level(lvl_pane)
     -- screen.rect(0, 55, 63, 9) -- 2px border
     screen.rect(0, 53, 63, 11) -- 3px border
     screen.fill()
-    screen.level(1)
-    -- screen.move(31, 62) -- 2px border
+    screen.level(lvl_txt)
     screen.move(31, 61) -- 3px border
     screen.text_center("K2 ".. k2)
   end
   if k3 then
-    screen.level(lvl_pane_dark)
-    -- screen.rect(65, 55, 63, 9) -- 2px border
+    screen.level(lvl_pane)
     screen.rect(65, 53, 63, 11) -- 3px border
     screen.fill()
-    screen.level(1)
-    -- screen.move(96, 62) -- 2px border
+    screen.level(lvl_txt)
     screen.move(96, 61) -- 3px border
     screen.text_center("K3 " .. k3)
   end
@@ -7066,7 +7065,7 @@ function redraw()
 
       -- K1 event actions pop-up quick-menu
       if norns_interaction == "event_actions_done" then -- flash "DONE!" message
-        local border = 10 -- portion of lower layer still shown
+        local border = 12 -- portion of lower layer still shown
         local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
 
         screen.level(0)
@@ -7081,7 +7080,7 @@ function redraw()
         screen.text_center("DONE!")
 
       elseif norns_interaction == "event_actions" then
-        local border = 10 -- portion of lower layer still shown
+        local border = 12 -- portion of lower layer still shown
         local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
         
         screen.level(0)
@@ -7245,11 +7244,22 @@ function redraw()
         screen.rect(0, 0, dash_x - 2, 52)
         screen.rect(0, 52, 128, 12) -- 1-px footer mask (3-border footer)
         screen.fill()
-        screen.level(lvl_menu_selected)
+
+        screen.level(15)
         screen.rect(1, 1, dash_x - 2, 51)
         screen.stroke()
+
         screen.move(44, 28)
         screen.text_center(editing_chord_name)
+
+        screen.level(lvl_menu_deselected)
+        screen.move(dash_x - 4, 8)
+        screen.text_right("E2")
+        -- glyph, replace with norns.ttf
+        -- for i = 1, #glyphs.loop do
+        --   screen.pixel(dash_x - 9 + glyphs.loop[i][1], glyphs.loop[i][2] + 3)
+        -- end
+        screen.fill()
 
         footer("PROPAGATE", "EDIT CHORD", true) -- true overrides dimming to emphasize momentary keys
       end
