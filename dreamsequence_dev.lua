@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240801 @modularbeat
+-- 240802 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -365,6 +365,11 @@ function init()
   params:set("notifications", param_option_to_index("notifications", prefs.notifications) or 2)
   params:set_action("notifications", function() save_prefs() end)
 
+  params:add_option("preview_notes", "Preview notes", {"Off", "On"}, 2)
+  params:set_save("preview_notes", false)
+  params:set("preview_notes", param_option_to_index("preview_notes", prefs.preview_notes) or 2)
+  params:set_action("preview_notes", function() save_prefs() end)
+
   -- params:add_separator("dashboard","dashboard")
 
   local defaults = {"Metro T+", "Arranger chart", "Chord progress", "Chord name"}
@@ -603,7 +608,7 @@ function init()
   -- SEQ PARAMS --
   ------------------
 
-  local note_map = {"Triad", "Chord extd.", "Chord dense", "Chord raw", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Kit"} -- used by all but chord
+  local note_map = {"Triad", "Chord extd.", "Chord dense", "Chord raw", "Scale", "Scale+tr.", "Chromatic", "Chromatic+tr.", "Kit"} -- used by all but chord
   for i = 1, 8 do
     table.insert(note_map, "Custom " .. i)
     table.insert(note_map, "Custom " .. i .. "+tr.")
@@ -1348,10 +1353,6 @@ function init()
         transport_state = "stopped" -- just flips to the stop icon so user knows they don't have to do this manually
       end
       build_scale() -- Have to run manually because mode bang comes after all of this for some reason
-
-      -- replacing
-      -- get_next_chord()
-      -- chord_raw = next_chord
       preload_chord()
 
       chord_no = 0 -- wipe chord readout
@@ -1429,6 +1430,7 @@ function init()
     prefs.default_pset = params:string("default_pset")
     prefs.sync_views = params:string("sync_views")
     prefs.notifications = params:string("notifications")
+    prefs.preview_notes = params:string("preview_notes")
     for dash_no = 1, max_dashboards do
       local id = "dash_" .. dash_no
       prefs[id] = params:string(id)
@@ -3136,12 +3138,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   chord_pattern_position = 0
   reset_sprockets("reset_pattern")
   reset_lattice() -- reset_clock()
-
-  -- replacing
-  -- get_next_chord()
-  -- chord_raw = next_chord
   preload_chord()
-
   gen_arranger_dash_data("reset_pattern")
   grid_dirty = true
 end
@@ -3889,7 +3886,6 @@ transform_note[1] = function(note_num, octave) -- triad chord mapping
 end
 
 
-
 transform_note[2] = function(note_num, octave) -- custom chords, densified to extend 2 octaves if necessary
   local chord_length = #chord_extended or 0
 
@@ -3907,8 +3903,10 @@ transform_note[3] = function(note_num, octave) -- custom chords, tones arranged 
   local chord_length = #chord_densified or 0
   local quantized_note = chord_densified[util.wrap(note_num, 1, chord_length)] or 0
   local quantized_octave = math.floor((note_num - 1) / chord_length)
+
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
+
 
 transform_note[4] = function(note_num, octave) -- custom chords, spanning multiple octaves
   local chord_length = #chord_raw or 0
@@ -3919,32 +3917,41 @@ transform_note[4] = function(note_num, octave) -- custom chords, spanning multip
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
-transform_note[5] = function(note_num, octave) -- mode mapping + diatonic transposition
+
+transform_note[5] = function(note_num, octave) -- song scale mapping
+  local note_num = note_num
+  local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+
+  return(quantized_note + (octave * 12) + params:get("transpose"))
+end
+
+
+transform_note[6] = function(note_num, octave) -- song scale mapping + diatonic transposition
   -- local diatonic_transpose = (math.max(pre == true and next_chord_x or current_chord_x, 1)) -1
   local diatonic_transpose = (math.max(current_chord_x, 1)) -1
   local note_num = note_num + diatonic_transpose
   local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+
   return(quantized_note + (octave * 12) + params:get("transpose"))
 end
 
-transform_note[6] = function(note_num, octave) -- mode mapping
-  local note_num = note_num
-  local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
-  return(quantized_note + (octave * 12) + params:get("transpose"))
-end
 
-transform_note[7] = function(note_num, octave) -- chromatic intervals from chord root
-  local root = chord_raw[1] or 0
-  return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
-end
-
-transform_note[8] = function(note_num, octave) -- chromatic mapping
+transform_note[7] = function(note_num, octave) -- chromatic mapping
   return(note_num -1 + (octave * 12) + params:get("transpose"))
 end
 
-transform_note[9] = function(note_num, octave) -- drum kit mapping (no key transposition)
+
+transform_note[8] = function(note_num, octave) -- chromatic intervals + base triad root
+  local root = theory.chord_triad_intervals[current_chord_x][1]
+
+  return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
+end
+
+
+transform_note[9] = function(note_num, octave) -- drum kit/pass-thru mapping (no key transposition)
   return(note_num -1 + (octave * 12)) -- todo param to shift?
 end
+
 
 for i = 1, 8 do
   table.insert(transform_note,
@@ -3958,8 +3965,9 @@ for i = 1, 8 do
   )
 
   table.insert(transform_note,
-    function(note_num, octave) -- custom scale + transposition (kinda weird)
-      local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
+    function(note_num, octave) -- custom scale + base triad root transposition (kinda weird but designed to match mode+tr.)
+      -- local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
+      local note_num = note_num + (theory.chord_triad_intervals[current_chord_x][1])  -- alternative transposing by base triad root
       local scale_custom = scale_custom[i]
       local length = #scale_custom
       local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
@@ -5023,7 +5031,7 @@ function g.key(x, y, z)
         end
 
         -- plays Chord when pressing on any Grid key (even turning chord off)
-        if transport_state == "stopped" or transport_state == "paused" then
+        if params:get("preview_notes") == 2 and (transport_state == "stopped" or transport_state == "paused") then
           update_chord(x, y)
           play_chord()
         end
@@ -5107,7 +5115,7 @@ function g.key(x, y, z)
         -- Play note if stopped/paused. Todo: may want to have this be a pref for stopped/paused, stopped, off
         -- plays note when pressing on any Grid key (even turning note off)
         -- mostly shared with advance_seq. could be consolidated into one fn
-        if transport_state == "stopped" or transport_state == "paused" then
+        if params:get("preview_notes") == 2 and (transport_state == "stopped" or transport_state == "paused") then
           local player = params:lookup_param("seq_voice_raw_"..selected_seq_no):get_player()
           local channel = player.channel and params:get("seq_channel_"..selected_seq_no) or nil
           local dynamics = (params:get("seq_dynamics_"..selected_seq_no) * .01)
@@ -6664,20 +6672,6 @@ end
 -- Alternative for more digits up to 9 hours LETSGOOOOOOO
 function s_to_min_sec(seconds)
 
-  
-  -- local seconds = tonumber(seconds)
-  -- hours_raw = math.floor(seconds/3600);
-  -- hours = string.format("%1.f", hours_raw);
-  -- mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
-  -- secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
-  -- -- Modify hours if it's 2+ digits
-  -- -- hours = hours < 10 and string.format("%2.f",hours) or ">";
-  -- if hours_raw < 10 then
-  --   return hours..":"..mins..":"..secs
-  -- else
-  --   return ">" .. hours .. "hrs"
-  -- end
-
   -- hours = (string.format("%02.f", math.floor(seconds/3600));
   hours_raw = math.floor(seconds/3600);
   hours = string.format("%1.f", hours_raw);
@@ -6688,7 +6682,7 @@ function s_to_min_sec(seconds)
   if hours_raw < 1 then
     return mins .. ":" .. secs
   elseif hours_raw < 10 then
-    return hours .. "h:" .. mins .. "m"
+    return hours .. "h:" .. mins -- .. "m" -- truncated a bit to fit dash
   else
     return hours .. "h+"
   end
@@ -7060,7 +7054,7 @@ function redraw()
         
         -- events editor scrollbar
         screen.level(lvl_menu_selected)
-        local offset = scrollbar_y + scrollbar(events_index, #events_menus, 4, 2, 41) -- (index, total, in_view, locked_row, screen_height)
+        local offset = scrollbar_y + scrollbar(events_index, #events_menus, 4, 2, 38) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 4 / #events_menus * 41
         screen.rect(127, offset, 1, bar_height)
         screen.fill()
@@ -7142,7 +7136,7 @@ function redraw()
       -- todo p1 move calcs out of redraw
       -- todo don't draw offscreen
       local paging = menu_index == 0
-      local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
+      local menu_offset = scroll_offset_locked(menu_index, 10, 2) -- index, height, locked_row
       local line = 1
 
       for i = 1, #menus[page_index] do
@@ -7176,7 +7170,7 @@ function redraw()
       -- main menu scrollbar
       if not paging then
         screen.level(lvl_menu_selected)
-        local offset = scrollbar_y + scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
+        local offset = scrollbar_y + scrollbar(menu_index, #menus[page_index], 5, 2, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
         screen.rect(dash_x - 2, offset, 1, bar_height)
         screen.fill()

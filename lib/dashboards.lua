@@ -62,19 +62,20 @@ function dash_functions.arranger_chart()
   -- pulsing = syncing
 
   screen.move(dash_x + 3, dash_y + 8)
-  if arranger_active == false then  -- DE-SYNC
+  if arranger_active == false then  -- DE-SYNC, waiting until next chord pattern to sync
     if on then
-      screen.level(lvl_pane_selected + 2 - led_pulse) -- pulse while waiting to enter arrangement
-      else
+      screen.level(lvl_pane_selected + led_pulse) -- pulse while waiting to enter arrangement, (0 to 3)
+    else
       screen.level(lvl_pane_deselected)
-      end
+    end
 
+      -- todo norns.ttf change to ↳ probably
       if valid_jump then
-      screen.text(arranger_queue)
+      screen.text("→" .. arranger_queue)
       elseif final_seg and params:string("playback") == "1-shot" then
-      screen.text("End") -- indicate we'll hit end, not wrap
+      screen.text("→End") -- indicate we'll hit end, not wrap
       else
-      screen.text(util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
+      screen.text("→" .. util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
     end
 
   elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
@@ -92,27 +93,28 @@ function dash_functions.arranger_chart()
 
 
   -- ARRANGER MODE GLYPH
-
-  -- glyph level -- todo see if we should pulse final segment when looping and blink when ending (to match grid led)
-  local level = on and lvl_pane_selected or lvl_pane_deselected   -- bright == on/dark == off
-  if final_seg and not valid_jump then                        -- blink final-segment warning
-    if transport_state == "playing" then
-      level = sprocket_metro.downbeat and level or (lvl_pane - 2) -- blink with metro when possible (todo look at letting metro free-run)
-      else
-      level = blinky == 1 and level or (lvl_pane - 2)        -- otherwise fast blinky
-    end
-  end
-  screen.level(level)
-
   -- glyph type: loop or one-shot
-  -- todo norns.ttf
+  -- todo norns.ttf 
   if params:string("playback") == "Loop" then
+
+    if final_seg and not valid_jump then                              -- pulse final-segment warning when looping
+      screen.level(lvl_pane_selected + led_pulse)
+    else
+      screen.level(on and lvl_pane_selected or lvl_pane_deselected)   -- standard level: bright == on/dark == off
+    end
+
     for i = 1, #glyphs.loop do
-    screen.pixel(120 + glyphs.loop[i][1], glyphs.loop[i][2] + dash_y + 3)
+      screen.pixel(120 + glyphs.loop[i][1], glyphs.loop[i][2] + dash_y + 3)
     end
   else
+    if final_seg and not valid_jump then                              -- blink final-segment warning when about to stop
+      screen.level(lvl_pane_selected + (blinky * 2))
+    else
+      screen.level(on and lvl_pane_selected or lvl_pane_deselected)   -- standard level: bright == on/dark == off
+    end
+
     for i = 1, #glyphs.one_shot do
-    screen.pixel(120 + glyphs.one_shot[i][1], glyphs.one_shot[i][2] + dash_y + 3)
+      screen.pixel(120 + glyphs.one_shot[i][1], glyphs.one_shot[i][2] + dash_y + 3)
     end
   end
 
