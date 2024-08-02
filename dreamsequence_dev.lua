@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240802 @modularbeat
+-- 1.4 240802 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -594,7 +594,7 @@ function init()
 
   params:add_number("chord_dynamics", "Dynamics", 0, 100, 70, function(param) return percent(param:get()) end)
 
-  params:add_number("chord_dynamics_ramp", "Ramp", -100, 100, 0, function(param) return percent(param:get()) end) --todo p0 update param and docs to "Tracking"
+  params:add_number("chord_dynamics_ramp", "Ramp", -100, 100, 0, function(param) return percent(param:get()) end) --todo p1 update param and docs to "Tracking"
 
   -- will act on current pattern unlike numbered seq param
   max_chord_pattern_length = 16
@@ -1462,7 +1462,6 @@ function init()
 
   params:set_action("mode", 
     function()
-      gen_chord_tab()
       build_scale()
       if transport_state == "stopped" then
         preload_chord()
@@ -2013,7 +2012,7 @@ function init()
   countdown_timer.count = -1
   countdown_timer:start()
 
-  gen_chord_tab()
+  -- gen_triad_lookups() -- not sure if needed any more
 
   -- start and reset lattice to get note durations working
   disable_sprockets()
@@ -2093,7 +2092,7 @@ local function sort_and_remove_duplicates(t)
 end
 
 
--- Used while transport is stopped to preview their first chord when we're on step 0
+-- Used while transport is stopped to preview the first chord when we're on step 0
 function preload_chord()
   if transport_state == "stopped" then
     local x = chord_pattern[active_chord_pattern][1]
@@ -3545,7 +3544,7 @@ function gen_chord_name()
   local x = editing_chord_x
   local y = editing_chord_y
   local x_wrapped = util.wrap(x, 1, 7)
-  local scale = params:get("mode")
+  local scale = editing_chord_scale
   local custom = theory.custom_chords[scale][p][x]
 
   if custom[y] then -- is a custom chord
@@ -3559,6 +3558,8 @@ function gen_chord_name()
   end
 end
 
+
+
 -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
 -- Todo optimization: cached table of intervals at the scale>>pattern>>y level
 -- Also used for previewing chords with g.key while transport is stopped/paused
@@ -3568,18 +3569,19 @@ function update_chord(x, y) -- y is optional when playing chord using g.key
   current_chord_d = util.wrap(x, 1, 7)
 
   -- todo p1 optimize- might build chord_raw, chord_densified, and chord_extended whenever chord is edited or mode changes
-  local custom = theory.custom_chords[params:get("mode")][active_chord_pattern][x]
   local y = y or chord_pattern_position
   local raw = {}
+  local scale = params:get("mode")
+  local custom = theory.custom_chords[scale][active_chord_pattern][x]
 
   -- determines if we're using a custom chord or standard
   if custom[y] then
     raw = custom[y].intervals
   else
-    raw = theory.chord_triad_intervals[x]
+    raw = theory.chord_triad_intervals[scale][x]
   end
   chord_raw = raw
-  chord_triad = theory.chord_triad_intervals[x] -- trialing keeping the triad even if the chord is customized. needs to be updated elsewhere I suppose.
+  chord_triad = theory.chord_triad_intervals[scale][x] -- trialing keeping the triad even if the chord is customized. needs to be updated elsewhere I suppose.
 
   local rawcount = #raw
   local max_interval = raw[rawcount] or 0
@@ -3940,7 +3942,7 @@ end
 
 
 transform_note[8] = function(note_num, octave) -- chromatic intervals + base triad root
-  local root = theory.chord_triad_intervals[current_chord_x][1]
+  local root = theory.chord_triad_intervals[params:get("mode")][current_chord_x][1]
 
   return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
 end
@@ -3965,7 +3967,7 @@ for i = 1, 8 do
   table.insert(transform_note,
     function(note_num, octave) -- custom scale + base triad root transposition (kinda weird but designed to match mode+tr.)
       -- local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
-      local note_num = note_num + (theory.chord_triad_intervals[current_chord_x][1])  -- alternative transposing by base triad root
+      local note_num = note_num + (theory.chord_triad_intervals[params:get("mode")][current_chord_x][1])  -- alternative transposing by base triad root
       local scale_custom = scale_custom[i]
       local length = #scale_custom
       local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
@@ -4661,6 +4663,7 @@ end
 
 -- inits table of standard chord options for editing mode/degree
 -- todo p0 needs to be called on mode param change, too (events)
+-- or we need to lock in scales upon entering menu (prob better)
 function gen_chord_menus()
   chord_menu_names = theory.lookup_scales[theory.base_scales[params:get("mode")]].chord_names[util.wrap(editing_chord_x, 1, 7)]
 end
@@ -4715,7 +4718,7 @@ function init_chord_editor()
       end
     end
   else
-    intervals = theory.chord_triad_intervals[x]
+    intervals = theory.chord_triad_intervals[editing_chord_scale][x]
     editing_chord_type = "standard"
   end
 
@@ -4755,7 +4758,7 @@ function g.key(x, y, z)
         local editing_chord_y = editing_chord_y -- distinct from x/y coords!
         local root = editing_chord_root
         local editing_chord_bools = editing_chord_bools
-        local custom = theory.custom_chords[params:get("mode")][pattern][editing_chord_x]
+        local custom = theory.custom_chords[editing_chord_scale][pattern][editing_chord_x]
 
         if not custom[editing_chord_y] then
           custom[editing_chord_y] = {intervals = {}}
@@ -5039,10 +5042,11 @@ function g.key(x, y, z)
           grid_interaction = "chord_key_held"
           lvl = lvl_dimmed
           update_dash_lvls()
+          editing_chord_scale = params:get("mode")
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
           editing_chord_y = y -- used for chord editor
-          editing_chord_root = theory.chord_triad_intervals[x][1]
+          editing_chord_root = theory.chord_triad_intervals[editing_chord_scale][x][1]
 
           local mode = params:get("mode")
           local key = util.wrap(params:get("transpose"), 0, 11)
@@ -5406,34 +5410,13 @@ end
 -- NORNS KEY FUNCTIONS
 ----------------------
 --#region key local sub functions
--- check if the currently-selected chord is the default triad for this scale/degree
+-- check if the currently-selected chord is the default triad for editing scale/degree
 -- if so, wipe the custom chord entry so we know it's default
 local function default_chord_check()
-  -- important: variant needed to compare custom chord name against chord_triad_names in case scale has changed 
-  -- and a formerly "custom" chord is now default for the scale/degree. 
-  -- check is needed on g.key down and on gen_chord_readout.
-  -- Q: would that alleviate the need for this to run on enc/chord_editor close?
-
-  if chord_menu_names[chord_menu_index] == theory.chord_triad_names[editing_chord_x] then -- if standard chord, delete chord_custom entry
-    theory.custom_chords[params:get("mode")][editing_chord_pattern][editing_chord_x][editing_chord_y] = nil
+  if chord_menu_names[chord_menu_index] == theory.chord_triad_names[editing_chord_scale][editing_chord_x] then -- if standard chord, delete chord_custom entry
+    theory.custom_chords[editing_chord_scale][editing_chord_pattern][editing_chord_x][editing_chord_y] = nil
   end
 end
-
--- -- WIP variant of the above which uses args to target the chord position
--- -- run on g.key down and on gen_chord_readout
--- function default_chord_check_args(pattern, x, y) -- todo p0 find local position!
---   local custom = theory.custom_chords[pattern][x]
---   if custom[y] then
---     if custom[y].name == theory.chord_triad_names[x] then
---       custom[y] = nil
---       print("DEBUG standard chord identified")
---     else
---       print("DEBUG custom chord identified")
---     end
---   else
---     print("DEBUG standard chord identified")
---   end
--- end
 
 --#endregion key local sub functions
 
@@ -6099,11 +6082,10 @@ end
 
 -- select custom chord from menu, set value
 local function delta_chord(d)
-  local pattern = editing_chord_pattern
   local x = editing_chord_x
   local y = editing_chord_y
   local root = editing_chord_root
-  local custom = theory.custom_chords[params:get("mode")][pattern][x]
+  local custom = theory.custom_chords[editing_chord_scale][editing_chord_pattern][x]
 
   chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
   local name = chord_menu_names[chord_menu_index]

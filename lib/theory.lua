@@ -111,7 +111,7 @@ theory.chords = {
   {name = "Major 6", short_name = "6", dash_name_1 = "6", alt_names = {"Maj6"}, intervals = {0, 4, 7, 9}}, -- convention omits M as there is no need to differentiate M/dominant
   {name = "Major 7", short_name = "maj7", dash_name_1 = "M7", alt_names = {"Maj7"}, intervals = {0, 4, 7, 11}},
   {name = "Add 9", short_name = "add9", dash_name_1 = "", dash_name_2 = "add9", intervals = {0, 4, 7, 14}},
-  {name = "Major 6/9", short_name = "6/9", dash_name_1 = "6/9", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}},
+  {name = "Major 6∕9", short_name = "6∕9", dash_name_1 = "6∕9", alt_names = {"Maj69"}, intervals = {0, 4, 7, 9, 14}}, -- alt "∕" for dash
   {name = "Major 9", short_name = "maj9", dash_name_1 = "M9", alt_names = {"Maj9"}, intervals = {0, 4, 7, 11, 14}},
   {name = "Major 11", short_name = "maj11", dash_name_1 = "M11", alt_names = {"Maj11"}, intervals = {0, 4, 7, 11, 14, 17}},
   {name = "Major 13", short_name = "maj13", dash_name_1 = "M13", alt_names = {"Maj13"}, intervals = {0, 4, 7, 11, 14, 17, 21}},
@@ -123,14 +123,14 @@ theory.chords = {
   {name = "Augmented 7", short_name = "+7", dash_name_1 = "+7", intervals = {0, 4, 8, 10}},
   {name = "Augmented Major 7", short_name = "+maj7", dash_name_1 = "+M7", alt_names = {"Maj7#5"}, intervals = {0, 4, 8, 11}},
 
-  {name = "Minor Major 7", short_name = "m♮7", dash_name_1 = "m♮7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
+  {name = "Minor Major 7", short_name = "m(M7)", dash_name_1 = "m", dash_name_2 = "M7", alt_names = {"MinMaj7"}, intervals = {0, 3, 7, 11}}, -- or mM7 but benefits from superscript
   {name = "Minor 6", short_name = "m6", dash_name_1 = "m6", alt_names = {"Min6"}, intervals = {0, 3, 7, 9}},
   {name = "Minor 7", short_name = "m7", dash_name_1 = "m7", alt_names = {"Min7"}, intervals = {0, 3, 7, 10}},
   {name = "Minor add 9", short_name = "m(add9)", dash_name_1 = "m", dash_name_2 = "add9", intervals = {0, 3, 7, 14}}, -- kinda weird formatting for short_name but no superscript yet
-  {name = "Minor 6/9", short_name = "m6/9", dash_name_1 = "m6/9", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}},
+  {name = "Minor 6∕9", short_name = "m6∕9", dash_name_1 = "m", dash_name_2 = "6∕9", alt_names = {"Min69"}, intervals = {0, 3, 7, 9, 14}}, -- alt "∕" for dash and bumped to 2 lines for G#m6/9
   {name = "Minor 9", short_name = "m9", dash_name_1 = "m9", alt_names = {"Min9"}, intervals = {0, 3, 7, 10, 14}},
   {name = "Minor 11", short_name = "m11", dash_name_1 = "m11", alt_names = {"Min11"}, intervals = {0, 3, 7, 10, 14, 17}},
-  {name = "Minor 13", short_name = "m13", dash_name_1 = "13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
+  {name = "Minor 13", short_name = "m13", dash_name_1 = "m13", alt_names = {"Min13"}, intervals = {0, 3, 7, 10, 14, 17, 21}},
   {name = "Diminished", short_name = "°", dash_name_1 = "°", alt_names = {"Dim"}, intervals = {0, 3, 6}}, -- superscript dim symbol in norns.ttf
   {name = "Diminished 7", short_name = "°7", dash_name_1 = "°7", alt_names = {"Dim7"}, intervals = {0, 3, 6, 9}},
   {name = "Half Diminished 7", short_name = "ø7", dash_name_1 = "ø7", alt_names = {"Min7b5"}, intervals = {0, 3, 6, 10}}, -- superscript half-dim symbol in norns.ttf
@@ -140,7 +140,7 @@ theory.chords = {
 
 -- lookup for chord degrees and qualities, mirroring musicutil.SCALE_CHORD_DEGREES with breakout for chord roman numeral and "quality"
 -- indices 1-7 are triads, 8-14 are 7ths
--- todo technically this can now be genererated (see gen_chord_tab and gen_chord_lookups) except for the roman numerals which need work
+-- todo technically this can now be genererated (see gen_triad_lookups and gen_chord_lookups) except for the roman numerals which need work
 -- todo use chord glyphs from norns.ttf
 theory.chord_degree = {
   {
@@ -313,6 +313,8 @@ local chord_equivalent = {
 }
 
 
+
+
 local function chord_offset(chord, offset)
   local chord_to_index = {A = 1, B = 2, C = 3, D = 4, E = 5, F = 6, G = 7}
   local index_to_chord = {"A", "B", "C", "D", "E", "F", "G"}
@@ -320,46 +322,6 @@ local function chord_offset(chord, offset)
 end
 
 
-
--- generates base triad interval tables across 2 octaves for selected scale
--- called when scale is changed
--- will eventually replace chord_degrees but needs to have degrees portion completed
--- needs to fire before alphabet rule stuff
--- optional scale_idx will use this arg rather than song's current scale (todo: this uses dreamsequence.scales index which should be revisited)
-function gen_chord_tab(scale_idx)
-  local mode = scale_idx or params.lookup["mode"] and params:get("mode") or 1
-
-  theory.chord_triad_intervals = {} -- table containing 2 octaves of chord intervals for degrees 1-7 (and 2nd octave, 8-14) for current mode+key
-  theory.chord_triad_names = {} -- table containing chord type (m,°, etc..) for degrees 1-7, repeated for 8-14
-
-  for x = 1, 14 do
-    local octave = ((x > 7) and 1 or 0) * 12
-    local degree = util.wrap(x, 1, 7)
-    local intervals_raw = theory.lookup_scales[theory.base_scales[mode]]["intervals"]
-    local intervals = {}
-    local triad = {1, 3, 5}
-
-    for i = degree, #intervals_raw do
-      table.insert(intervals, intervals_raw[i] + octave)
-    end
-
-    for i = 1, degree do -- rotate to end of table and increase by an octave
-      table.insert(intervals, (intervals_raw[i] + 12 + octave))
-    end
-
-    theory.chord_triad_intervals[x] = {}
-    theory.chord_triad_names[x] = {}
-    -- todo chord_triad_degrees !
-
-    for i = 1, 3 do
-      theory.chord_triad_intervals[x][i] = intervals[triad[i]]
-    end
-
-    local c = find_chord(theory.chord_triad_intervals[x], theory.chord_triad_intervals[x][1])
-    theory.chord_triad_names[x] = c.short_name
-  end
-
-end
 
 
 -- Accepts a table of intervals and returns chord table from theory.chords
@@ -388,6 +350,56 @@ function find_chord(intervals, root)
     end
   end
 end
+
+
+
+
+-- generates base triad interval tables across 2 octaves for selected scale
+-- called when scale is changed
+-- will eventually replace chord_degrees but needs to have degrees portion completed
+-- needs to fire before alphabet rule stuff
+-- optional scale_idx will use this arg rather than song's current scale (todo: this uses dreamsequence.scales index which should be revisited)
+function gen_triad_lookups()
+  theory.chord_triad_intervals = {} -- triad intervals across 2 octaves each base scale
+  theory.chord_triad_names = {} -- chord type (m,°, etc..) for triads, repeated across 2 octaves for each base scale
+
+  for s = 1, 9 do -- #theory.base_scales do
+    theory.chord_triad_intervals[s] = {}
+    theory.chord_triad_names[s] = {}
+
+    for x = 1, 14 do
+      local octave = ((x > 7) and 1 or 0) * 12
+      local degree = util.wrap(x, 1, 7)
+      local intervals_raw = theory.lookup_scales[theory.base_scales[s]]["intervals"]
+      local intervals = {}
+      local triad = {1, 3, 5}
+
+      for i = degree, #intervals_raw do
+        table.insert(intervals, intervals_raw[i] + octave)
+      end
+
+      for i = 1, degree do -- rotate to end of table and increase by an octave
+        table.insert(intervals, (intervals_raw[i] + 12 + octave))
+      end
+
+      theory.chord_triad_intervals[s][x] = {}
+      theory.chord_triad_names[s][x] = {}
+      -- todo chord_triad_degrees !
+
+      for i = 1, 3 do
+        theory.chord_triad_intervals[s][x][i] = intervals[triad[i]]
+      end
+
+      local c = find_chord(theory.chord_triad_intervals[s][x], theory.chord_triad_intervals[s][x][1])
+      theory.chord_triad_names[s][x] = c.short_name
+    end
+
+  end
+
+end
+gen_triad_lookups() -- DS run once at init
+
+
 
 
 -- initialize tables where custom chords don't already exist
@@ -606,6 +618,7 @@ function find_matching_scales()
 end
 
 
+
 -- initialize tables where custom scales don't exist (DS-specific)
 if not theory.scales then
   theory.scales = {}
@@ -624,6 +637,8 @@ for mode_no = 1, #theory.base_scales do
   end
 
 end
+
+
 
 
 -- working table with bools to set state for LEDs.
@@ -647,6 +662,8 @@ function gen_custom_scale()
 end
 
 
+
+
 -- Accepts a table of scale intervals and returns matching scale name
 function find_scale_name(intervals)
   local lookup = theory.lookup_scales
@@ -665,6 +682,8 @@ function find_scale_name(intervals)
     end
   end
 end
+
+
 
 
 -- enforces the "alphabet rule" for chords and picks whichever key has fewer nonstandard chords (##, bb, B#, Cb, E#, Fb)
@@ -705,11 +724,7 @@ local function gen_keys()
           -- todo: replace with generated "qualities" or short_name for degrees 1-7
           -- local quality = theory.chord_degree[mode]["quality"][chord_no]
 
-
-        
-          -- we generate triads in gen_chord_tab() but they're for the selected scale only. Could iterate on that function here, perhaps?
-          gen_chord_tab(mode) -- run function to temporarily generate chord_triad_names for this mode
-          local quality = theory.chord_triad_names[chord_no]
+          local quality = theory.chord_triad_names[mode][chord_no]
 
           if prev_chord_name then
             if prev_letter == chord_letter then
@@ -742,9 +757,6 @@ local function gen_keys()
   end
 end
 gen_keys()
-
-
-gen_chord_tab() -- DS run once at init
 
 
 
