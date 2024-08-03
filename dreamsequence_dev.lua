@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 1.4 240802 @modularbeat
+-- 1.4 240803 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -826,6 +826,34 @@ function init()
   params:add_separator("VOICES")
   nb:add_player_params() -- modified to also add nb.indices
   
+  -- WIP TODAY
+
+  -- insert MIDI events for active MIDI ports
+  for port = 1, 16 do
+    if midi.vports[port].connected then
+      for ch = 1, 16 do
+        -- generate param for each port/channel
+        local name = "midi_pc_" .. port .. "_" .. ch
+        params:add_number(name, name, 1, 128, 0)
+        params:set_save(name, false)
+        params:hide(name)
+
+        -- using event action rather than param action since:
+        -- 1. we don't want this being sent at param bang and 
+        -- 2. we do want it to be triggered every time event fires, even if param index hasn't changed
+        table.insert(events_lookup, {
+          category = "MIDI port " .. port,
+          subcategory = "Channel " .. ch,
+          event_type = "param",
+          id = name,
+          name = "Program change",
+          action = 'midi.vports[' .. port .. ']:program_change(params:get("' .. name .. '") - 1, ' .. ch .. ')'
+        })
+      end
+    end
+  end
+
+
   -- due to crow_ds adding *all* shared params for Crow outs 1-4 in one player, break them up:
   local function subdivide_indices(string)
     local category
@@ -956,7 +984,7 @@ function init()
   params:hide("event_op_limit")
 
   params:add_option("event_op_limit_random", "Limit", {"Off", "On"}, 1)
-  params:set_action("event_op_limit_random",function() gen_menu_events() end)
+  params:set_action("event_op_limit_random", function() gen_menu_events() end)
   params:hide("event_op_limit_random")
 
   params:add_number("event_op_limit_min", "Min", -math.huge, math.huge, 0)
@@ -7236,7 +7264,7 @@ function redraw()
 
         screen.level(lvl_menu_deselected)
         screen.move(dash_x - 4, 8)
-        screen.text_right("E2")
+        screen.text_right("E3")
         -- glyph, replace with norns.ttf
         -- for i = 1, #glyphs.loop do
         --   screen.pixel(dash_x - 9 + glyphs.loop[i][1], glyphs.loop[i][2] + 3)
