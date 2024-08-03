@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 240702 @modularbeat
+-- 1.4 240802 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -23,12 +23,14 @@
 
 
 -- stuff needed by includes
+dreamsequence = {}
+
 -- layout and palette
 xy = {
-  dash_x = 99, -- todo draw dash first-- adjust var if dash is empty
+  dash_x = 93,
   header_x = 0,
-  header_y = 7,
-  menu_y = 9,
+  header_y = 8,
+  menu_y = 8,
   scrollbar_y = 12
 }
 
@@ -36,11 +38,10 @@ local lvl_normal = {
   menu_selected = 15,
   menu_deselected = 4,
   pane = 15,
-  pane_selected = 1,
+  pane_selected = 0,  -- also chart black
   pane_deselected = 3,
   pane_dark = 7,
-  chart_deselected = 2, -- slightly prefer 2 but 3 has less banding
-  chart_area = 0
+  chart_deselected = 3,
 }
 
 local lvl_dimmed = {
@@ -48,10 +49,9 @@ local lvl_dimmed = {
   menu_deselected = 2,
   pane = 7,
   pane_selected = 1,
-  pane_deselected = 3,
+  pane_deselected = 3, -- not dimmed
   pane_dark = 3,
-  chart_deselected = 1,
-  chart_area = 0
+  chart_deselected = 2,
 }
 
 lvl = lvl_normal -- required for includes:dashboards.lua
@@ -67,17 +67,57 @@ led_pulse = 0  -- must be global for dashboards.lua todo look into this
 
 max_seqs = 3
 max_seq_cols = 15 - max_seqs
-max_seq_patterns = 4 -- can probably hardcode
+max_seq_patterns = 4
 max_seq_pattern_length = 16
 
+
+-- base scales used to define triads
+dreamsequence.scales = {
+
+-- canonical scales
+"Major", -- "Ionian", 
+"Natural Minor", -- "Aeolian", 
+"Harmonic Minor",
+"Melodic Minor",
+"Dorian",
+"Phrygian",
+"Lydian",
+"Mixolydian",
+"Locrian",
+
+-- -- some nice additions that work, too, but needs to think about handling degree readout
+-- "Altered Scale",  -- double flats in F, might wait for norns.ttf
+-- "Harmonic Major", -- double flats in Db, might wait for norns.ttf
+-- "Overtone",
+}
+
+-- pre-init bits n bobs
 norns.version.required = 231114 -- rolling back for Fates but 240221 is required for link support
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
+
+-- load global scales file if present
+local filepath = norns.state.data
+local scales = {}
+
+if util.file_exists(filepath) then
+  if util.file_exists(filepath.."scales.data") then
+    scales = tab.load(filepath.."scales.data")
+    print("table >> read: " .. filepath.."scales.data")
+  else
+    scales = gen_default_scales()
+  end
+end
+
+theory.scales = scales
+
+
 clock.link.stop() -- transport won't start if external link clock is already running
 
 -- pre-init locals
 local latest_strum_coroutine = coroutine.running()
 
+--#region init
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
@@ -292,7 +332,7 @@ function init()
   ------------------
   -- Persistent settings saved to prefs.data and managed outside of .pset files
 
-  params:add_group("preferences", "PREFERENCES", 15 + 16) -- 16 midi ports
+  params:add_group("preferences", "PREFERENCES", 16 + 16) -- 16 midi ports
 
   -- params:add_separator("pset","pset")
 
@@ -300,9 +340,12 @@ function init()
   params:set_save("save_template", false)
   params:set_action("save_template", function() params:write(00,"template") end)
 
+  params:add_trigger("save_scales", "Save scales")
+  params:set_save("save_scales", false)
+  params:set_action("save_scales", function() write_global_scales() end)
+
   params:add_option("default_pset", "Load pset", {"Off", "Last", "Template"}, 1)
   params:set_save("default_pset", false)
-
   -- don't load last/template if it's a new version, assuming breaking changes
   -- param_option_to_index is used rather than set_param_string to handle any invalid/changed saved values
   params:set("default_pset", prefs.last_version == version and param_option_to_index("default_pset", prefs.default_pset) or 1)
@@ -310,26 +353,34 @@ function init()
   
   -- params:add_separator("interaction","interaction")
 
-  params:add_option("sync_grid_norns", "Sync Grid/Norns", {"Off", "On"}, 2)
-  params:set_save("sync_grid_norns", false)
-  params:set("sync_grid_norns", param_option_to_index("sync_grid_norns", prefs.sync_grid_norns) or 2)
-  params:set_action("sync_grid_norns", function() save_prefs() end)
+  params:add_option("sync_views", "Sync views", {"Off", "On"}, 2)
+  params:set_save("sync_views", false)
+  params:set("sync_views", param_option_to_index("sync_views", prefs.sync_views) or 2)
+  params:set_action("sync_views", function() save_prefs() end)
+
+  params:add_option("notifications", "Notifications", {"Off", "Brief", "Extended"}, 2)
+  params:set_save("notifications", false)
+  params:set("notifications", param_option_to_index("notifications", prefs.notifications) or 2)
+  params:set_action("notifications", function() save_prefs() end)
+
+  params:add_option("preview_notes", "Preview notes", {"Off", "On"}, 2)
+  params:set_save("preview_notes", false)
+  params:set("preview_notes", param_option_to_index("preview_notes", prefs.preview_notes) or 2)
+  params:set_action("preview_notes", function() save_prefs() end)
 
   -- params:add_separator("dashboard","dashboard")
 
-  local defaults = {"Transport", "Chord name", "Chord pattern", "Arranger chart", "Time remaining", nil}
+  local defaults = {"Metro T+", "Arranger chart", "Chord progress", "Chord name"}
   -- todo probably a better way to do this rather than having these dummy funcs being called
-  function init_dummy_funcs()
-    function calc_seconds_remaining()
-    end
-
-    function calc_seconds_elapsed()
-    end
-
+  local function init_dummy_funcs()
+    function calc_seconds_remaining() end
+    function calc_seconds_elapsed() end
   end
   init_dummy_funcs()
+  xy.dash_x = 129 -- kinda silly but in case user has no dashboards, shift over the scrollbar
 
-  for dash_no = 1, 6 do
+  max_dashboards = 4
+  for dash_no = 1, max_dashboards do -- limiting to 4 dashboards for now
     params:add_option("dash_" .. dash_no, "Dash " .. dash_no, dash_name, 1)
     params:set_save("dash_" .. dash_no, false)
     params:set("dash_" .. dash_no, param_option_to_index("dash_" .. dash_no, prefs["dash_" .. dash_no] or defaults[dash_no]) or 1 )
@@ -338,15 +389,16 @@ function init()
         save_prefs()
         dash_list[dash_no] = dash_functions[dash_ids[val]]
 
-        -- enable/disable dash functions depending on selection
+        -- redefine dash functions depending on selection
 
         -- init functions in inactive states
         init_dummy_funcs()
         seconds_remaining = "00:00"
         seconds_elapsed_raw = 0
 
-        for dash_no = 1, 6 do -- check every param each time one is changed
-          if params:string("dash_" .. dash_no) == "Time remaining" then
+        for dash_no = 1, max_dashboards do -- check every param each time one is changed
+          local dash = params:string("dash_" .. dash_no)
+          if dash == "Metro T-" then
 
             function calc_seconds_remaining()
               if arranger_active then
@@ -358,12 +410,18 @@ function init()
               seconds_remaining = s_to_min_sec(math.ceil(seconds_remaining))
             end
 
-          elseif params:string("dash_" .. dash_no) == "Time elapsed" then
+            xy.dash_x = 93
+
+          elseif dash == "Metro T+" then --redefine function if needed
             function calc_seconds_elapsed()
               seconds_elapsed_raw = seconds_elapsed_raw + .1
               seconds_elapsed = s_to_min_sec(seconds_elapsed_raw)
             end
 
+            xy.dash_x = 93
+
+          elseif dash ~= "Off" then
+            xy.dash_x = 93
           end
         end
 
@@ -380,7 +438,7 @@ function init()
   params:set("voice_instances", (prefs.voice_instances or 1))
   params:set_action("voice_instances", function() save_prefs() end)
 
-  local function enc_config(enc, val)
+  local function config_enc(enc, val)
     local accel = 1 - (val % 2)
     local val = (9 - val + accel) / 2
     -- print("enc " .. enc .. ": sens " .. util.round(val) .. ", accel " .. (accel == 1 and "on" or "off"))
@@ -389,10 +447,10 @@ function init()
   end
 
   for i = 1, 3 do
-    params:add_option("enc_config_" .. i, "Enc " .. i, {"Slower -accel", "Slower +accel", "Slow, -accel", "Slow +accel", "Normal -accel", "Normal +accel", "Fast -accel", "Fast +accel"}, 6)
-    params:set_save("enc_config_" .. i, false)
-    params:set("enc_config_" .. i, ((prefs["enc_config_" .. i]) or 6))
-    params:set_action("enc_config_" .. i, function(val) save_prefs(); enc_config(i, val) end)
+    params:add_option("config_enc_" .. i, "Enc " .. i, {"Slower -accel", "Slower +accel", "Slow, -accel", "Slow +accel", "Normal -accel", "Normal +accel", "Fast -accel", "Fast +accel"}, 6)
+    params:set_save("config_enc_" .. i, false)
+    params:set("config_enc_" .. i, ((prefs["config_enc_" .. i]) or 6))
+    params:set_action("config_enc_" .. i, function(val) save_prefs(); config_enc(i, val) end)
   end
   
   params:add_separator ("MIDI CLOCK OUT") -- todo hide if no MIDI devices
@@ -425,19 +483,9 @@ function init()
   -- SONG PARAMS --
   ------------------
   params:add_group("song", "SONG", 13)
-  
-  local modes = {
-    "Major", -- "Ionian", 
-    "Natural minor", -- "Aeolian", 
-    "Harmonic minor", 
-    "Melodic minor", 
-    "Dorian", 
-    "Phrygian", 
-    "Lydian", 
-    "Mixolydian", 
-    "Locrian"
-  }
-  params:add_number("mode", "Mode", 1, 9, 1, function(param) return modes[param:get()] end) -- post-bang action
+ 
+  -- TODO rename as SCALE and make option type
+  params:add_option("mode", "Scale", dreamsequence.scales, 1) -- post-bang action
 
   params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
@@ -477,7 +525,7 @@ function init()
   ------------------
   -- CHORD PARAMS --
   ------------------
-  params:add_group("chord", "CHORD", 19)
+  params:add_group("chord", "CHORD", 18)
 
   nb:add_param("chord_voice_raw", "Voice raw")
   params:hide("chord_voice_raw")
@@ -497,15 +545,35 @@ function init()
   params:add_option("chord_mute", "Play/mute", {"Play", "Mute"}, 1)
   
   params:add_number("chord_octave","Octave", -4, 4, 0)
-  
-  params:add_option("chord_type","Type", {"Triad", "7th"}, 1)
-  
-  params:add_number("chord_range", "Range", 3, 64, 4, function(param) return chord_range_string(param:get()) end) -- intervals
 
-  params:add_number("chord_max_notes", "Max notes", 1, 24, 4)
+  params:add_number("chord_range", "Range", 0, 64, 0, 
+    function(param)
+      local val = param:get()
 
-  params:add_number("chord_inversion", "Inversion", 0, 16, 0)
+      if val == 0 then
+        return("Chord")
+      -- elseif params:get("chord_notes") > params:get("chord_range") then -- circle back on this. might keep
+        -- return(val .. "*")
+      else
+        return(val)
+      end
+    end
+  )
+
+  params:add_number("chord_notes", "Max notes", 1, 25, 25,
+  function(param)
+    local val = param:get()
+
+    if val == 25 then
+      return("Range")
+    else
+      return(val)
+    end
+  end
+  )
   
+  params:add_number("chord_inversion", "Inversion", 0, 16, 0) -- todo negative inversion
+
   params:add_option("chord_style", "Strum", {"Off", "Low-high", "High-low"}, 1)
   
   params:add_number("chord_strum_length", "Strum length", 1, 15, 15, function(param) return strum_length_string(param:get()) end)
@@ -526,7 +594,7 @@ function init()
 
   params:add_number("chord_dynamics", "Dynamics", 0, 100, 70, function(param) return percent(param:get()) end)
 
-  params:add_number("chord_dynamics_ramp", "Ramp", -100, 100, 0, function(param) return percent(param:get()) end)
+  params:add_number("chord_dynamics_ramp", "Ramp", -100, 100, 0, function(param) return percent(param:get()) end) --todo p1 update param and docs to "Tracking"
 
   -- will act on current pattern unlike numbered seq param
   max_chord_pattern_length = 16
@@ -538,7 +606,11 @@ function init()
   -- SEQ PARAMS --
   ------------------
 
-  local note_map = {"Triad", "7th", "Mode+tr.", "Mode", "Chromatic+tr.", "Chromatic", "Kit"} -- used by all but chord
+  local note_map = {"Triad", "Chord extd.", "Chord dense", "Chord raw", "Scale", "Scale+tr.", "Chromatic", "Chromatic+tr.", "Kit"} -- used by all but chord
+  for i = 1, 8 do
+    table.insert(note_map, "Custom " .. i)
+    table.insert(note_map, "Custom " .. i .. "+tr.")
+  end
 
   for seq_no = 1, max_seqs do
 
@@ -552,35 +624,11 @@ function init()
 
     params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Blank steps", "Measure", "Cue/event"}, 1)
 
-
-
-    -- WTF ZONE --
-    -- if these params are created, the purple_carrot test produces wack results. comment/uncomment and observe
-    -- params:add_number("dummy_param_"..seq_no, "dummy_param", 1, 1, 1)
-
-    -- -- uncomment to test
-    -- if seq_no == 1 then
-    --   print("1.", purple_carrot)                -- prints 1. nil
-    --   purple_carrot = 14                
-    --   print("2.", purple_carrot)                -- prints 2. 14
-    --   print("3.", -1 * purple_carrot)           -- prints 3. 196
-    --   print("4.", -99 * purple_carrot)          -- prints 4. 196
-    --   print("5.", purple_carrot * -1)           -- prints 5. -14
-    --   print("6.", -purple_carrot)               -- prints 6. -14
-    --   green_carrot = -1 * purple_carrot
-    --   print("7.", green_carrot)                 -- prints 7. 196
-    --   print("8.", (-1 * purple_carrot) == 196)  -- prints 8. TRUE
-    -- end
-
-
-
     params:add_option("seq_reset_on_"..seq_no, "Reset", {"Every step", "Chord steps", "Blank steps", "Measure", "Stop/event"}, 4)
 
-    -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_start_"..seq_no,"Start on", "trigger")
     params:set_action("seq_start_"..seq_no,function()  play_seq[seq_no] = true end) -- seq_1_shot_1 = true end)
     
-    -- Technically acts like a trigger but setting up as add_binary lets it be PMAP-compatible
     params:add_binary("seq_reset_"..seq_no,"Reset on", "trigger")
     params:set_action("seq_reset_"..seq_no,function() reset_seq_pattern(seq_no) end)
 
@@ -798,14 +846,12 @@ function init()
   
   
   -- append nb params to events_lookup
-  -- todo shared function with gen_voice_lookup() but mind the different trim width
+  -- todo derivative of gen_voice_lookup() but mind the different trim width
   local function gen_category_name(string)
     local string = string
-    
     return util.trim_string_to_width(string, 81) -- different length for event vs standard menus
   end
-
-
+  
   -- Function to sort table keys alphabetically. Might move to lib/functions
   local function sort_keys(tbl)
     local keys = {}
@@ -815,32 +861,42 @@ function init()
     table.sort(keys)
     return keys
   end
+
   local sorted = sort_keys(nb.indices)
 
-  for _, k in pairs(sorted) do
-    local v = nb.indices[k]
-    local separator = "general"
-    for i = 1, params:get(v.start_index) do
-      local param = params:lookup_param(i + v.start_index) -- skips inital group
+  for n, k in pairs(sorted) do
+    local name = sorted[n]
+    -- block voices we have replacements for
+    if string.sub(name, 1, 5) ~= "midi:"
+    and name ~= "crow 1/2"
+    and name ~= "crow 3/4"
+    and name ~= "crow para" -- todo test
+    -- and name ~= "jf kit" -- todo test
+    and name ~= "jf mpe" then
 
-    -- tSEPARATOR = 0, tNUMBER = 1, tOPTION = 2, tCONTROL = 3, tFILE = 4, tTAPER = 5, tTRIGGER = 6, tGROUP = 7, tTEXT = 8, tBINARY = 9,
-      if param.t == 1 -- number
-      or param.t == 2 -- option
-      or param.t == 3 -- control
-      or param.t == 5 -- taper
-      or param.t == 6 -- trigger
-      or param.t == 9 then -- binary
-        local event = {
-          id = param.id,
-          category = gen_category_name(k),
-          value_type = param.t == 6 and "trigger" or "continuous",
-          name = util.trim_string_to_width(param.name, 84),
-          subcategory	= separator,
-          event_type = "param"
+      local v = nb.indices[k]
+      local separator = "general"
+      for i = 1, params:get(v.start_index) do
+        local param = params:lookup_param(i + v.start_index) -- skips inital group
+
+      -- tSEPARATOR = 0, tNUMBER = 1, tOPTION = 2, tCONTROL = 3, tFILE = 4, tTAPER = 5, tTRIGGER = 6, tGROUP = 7, tTEXT = 8, tBINARY = 9,
+        if param.t == 1 -- number
+        or param.t == 2 -- option
+        or param.t == 3 -- control
+        or param.t == 5 -- taper
+        or param.t == 6 -- trigger
+        or param.t == 9 then -- binary
+          local event = {
+            id = param.id,
+            category = gen_category_name(k),
+            name = util.trim_string_to_width(param.name, 84),
+            subcategory	= separator,
+            event_type = "param",
           }
           table.insert(events_lookup, event)
-      elseif param.t == 0 then
-        separator = util.trim_string_to_width(param.name, 78)
+        elseif param.t == 0 then
+          separator = util.trim_string_to_width(param.name, 78)
+        end
       end
     end
   end
@@ -884,11 +940,12 @@ function init()
   event_operation_options_continuous = {"Set", "Increment", "Wander", "Random"}
   event_operation_options_discreet = {"Set", "Random"}
   event_operation_options_trigger = {"Trigger"} 
+  derive_value_type(1) -- populate value_type for this entry
   params:add_option("event_operation", "Operation", _G["event_operation_options_" .. events_lookup[1].value_type], 1)
   params:hide("event_operation")
 
   -- todo p1 needs paramcontrol if this is even still used?
-  params:add_number("event_value", "Value", -9999, 9999, get_default_event_value())
+  params:add_number("event_value", "Value", -math.huge, math.huge, get_default_event_value())
   params:hide("event_value")
 
   params:add_number("event_probability", "Probability", 0, 100, 100, function(param) return percent(param:get()) end)
@@ -902,10 +959,10 @@ function init()
   params:set_action("event_op_limit_random",function() gen_menu_events() end)
   params:hide("event_op_limit_random")
 
-  params:add_number("event_op_limit_min", "Min", -9999, 9999, 0)
+  params:add_number("event_op_limit_min", "Min", -math.huge, math.huge, 0)
   params:hide("event_op_limit_min")
   
-  params:add_number("event_op_limit_max", "Max", -9999, 9999, 0)
+  params:add_number("event_op_limit_max", "Max", -math.huge, math.huge, 0)
   params:hide("event_op_limit_max")
 
 
@@ -985,20 +1042,29 @@ function init()
   screen_view_name = "Session"
   dash_y = 0
 
+  --#region scale globals
+  editing_scale = 1
+  scale_index = 0
+  --#endregion
+
+
   --#region chord globals
+  chord_menu_index = 1
+  editing_chord_root = 0
   chord_pattern_length = {4,4,4,4}
   set_chord_pattern(1)
   chord_pattern_q = false
   chord_no = 0
   chord_key_count = 0
+  pending_chord_disable = {} -- [x][y][chord_pattern] chord pattern to disable on key up
   chord_pattern_position = 0
   chord_raw = {}
-  current_chord_x = 0
+  current_chord_x = 1 -- WAG here now that we're using this rather than _c for readout. Might break something.
   current_chord_o = 0
-  current_chord_c = 1
-  next_chord_x = 0
-  next_chord_o = 0
-  next_chord_c = 1
+  current_chord_d = 1 -- to default readout/note transformations
+  -- next_chord_x = 0
+  -- next_chord_o = 0
+  -- next_chord_d = 1
   chord_pattern = {{},{},{},{}}
   for p = 1, 4 do
     for i = 1, max_chord_pattern_length do
@@ -1137,24 +1203,30 @@ function init()
   note_history = {}  -- todo p2 performance of having one vs dynamically created history for each voice
   dedupe_threshold()
   -- reset_clock() -- might need reset_lattice but it hasn't been intialized
-  get_next_chord()
-  chord_raw = next_chord
-
+  
+  -- replacing
+  -- get_next_chord()
+  -- chord_raw = next_chord
+  preload_chord()
 
   --#region PSET callback functions
   -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice"}
+  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice", "scale", "chord"}
 
   function params.action_write(filename, name, number)
     local number = number or "00" -- template
     local filepath = norns.state.data .. number .. "/"
     os.execute("mkdir -p " .. filepath)
+    
     -- Make table with version (for backward compatibility checks) and any useful system params
     misc = {}
     misc.timestamp = os.date()
     misc.version = version
     misc.clock_tempo = params:get("clock_tempo")
     -- misc.clock_source = params:get("clock_source") -- defer to system
+    
+    scale = deepcopy(theory.scales)
+    chord = deepcopy(theory.custom_chords)
 
     -- need to save and restore nb voices which can change based on what mods are enabled
     -- reworked for seq2 but haven't tested
@@ -1177,6 +1249,7 @@ function init()
       voice[sources[i]] = params:string(sources[i])
     end
 
+
     for i = 1, #pset_lookup do
       local tablename = pset_lookup[i]
       tab.save(_G[tablename], filepath .. tablename .. ".data")
@@ -1194,6 +1267,7 @@ function init()
       screen_view_name = "Session"
       misc = {}
       voice = {}
+      scale = {}
       for i = 1, #pset_lookup do
         local tablename = pset_lookup[i]
           if util.file_exists(filepath..tablename..".data") then
@@ -1203,6 +1277,15 @@ function init()
           print("table >> missing: " .. filepath..tablename..".data")
         end
       end
+
+      if scale and #scale > 0 then
+        theory.scales = deepcopy(scale)
+      end
+
+      if chord and #chord > 0 then
+        theory.custom_chords = deepcopy(chord)
+      end
+
       -- clock_tempo isn't stored in .pset for some reason so set it from misc.data (todo: look into inserting into .pset)
       params:set("clock_tempo", misc.clock_tempo or params:get("clock_tempo"))
 
@@ -1268,8 +1351,8 @@ function init()
         transport_state = "stopped" -- just flips to the stop icon so user knows they don't have to do this manually
       end
       build_scale() -- Have to run manually because mode bang comes after all of this for some reason
-      get_next_chord()
-      chord_raw = next_chord
+      preload_chord()
+
       chord_no = 0 -- wipe chord readout
       gen_chord_readout()
       gen_arranger_dash_data("params.action_read")
@@ -1295,14 +1378,14 @@ function init()
       for segment = 1, max_arranger_length do
         for step = 1, max_chord_pattern_length do
           if events[segment][step] ~= nil then
-            for slot = 1, 16 do
-              local event = events[segment][step][slot]
+            for lane = 1, 15 do
+              local event = events[segment][step][lane]
               if event ~= nil then
                 if events_lookup_index[event.id] == nil then
                   warning = true
-                  print("WARNING: unable to locate " .. event.event_type .. " " ..  event.id .. " on event ["..segment.."][" .. step .. "][" .. slot .. "]")
+                  print("WARNING: unable to locate " .. event.event_type .. " " ..  event.id .. " on event ["..segment.."][" .. step .. "][" .. lane .. "]")
                   
-                  events[segment][step][slot] = nil
+                  events[segment][step][lane] = nil
                   events[segment][step].populated = events[segment][step].populated - 1
                   -- If the step's new populated count == 0, decrement count of populated event STEPS in the segment
                   if (events[segment][step].populated or 0) == 0 then
@@ -1343,16 +1426,18 @@ function init()
     prefs.timestamp = os.date()
     prefs.last_version = version
     prefs.default_pset = params:string("default_pset")
-    prefs.sync_grid_norns = params:string("sync_grid_norns")
-    for dash_no = 1, 6 do
+    prefs.sync_views = params:string("sync_views")
+    prefs.notifications = params:string("notifications")
+    prefs.preview_notes = params:string("preview_notes")
+    for dash_no = 1, max_dashboards do
       local id = "dash_" .. dash_no
       prefs[id] = params:string(id)
     end
     prefs.crow_pullup = params:string("crow_pullup")
     prefs.voice_instances = params:get("voice_instances")
-    prefs.enc_config_1 = params:get("enc_config_1")
-    prefs.enc_config_2 = params:get("enc_config_2")
-    prefs.enc_config_3 = params:get("enc_config_3")
+    prefs.config_enc_1 = params:get("config_enc_1")
+    prefs.config_enc_2 = params:get("config_enc_2")
+    prefs.config_enc_3 = params:get("config_enc_3")
     for i = 1, 16 do
       local id = "midi_continue_" .. i
       prefs[id] = params:string(id)
@@ -1375,33 +1460,44 @@ function init()
   -- Some actions need to be added post-bang.
   params:set_action("arranger", function() update_arranger_active() end)
 
-  params:set_action("mode", function() build_scale(); update_chord_action() end)
+  params:set_action("mode", 
+    function()
+      build_scale()
+      if transport_state == "stopped" then
+        preload_chord()
+      else -- immediately update the active chord with whatever custom or triad is on this step (for downstream note sources)
+        update_chord(current_chord_x)
+        gen_chord_readout()
+      end
+    end
+  )
 
--- Redefine div change actions, this time with lattice stuff
-
--- WIP: needs some work! Currently blocks any changes unless stopped LOL
-params:set_action("ts_numerator",
+  -- Redefine div change actions, this time with lattice stuff
+  -- WIP: needs some work! Currently blocks any changes unless stopped LOL
+  params:set_action("ts_numerator",
     function(val) 
       if transport_state == "stopped" then
         ts_numerator = val
         sprocket_measure:set_division(val / params:string("ts_denominator"))
       else
         params:set("ts_numerator", ts_numerator or 4)
+        notification("STOP TRANSPORT FIRST")
       end
     end
   )
 
   params:set_action("ts_denominator",
-  function(val) 
-    if transport_state == "stopped" then
-      ts_denominator = val
-      sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
-      sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
-    else
-      params:set("ts_denominator", ts_denominator or 3)
+    function(val) 
+      if transport_state == "stopped" then
+        ts_denominator = val
+        sprocket_measure:set_division(params:get("ts_numerator") / params:string("ts_denominator"))
+        sprocket_metro:set_division(1 / params:string("ts_denominator") / 2)
+      else
+        params:set("ts_denominator", ts_denominator or 3)
+        notification("STOP TRANSPORT FIRST")
+      end
     end
-  end
-)
+  )
 
   params:set_action("chord_div_index",
     function(val) 
@@ -1798,19 +1894,19 @@ params:set_action("ts_numerator",
           arranger_ending() -- check if arranger is ending
           if chord_pattern_position >= chord_pattern_length[active_chord_pattern] then -- advance arranger
             if not arranger_one_shot_last_pattern then
-              do_events_pre(arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1, 1)
+              do_events(arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1, 1)
             end
           elseif arranger_position == 0 and chord_pattern_position == 0 then  -- bodge for post-reset state
-            do_events_pre(1, 1)
+            do_events(1, 1)
           else
-            do_events_pre(arranger_position, chord_pattern_position + 1)
+            do_events(arranger_position, chord_pattern_position + 1)
           end
         end
         
       end,
       action = function(t)
-          -- get_next_chord()  -- Deprecated
-          advance_chord_pattern()
+        -- get_next_chord()  -- Deprecated, in need of a new sprocket when ready to re-implement
+        advance_chord_pattern()
         grid_dirty = true
       end,
       -- div_action = function(t)  -- call action when div change is processed
@@ -1903,7 +1999,8 @@ params:set_action("ts_numerator",
   end
   
   
-  -- todo: seeing some issues with grid freezing still. I thought this would fix it but maybe lower rate further.
+  -- todo: seeing some intermittent issues with grid freezing still. I thought this would fix it but maybe lower rate further.
+  -- libmonome: error in write: Input/output error
   grid_redraw_metro = metro.init(grid_refresh, 1/30, -1)
   grid_dirty = true
   grid_redraw_metro:start()
@@ -1915,6 +2012,8 @@ params:set_action("ts_numerator",
   countdown_timer.count = -1
   countdown_timer:start()
 
+  -- gen_triad_lookups() -- not sure if needed any more
+
   -- start and reset lattice to get note durations working
   disable_sprockets()
   seq_lattice:start()
@@ -1923,17 +2022,85 @@ params:set_action("ts_numerator",
   reset_arrangement()
 
 end -- end of init
-
+--#endregion init
 
 -----------------------------------------------
 -- Assorted functions junkdrawer
 -----------------------------------------------
+ 
+-- shows a brief pop-up message
+function notification(message)
+  local pref = params:get("notifications")
+
+  if pref ~= 1 then -- not "Off"
+    local time = (pref - 1) * 8
+    lvl = lvl_dimmed
+    update_dash_lvls()
+    screen_message = message
+    if (popup_countdown or 0) == 0 then -- start timer
+
+      clock.run(do_notification_timer, 
+      time, -- 1st arg (display time)
+        function() -- 2nd arg, function
+          screen_message = nil
+          lvl = lvl_normal
+          update_dash_lvls()
+        end
+      )
+    else  -- timer is already running so just restart the countdown
+      popup_countdown = time
+    end
+  end
+
+end
+
+
+-- param action function that saves current scales to global folder location
+function write_global_scales()
+  local filepath = norns.state.data  
+  local scales = deepcopy(theory.scales)
+
+  tab.save(scales, filepath .. "scales.data")
+  print("table >> write: " .. filepath .. "scales.data")
+end
 
 
 function screenshot(name)
   local filepath = norns.state.data .. (name or "screenshot") .. ".png"
   _norns.screen_export_png(filepath)
   print("screenshot saved to " .. filepath)
+end
+
+
+-- Function to remove duplicates
+local function remove_duplicates(t)
+  local seen = {}
+  local result = {}
+  for _, value in ipairs(t) do
+      if not seen[value] then
+          seen[value] = true
+          table.insert(result, value)
+      end
+  end
+  return result
+end
+
+-- Function to sort a table numerically
+local function sort_and_remove_duplicates(t)
+  table.sort(t) -- Sort the table numerically
+  return remove_duplicates(t) -- Remove duplicates
+end
+
+
+-- Used while transport is stopped to preview the first chord when we're on step 0
+function preload_chord()
+  if transport_state == "stopped" then
+    local x = chord_pattern[active_chord_pattern][1]
+    x = x == 0 and current_chord_x or x
+    local y = 1 -- should always be step 1 if we're stopped, pretty sure
+    update_chord(x, y)
+    gen_chord_readout() -- bit of a WAG but seems ok
+  end
 end
 
 
@@ -1963,56 +2130,32 @@ end
 -- end
 
 
--- -- absolutely ridiculous method to clean up ghosting in event lane view
--- function fix_ghosting_events()
---   local row = {0, 0, 0}
---   for i = 1, 15 do
---     local type = event_lanes[i].type
-
---     for j = 1, 2 do
---       if j == 1 then -- rows 1 and 3 are the same
---         if type == "Single" then
---           row[j] = row[j] + 5
---         elseif type == nil then -- "Empty"
---           row[j] = row[j] + 2
---         end -- nothing for 'Multi'!
---       else -- row 2
---         if type then -- Single and Multi have 5 dark pixels
---           row[2] = row[2] + 5
---         else
---           row[2] = row[2] + 2
---         end
---       end
---     end
-
---   end
-
---   row[3] = row[1]
---   -- print(row[1], row[2], row[3]) -- debug if reducing glyph level
-
---   for i = 1, 3 do
---     event_ghosting[i] = (row[i] > 62) and 2 or (row[i] > 21) and 1 or 0
---   end
--- end
-
--- clock.run(key_timer, 3, print("copying"))
-
-
 -- generic timer that runs function after counter reaches 0
 -- eg: clock.run(do_timer, 10, function() print("copying") end)
 function do_timer(countdown, func)
   while true do
     countdown = countdown - 1
     if countdown == 0 then
-      func()
+        func()
       break
-    -- else
-      -- print(countdown)
     end
     clock.sleep(.1)
   end
 end
 
+-- generic timer that runs function after counter reaches 0
+-- eg: clock.run(do_timer, 10, function() print("copying") end)
+function do_notification_timer(countdown, func)
+  popup_countdown = countdown
+  while true do
+    popup_countdown = popup_countdown - 1
+    if popup_countdown == 0 then
+        func()
+      break
+    end
+    clock.sleep(.1)
+  end
+end
 
 function pattern_key_timer()
   keydown_timer = 0
@@ -2051,7 +2194,6 @@ function delete_events_in_segment(new_action)
   norns_interaction = "event_actions_done"
   clock.run(reset_norns_interaction, new_action)
 end
-
 
 function count_keys(tbl)
   local count = 0
@@ -2120,7 +2262,7 @@ function update_lane_glyph()
   and (preview_event.id ~= saved_event.id)          -- and the event is changing
   and lane_path["events"][preview_event.id] ~= nil  -- and the event type we're changing to is in use
   and lane_path["events"][saved_event.id] == 1 then -- and we're releasing the last of this event type in the slot
-  lane_glyph_preview = "Single"                     -- update the lane preview glyph to Single
+    lane_glyph_preview = "Single"                   -- update the lane preview glyph to Single
   else
     lane_glyph_preview = nil
   end
@@ -2131,11 +2273,9 @@ end
 -- returns a dummy version of param with action stripped out 
 -- used to delta events, get min/max, and cue param changes with K1 held down
 function clone_param(id)
-  if params:lookup_param(id) ~= nil then
-    local preview = copy(params:lookup_param(id))
-    preview.action = function() end -- kill off action
-    return(preview)
-  end
+  local preview = shallowcopy(params:lookup_param(id)) -- not sure this is copying all controlspec bits !
+  preview.action = function() end -- kill off action
+  return(preview)
 end
 
 -- -- WIP thing to jump immediately to voice's param group when tapping K1. 
@@ -2217,7 +2357,7 @@ function gen_menu()
   table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
 
   -- CHORD MENU
-  table.insert(menus, {"chord_voice", "chord_type", "chord_octave", "chord_range", "chord_max_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
+  table.insert(menus, {"chord_voice", "chord_octave", "chord_range", "chord_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
   if params:visible("chord_channel") or norns_interaction == "k1" then
     table.insert(menus[#menus], 2, "chord_channel")
   end
@@ -2327,6 +2467,7 @@ function gen_voice_lookups()
         table.insert(voice_param_index, i)
 
       -- block some players that are not relevant or have built-in alternatives
+      -- if updating, also remember to block during event ingesting
       elseif string.sub(option, 1, 5) ~= "midi:"
       and option ~= "crow 1/2"
       and option ~= "crow 3/4"
@@ -2465,9 +2606,23 @@ function reset_sprocket_cv_harm(from)
 end
 
 
--- todo p3 move with other musicutil functions
 function build_scale()
-  notes_nums = musicutil.generate_scale_of_length(0, params:get("mode"), 7)
+  local mode = params:get("mode")
+
+  scale_heptatonic = theory.lookup_scales[theory.base_scales[params:get("mode")]].intervals
+  gen_custom_scale() -- generates bool table with notes for each of the 8 custom scales
+
+  -- todo p1 optimize
+  -- could also do this for each source so no lookup is necessary each time a note plays
+  scale_custom = {}
+  for i = 1, 8 do
+    if theory.scales[mode][i] and theory.scales[mode][i][1] then
+      scale_custom[i] = theory.scales[mode][i]
+    else
+      scale_custom[i] = scale_heptatonic -- fall back on standard scale if custom one doesn't exist
+    end
+  end
+
 end
 
 
@@ -2591,21 +2746,15 @@ function transport_multi_stop()
   for i in pairs(midi_transport_ports) do  
     local transport_midi = midi.connect(midi_transport_ports[i].port)
     transport_midi:stop()
-  end  
-  -- print(clock.get_beats() .. ", pos " .. (seq_lattice.transport or 0).. ", phase " .. (sprocket_measure.phase or ""), "sprocket_measure action")  
+  end
 end
 
 
 -- check which ports the global midi clock is being sent to and sends a spp and continue message there
 function transport_multi_continue(source)
-  -- print("DEBUG transport_multi_continue called by " .. source)
   for i = 1, #midi_transport_ports do
-    -- local port midi_transport_ports[i].port
     if params:string("midi_continue_" .. midi_transport_ports[i].port) == "song" then
       local transport_midi = midi.connect(midi_transport_ports[i].port)
-      -- print("-------SENDING SPP bytes-----")
-      -- print(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
-      -- print("-----------------------------")
       transport_midi:song_position(get_bytes(seq_lattice.transport / (seq_lattice.ppqn * 4 / 16)))
       transport_midi:continue()
     end
@@ -2669,22 +2818,12 @@ end
 -- assumes A440 tuning on oscillator
 function volts_string_note(quantum, index)
   local notes = {"A#","B", "C", "C#","D","D#","E","F","F#","G","G#","A"}
-  -- return(round(index/quantum, 2) .. "v " .. notes[util.wrap(index, 1, 12)])  -- TODO p0 rounding is off?
   return(volts_string(quantum, index) .. ", " .. notes[util.wrap(index, 1, 12)] .. " @A440" )
 end
 
 
 function crow_trigger_string(index)
   return(index == 0 and "Crow IN 2" or division_names[index][2])
-end
-
-
-function chord_range_string(arg) 
-  if params:get("chord_max_notes") > params:get("chord_range") then
-    return(arg .. "*")
-  else
-    return(arg)
-  end
 end
 
 
@@ -2708,11 +2847,6 @@ function param_id_to_name(id)
   -- print("param_id_to_name id = " .. (id or "nil"))
   return(params.params[params.lookup[id]].name)
 end
-
-
--- function mode_index_to_name(index)
---   return(musicutil.SCALES[index].name)
--- end
   
   
 function round(num, numDecimalPlaces)
@@ -2728,7 +2862,7 @@ end
 
 function transpose_string(x)
   return(
-    modes.keys[params:get("mode")][util.wrap(x, 0, 11)].key
+    theory.scale_chord_letters[params:get("mode")][util.wrap(x, 0, 11)][1]
     .. (x == 0 and "" or " ") ..  (x >= 1 and "+" or "") .. (x ~= 0 and x or "")
   )
 end
@@ -2764,7 +2898,7 @@ function dedupe_threshold()
   local index = params:get("dedupe_threshold")
   dedupe_threshold_int = (index == 0) and 1 or division_names[index][1]
   dedupe_threshold_s = (index == 0) and 1 or duration_sec(dedupe_threshold_int) * .95
-end  
+end
 
 
 -- function chord_preload(index)
@@ -2797,7 +2931,7 @@ end
 function clock.tempo_change_handler()  
   dedupe_threshold()  
   -- crow_clock_offset = ms_to_beats(params:get("crow_clock_offset"))
-end  
+end
 
 
 -- Pads out arranger where it has 0 val segments
@@ -3001,8 +3135,7 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
   chord_pattern_position = 0
   reset_sprockets("reset_pattern")
   reset_lattice() -- reset_clock()
-  get_next_chord()
-  chord_raw = next_chord
+  preload_chord()
   gen_arranger_dash_data("reset_pattern")
   grid_dirty = true
 end
@@ -3033,7 +3166,7 @@ end
 
 
 function advance_chord_pattern()
-  local debug = false
+  -- local debug = false
 
   chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
   local arrangement_reset = false
@@ -3131,6 +3264,9 @@ function advance_chord_pattern()
           play_seq[seq_no] = true
         end
       end
+
+      gen_chord_readout()  -- update chord names in dash any time a chord is enabled on this step
+
     else -- no chord but we might need to start/reset seq
       for seq_no = 1, max_seqs do
         local start_on = params:string("seq_start_on_"..seq_no)
@@ -3144,11 +3280,6 @@ function advance_chord_pattern()
           play_seq[seq_no] = true
         end
       end
-    end
-    
-    if chord_key_count == 0 then
-      chord_no = current_chord_c + ((params:get("chord_type") + 2) == 4 and 7 or 0)
-      gen_chord_readout()
     end
 
   end
@@ -3179,438 +3310,359 @@ function update_arranger_active()
 end
 
 
--- variant of do_events specifically for handling chord division changes BEFORE chord plays
--- gets passed a false arranger_pos/chord_pos for upcoming chord by sprocket
--- TODO p1 really need to optimize this by having top level "order" tables for events rather than checking each event
--- Can also block these in standard do_events (but probably catching some edge-cases (resets?) by firing chord_div_index twice)
-function do_events_pre(arranger_pos,chord_pos)
-  local arranger_position = arranger_pos
-  local chord_pattern_position = chord_pos
-  if events[arranger_position] ~= nil then
-    if (events[arranger_position][chord_pattern_position].populated or 0) > 0 then
-      for i = 1, 16 do
-        local event_path = events[arranger_position][chord_pattern_position][i]
-        if event_path ~= nil and event_path.order == 1 then
-          if math.random(1, 100) <= event_path.probability then
-   
-            -- from here on out, same as do_events (todo consolidate or optimize)
-            local event_type = event_path.event_type
-            local event_name = event_path.id
-            local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
-            local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
-            local limit_min = event_path.limit_min
-            local limit_max = event_path.limit_max
-            local operation = event_path.operation
-            local action = event_path.action or nil
 
-            if event_type == "param" then
-              if operation == "Set" then
-                params:set(event_name, value)
-              elseif operation == "Increment" or operation == "Wander" then
-                
-                if limit == "Clamp" then
-                
-                  if value > 0 then -- positive delta
-                    if params:get(event_name) < limit_min then
-                      params:set(event_name, limit_min)
-                    else
-                      for i = 1, value do
-                        if params:get(event_name) >= limit_max then
-                          params:set(event_name, limit_max)
-                          break
-                        else
-                          params:delta(event_name, 1)
-                        end
-                      end
-                    end
-  
-                  elseif value < 0 then -- negative delta
-                    if params:get(event_name) > limit_max then
-                      params:set(event_name, limit_max)
-                    else
-                      for i = value, -1 do
-                        if params:get(event_name) <= limit_min then
-                          params:set(event_name, limit_min)
-                          break
-                        else
-                          params:delta(event_name, -1)
-                        end
-                      end
-                    end
-                  end
-                  
-                elseif limit == "Wrap" then
-                  local reset = false
-                  
-                  if value > 0 then -- positive delta
-                    if params:get(event_name) < limit_min then
-                      params:set(event_name, limit_min)
-                    else
-                      for i = 1, value do
-    
-                        -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
-                        -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
-                        -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
-                        -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
-                  
-                        -- This comparison can fail because of floating point precision, but is probably not worth addressing with the following workaround because of the nature of controlspec, to begin with. Even carefully-crafted and output-quantized controlspec params seem to output different values depending on whether your point of origin is the param default, incrementing from param min, or decrementing from param max.
-                        -- if params:get(event_name) - limit_max >= -0.00000001 then
-                        if params:get(event_name) >= limit_max then
-                          reset = true
-                        end
-                        if reset then -- at the limit_max *before* applying delta
-                          params:set(event_name, limit_min)
-                          reset = false
-                        else
-                          params:delta(event_name, 1)
-                        end
-                      end
-                    end
-                   
+-- if optional args are passed, they indicate that `order 1` events need to be fired before chord advancement
+-- todo: optimize his by storing order 1 events in a separate table
+function do_events(arranger_pos, chord_pos)
+  local do_order = arranger_pos and 1 or 2
+  local arranger_position = arranger_pos or arranger_position
+  local chord_pattern_position = chord_pos or chord_pattern_position
 
-                  elseif value < 0 then -- negative delta
-                    if params:get(event_name) > limit_max then
-                      params:set(event_name, limit_max)
-                    else
-                      for i = value, -1 do
-                        if params:get(event_name) <= limit_min then
-                          reset = true
-                        end
-                        if reset then -- at the limit_min *before* applying delta
-                          params:set(event_name, limit_max)
-                          reset = false
-                        else
-                          params:delta(event_name, -1)
-                        end 
-                      end
-                    end
-                  end
-                  
-                else
-                  params:delta(event_name, value) 
-                end
-                
-              elseif operation == "Random" then
-                local param = params:lookup_param(event_name)
-  
-                if param.t == 1 then -- number
-                  if limit == "Off" then
-                    limit_min = param.min
-                    limit_max = param.max
-                  end
-   
-                  local rand = math.random(limit_min, limit_max)
-                  params:set(event_name, rand)  
-                  
-                elseif param.t == 2 then -- options
-                  if limit == "Off" then
-                    limit_min = 1
-                    limit_max = param.count
-                  end
-                  
-                  local rand = math.random(limit_min, limit_max)
-                  params:set(event_name, rand)  
-                  
-                  -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. Not sure it's worth the trouble but what the heck.
-                elseif param.t == 3 then -- controlspec
-                  limit_min = param.controlspec:unmap(limit_min or param.controlspec.minval)
-                  limit_max = param.controlspec:unmap(limit_max or param.controlspec.maxval)
-  
-                  params:set(event_name, param.controlspec:map(quantize(random_float(limit_min, limit_max), param.controlspec.quantum)))
-  
-                elseif param.t == 5 then -- taper
-                  limit_min = param:unmap_value(limit_min or param.min)
-                  limit_max = param:unmap_value(limit_max or param.max)
-  
-                  params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
-                end
-              -- print("Event randomization value " .. event_name .. " to " .. params:string(event_name))
-  
-              -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
-              elseif operation == "Trigger" then
-                params:set(event_name, 1)
-                params:set(event_name, 0)
-              end
-            -- else -- FUNCTIONS
-              -- currently the only function ops are Triggers. Will likely need to expand Operation checks if there are other types.
-              -- elseif operation == "Random" then
-              --   if limit == "On" then
-              --     local value = math.random(limit_min, limit_max)
-              --     _G[event_name](value)
-                  
-              --     -- currently not using actions other than param actions which will fire automatically.
-              --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
-              --     if action ~= nil then
-              --       _G[action](args)
-              --     end                
-              --   else
-              --     -- todo: make sure we pick up the latest range in case it has changed since event was saved (pset load)
-                  
-              --     -- currently not using actions other than param actions which will fire automatically.
-              --     -- todo: if/when param actions are set up this needs to be replicated (or a global var used) to pick up random/wander values
-              --     if action ~= nil then
-              --       _G[action](args)
-              --     end                    
-              --   end
-              -- else
-              
-              -- Some function events can have faux ids that are just used to store the event
-              -- Actual functions will be called as "actions" which can include extra args
-              -- e.g. this allows us to use have crow_event_trigger function and the output is determined via args
-              -- print("DEBUG FN TYPE" .. type(_G[event_name]))
-              -- if type(_G[event_name]) == "function" then
-              --   _G[event_name](value)
-              -- end
-              -- if action ~= nil then
-              --   _G[action](args)
-              -- end
-              
-            end
-            -- action can now fire for functions or params
-            if action ~= nil then
-              load(action)()
-            end
- 
-          end
-        end
-      end
-    end
-  end
-end
-
-
-function do_events()
   if events[arranger_position] ~= nil then
     if events[arranger_position][chord_pattern_position].populated or 0 > 0 then
 
-      -- alt if we need to be strict about not double-firing order 1 events
-      -- for i = 1, 16 do
-        -- local event_path = events[arranger_position][chord_pattern_position][i]
-        -- if event_path ~= nil and event_path.order == 2 then
-        --   if math.random(1, 100) <= event_path.probability then
-
-      for i = 1, 16 do
+      for i = 1, 15 do
         local event_path = events[arranger_position][chord_pattern_position][i]
-        if event_path ~= nil and math.random(1, 100) <= event_path.probability then
-          local event_type = event_path.event_type
-          local event_name = event_path.id
-          local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
-          local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
-          local limit_min = event_path.limit_min
-          local limit_max = event_path.limit_max
-          local operation = event_path.operation
-          local action = event_path.action or nil
 
-          if event_type == "param" then
-            if operation == "Set" then
-              params:set(event_name, value)
+        if event_path ~= nil then
+          if event_path.order == do_order then
 
-            -- issue: ideally should use a variant of clone_param() used to preview delta (make sure to write to a different table than `preview`!), clamp within limits, then set once. This way the action doesn't fire repeatedly.
-            -- for wrap, could do this first and only fall back on iterate if it exceeds limit_max
-            elseif operation == "Increment" or operation == "Wander" then
+            if event_path.probability == 100 or math.random(1, 100) <= event_path.probability then
+              -- local event_type = event_path.event_type -- << todo p2 technically this doesn't need to get stored in event any more (t can replace here)
+              local t = event_path.t
+              local action = event_path.action or nil
 
-              -- todo p0 update this this in events_pre (or just fix the damn function to pass an 'order' arg!)
-              if limit == "Clamp" then
+              if t then -- indicates param, as opposed to function
+                local event_name = event_path.id
+                local value = event_path.operation == "Wander" and cointoss_inverse(event_path.value) or event_path.value or ""
+                local limit = event_path.limit  -- can be "events_op_limit" or, for Random op, "events_op_limit_random"
+                local limit_min = event_path.limit_min
+                local limit_max = event_path.limit_max
+                local operation = event_path.operation
 
-                if value > 0 then -- positive delta
-                  if params:get(event_name) < limit_min then
-                    params:set(event_name, limit_min)
+                if operation == "Set" then
+                  if t == 3 then -- controlspec needs to be set using raw value
+                    params:set_raw(event_name, value)
                   else
-                    for i = 1, value do
-                      if params:get(event_name) >= limit_max then
-                        params:set(event_name, limit_max)
-                        break
+                    params:set(event_name, value)
+                  end
+
+                -- idea: ideally could use a variant of clone_param() used to preview delta (make sure to write to a different table than `preview`!), clamp within limits, then set once. This way the action doesn't fire repeatedly.
+                -- for wrap, could do this first and only fall back on iterate if it exceeds limit_max
+                elseif operation == "Increment" or operation == "Wander" then
+
+                  local get -- replacement get/set functions depending on whether we're setting raw (controlspec) or standard values
+                  local set
+
+                  if t == 3 then -- controlspec will use raw value
+                    get = function() return params:get_raw(event_name) end
+                    set = function(val) return params:set_raw(event_name, val) end
+                  else           -- all other params use standard value
+                    get = function() return params:get(event_name) end
+                    set = function(val) return params:set(event_name, val) end
+                  end
+
+                  if limit == "Clamp" then
+                    if value > 0 then -- positive delta
+                      if get() < limit_min then
+                        set(limit_min)
                       else
-                        params:delta(event_name, 1)
+                        for _ = 1, value do
+                          if get() >= limit_max then
+                            set(limit_max)
+                            break
+                          else
+                            params:delta(event_name, 1)
+                          end
+                        end
+                      end
+
+                    elseif value < 0 then -- negative delta
+                      if get() > limit_max then
+                        set(limit_max)
+                      else
+                        for _ = value, -1 do
+                          if get() <= limit_min then
+                            set(limit_min)
+                            break
+                          else
+                            params:delta(event_name, -1)
+                          end
+                        end
                       end
                     end
-                  end
 
-                elseif value < 0 then -- negative delta
-                  if params:get(event_name) > limit_max then
-                    params:set(event_name, limit_max)
-                  else
-                    for i = value, -1 do
-                      if params:get(event_name) <= limit_min then
-                        params:set(event_name, limit_min)
-                        break
+                  elseif limit == "Wrap" then
+                    local reset = false
+                  
+                    if value > 0 then -- positive delta
+                      if get() < limit_min then
+                        set(limit_min)
                       else
-                        params:delta(event_name, -1)
+                        for _ = 1, value do
+
+                          -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
+                          -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
+                          -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
+                          -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
+                    
+                          -- This comparison can fail because of floating point precision, but is probably not worth addressing with the following workaround because of the nature of controlspec, to begin with. Even carefully-crafted and output-quantized controlspec params seem to output different values depending on whether your point of origin is the param default, incrementing from param min, or decrementing from param max.
+                          -- if params:get(event_name) - limit_max >= -0.00000001 then
+                          if get() >= limit_max then
+                            reset = true
+                          end
+                          if reset then -- at the limit_max *before* applying delta
+                            set(limit_min)
+                            reset = false
+                          else
+                            params:delta(event_name, 1)
+                          end
+                        end
+                      end
+                    
+                    elseif value < 0 then -- negative delta
+                      if get() > limit_max then
+                        set(limit_max)
+                      else
+                        for _ = value, -1 do
+                          if get() <= limit_min then
+                            reset = true
+                          end
+                          if reset then -- at the limit_min *before* applying delta
+                            set(limit_max)
+                            reset = false
+                          else
+                            params:delta(event_name, -1)
+                          end
+                        end
                       end
                     end
+                  
+                  else -- limit == "Off"
+                    params:delta(event_name, value) 
                   end
-                end
+                  
+                elseif operation == "Random" then
+                  local param = params:lookup_param(event_name)
 
-            elseif limit == "Wrap" then
-              local reset = false
-              
-              if value > 0 then -- positive delta
-                if params:get(event_name) < limit_min then
-                  params:set(event_name, limit_min)
-                else
-                  for i = 1, value do
-
-                    -- Wrap logic tries to maintain "expected" values for nonlinear controlspec/taper deltas:
-                    -- 1. If within wrap min/max, delta (but clamp if the delta would exceed limit)
-                    -- 2. If *at* max when event fires with positive value, wrap to min regardless of value
-                    -- 3. If *at* min when event fires with negative value, wrap to max regardless of value
-              
-                    -- This comparison can fail because of floating point precision, but is probably not worth addressing with the following workaround because of the nature of controlspec, to begin with. Even carefully-crafted and output-quantized controlspec params seem to output different values depending on whether your point of origin is the param default, incrementing from param min, or decrementing from param max.
-                    -- if params:get(event_name) - limit_max >= -0.00000001 then
-                    if params:get(event_name) >= limit_max then
-                      reset = true
+                  if t == 1 then -- number
+                    if limit == "Off" then
+                      limit_min = param.min
+                      limit_max = param.max
                     end
-                    if reset then -- at the limit_max *before* applying delta
-                      params:set(event_name, limit_min)
-                      reset = false
-                    else
-                      params:delta(event_name, 1)
+    
+                    local rand = math.random(limit_min, limit_max)
+                    params:set(event_name, rand)  
+                    
+                  elseif t == 2 then -- options
+                    if limit == "Off" then
+                      limit_min = 1
+                      limit_max = param.count
+                    end
+                    
+                    local rand = math.random(limit_min, limit_max)
+                    params:set(event_name, rand)
+                    
+                    -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. 
+                  elseif t == 3 then -- controlspec
+                    limit_min = (limit_min * 100) or 0
+                    limit_max = (limit_max * 100) or 100
+                    params:set_raw(event_name, util.round((math.random(limit_min, limit_max) / 100), param.controlspec.quantum))
+
+                  elseif t == 5 then -- taper
+                    limit_min = param:unmap_value(limit_min or param.min)
+                    limit_max = param:unmap_value(limit_max or param.max)
+
+                    params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
+                  
+                  elseif t == 9 then -- and param.behavior == "toggle" then -- binary (toggle behavior is implied as others are value_type `trigger`)
+                    params:set(event_name, math.random() > .5 and 1 or 0)
+                  end
+
+                elseif operation == "Trigger" then
+                  if t == 6 then -- true `trigger` param
+                    params:set(event_name, 1)
+                  elseif t == 9 then -- binary
+                    local type = params:lookup_param(event_name).behavior
+                    if type == "momentary" then -- todo variable timer but for now, brief hold
+                      params:set(event_name, 1)
+                      do_timer(2, function() params:set(event_name, 0) end) -- 0.2s momentary hold as a sort of approximation of manual keypress
+                    -- elseif type == "toggle" then -- handled as a `continuous` event
+                    else -- "trigger"
+                      params:set(event_name, 10)
                     end
                   end
-                end
-               
 
-              elseif value < 0 then -- negative delta
-                if params:get(event_name) > limit_max then
-                  params:set(event_name, limit_max)
-                else
-                  for i = value, -1 do
-                    if params:get(event_name) <= limit_min then
-                      reset = true
-                    end
-                    if reset then -- at the limit_min *before* applying delta
-                      params:set(event_name, limit_max)
-                      reset = false
-                    else
-                      params:delta(event_name, -1)
-                    end 
-                  end
                 end
               end
-              
-            else -- limit == "Off"
-              params:delta(event_name, value) 
-            end
-              
-            elseif operation == "Random" then
-              local param = params:lookup_param(event_name)
 
-              if param.t == 1 then -- number
-                if limit == "Off" then
-                  limit_min = param.min
-                  limit_max = param.max
-                end
- 
-                local rand = math.random(limit_min, limit_max)
-                params:set(event_name, rand)  
-                
-              elseif param.t == 2 then -- options
-                if limit == "Off" then
-                  limit_min = 1
-                  limit_max = param.count
-                end
-                
-                local rand = math.random(limit_min, limit_max)
-                params:set(event_name, rand)  
-                
-                -- for controlspec and taper, this attempts to return an expected value, as if user had done a standard delta. Not sure it's worth the trouble but what the heck.
-              elseif param.t == 3 then -- controlspec
-                limit_min = param.controlspec:unmap(limit_min or param.controlspec.minval)
-                limit_max = param.controlspec:unmap(limit_max or param.controlspec.maxval)
-
-                params:set(event_name, param.controlspec:map(quantize(random_float(limit_min, limit_max), param.controlspec.quantum)))
-
-              elseif param.t == 5 then -- taper
-                limit_min = param:unmap_value(limit_min or param.min)
-                limit_max = param:unmap_value(limit_max or param.max)
-
-                params:set(event_name, param:map_value(quantize(random_float(limit_min, limit_max), param:get_delta())))
+              if action ~= nil then
+                load(action)()
               end
-            -- print("Event randomization value " .. event_name .. " to " .. params:string(event_name))
-
-            -- IMPORTANT: CURRENTLY USING ADD_BINARY IN PLACE OF ADD_TRIGGER FOR PMAP SUPPORT. WILL LIKELY NEED ALTERNATE LOGIC FOR TRUE TRIGGER PARAM.
-            elseif operation == "Trigger" then
-              params:set(event_name, 1)
-              params:set(event_name, 0)
+              
             end
           end
-          -- action can now fire for functions or params
-          if action ~= nil then
-            load(action)()
-          end
-          
         end
       end
     end
   end
 end
 
-
+-- generates short chord name/degree for chord readout dashboards
 function gen_chord_readout()
-  if chord_no > 0 then
-    active_chord_name = modes.keys[params:get("mode")][util.wrap(params:get("transpose"), 0, 11)][chord_no]
-    active_chord_degree = chord_lookup[params:get("mode")]["chords"][chord_no]
+  local x = current_chord_x
+  local x_wrapped = util.wrap(x, 1, 7)
+  local scale = params:get("mode")
+  local custom = theory.custom_chords[scale][active_chord_pattern][x]
+  local y = chord_pattern_position == 0 and 1 or chord_pattern_position -- 0 to 1 so this can be used while transport is stopped to preview upcoming
+
+  if custom[y] then -- is a custom chord
+    if custom[y].name == "Custom" then -- unnamed custom chord
+      active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"
+      active_chord_name_2 = nil
+
+    else
+      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. (custom[y].dash_name_1 or "")
+      active_chord_name_2 = custom[y].dash_name_2 or nil
+    end
+
+    -- todo:
+    -- active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped] .. "*"
+  else -- standard triad
+    active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
+    active_chord_name_2 = nil
+
+    -- todo:
+    -- active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped]
   end
 end
 
 
-  -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
-  -- Also used for manual g.key presses while transport is stopped/paused
-  -- Mode is always updated in case no chord has been set but user has changed Mode param.
-function update_chord(x)
-    current_chord_x = x
-    current_chord_o = (x > 7) and 1 or 0
-    current_chord_c = util.wrap(x, 1, 7)
-    
-    -- optionally: always includes 7th note since this will be used by seq, harmonizers
-    chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_c, true)
-    
-    transform_chord()
+-- similar to gen_chord_readout, but this generates long chord name for held chord quick-editor and detailed chord editor menu
+function gen_chord_name()
+  local p = editing_chord_pattern
+  local x = editing_chord_x
+  local y = editing_chord_y
+  local x_wrapped = util.wrap(x, 1, 7)
+  local scale = editing_chord_scale
+  local custom = theory.custom_chords[scale][p][x]
+
+  if custom[y] then -- is a custom chord
+    if custom[y].name == "Custom" then -- unnamed custom chord
+      editing_chord_name = editing_chord_letter .. "*"
+    else
+      editing_chord_name = editing_chord_letter .. custom[y].name
+    end
+  else -- standard triad
+    editing_chord_name = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
   end
+end
+
+
+
+-- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord.
+-- Todo optimization: cached table of intervals at the scale>>pattern>>y level
+-- Also used for previewing chords with g.key while transport is stopped/paused
+function update_chord(x, y) -- y is optional when playing chord using g.key
+  current_chord_x = x
+  current_chord_o = (x > 7) and 1 or 0
+  current_chord_d = util.wrap(x, 1, 7)
+
+  -- todo p1 optimize- might build chord_raw, chord_densified, and chord_extended whenever chord is edited or mode changes
+  local y = y or chord_pattern_position
+  local raw = {}
+  local scale = params:get("mode")
+  local custom = theory.custom_chords[scale][active_chord_pattern][x]
+
+  -- determines if we're using a custom chord or standard
+  if custom[y] then
+    raw = custom[y].intervals
+  else
+    raw = theory.chord_triad_intervals[scale][x]
+  end
+  chord_raw = raw
+  chord_triad = theory.chord_triad_intervals[scale][x] -- trialing keeping the triad even if the chord is customized. needs to be updated elsewhere I suppose.
+
+  local rawcount = #raw
+  local max_interval = raw[rawcount] or 0
+  local min_interval = raw[1] or 0
+
+  if max_interval - min_interval > 11 then -- Chords with intervals spanning more than an octave need special tables for transform_note fns
+    -- generate densified table of chord intervals in 1 octave, reordering notes as necessary
+    local densified = {}
+
+    for i = 1, rawcount do
+      interval = raw[i]
+      densified[i] = (interval - min_interval) > 11 and interval - 12 or interval
+    end
+
+    chord_densified = sort_and_remove_duplicates(densified)
+
+    -- generate extended table of chord intervals in 2 octaves by inserting higher-octave tones after highest note in _raw table
+    densified = simplecopy(raw)
+    min_interval = min_interval + 12 -- redefined to delineate one octave up from min
+
+    for i = 1, rawcount - 1 do
+      local n = raw[i]
+      
+      -- find notes that:
+      -- 1. are in the first octave
+      -- 2. when raised an octave, are higher pitched than the highest/last tone in chord_raw
+      if (n < min_interval) and n + 12 > max_interval then
+        table.insert(densified, raw[i] + 12)
+      end
+    end
+
+    chord_extended = simplecopy(densified)
+
+  else
+    chord_densified = raw
+    chord_extended = raw
+  end
+
+  transform_chord()
+end
+
+
 
 
 -- Expands chord notes (range), inverts, and thins based on max notes
 function transform_chord()
-  local notes_in_chord = (params:get("chord_type") + 2)
+  local chord_raw = chord_raw
+  local chord_extended = chord_extended
+  local notes_in_raw = #chord_raw
+  local notes_in_extended = #chord_extended
+  local extended_oct = notes_in_raw == notes_in_extended and 12 or 24 -- offset to apply when extending
+  local range = params:get("chord_range")
+  if range == 0 then range = notes_in_raw end
+  local max_notes = params:get("chord_notes")
+  local inversion = params:get("chord_inversion")
+
   chord_transformed = {}
 
-  -- This adds intervals to achieve range plus upper inversion notes in a single pass
-  for i = 1, params:get("chord_range") + params:get("chord_inversion") do
-    local octave = math.ceil(i / notes_in_chord) - 1
-    chord_transformed[i] = chord_raw[util.wrap(i, 1, notes_in_chord)] + (i > notes_in_chord and (octave * 12) or 0)
+  -- Add intervals to achieve range plus apply inversion shift (upper and lower)
+  for i = 1, range do
+    local inv = i + inversion
+    local octave = math.ceil(inv / notes_in_extended) - 1
+    chord_transformed[i] = chord_extended[util.wrap(inv, 1, notes_in_extended)] + (inv > notes_in_extended and (octave * extended_oct) or 0)
   end
-  
-  -- remove lower inverted notes
-  for i = 1, params:get("chord_inversion") do
-    table.remove(chord_transformed, 1)
-  end  
-  
-  -- Thin out notes in chord to not exceed params:get("chord_max_notes")
-  local polyphony = params:get("chord_max_notes")
-  local notes = #chord_transformed
 
-  -- special handling for poly==1
-  if polyphony == 1 then
-    for i = notes, 2, -1 do
-      table.remove(chord_transformed, i)
-    end
-  -- regular handling of thinning to match poly. todo- additional thinning algos, e.g. preserve base triad  
-  elseif notes > polyphony then
-    chord_thinned = er.gen(polyphony - 1, notes - 1, 0)
-    for i = notes - 1, 2, -1 do
-      if chord_thinned[i] == false then
-        table.remove(chord_transformed, i)
+
+ -- todo p2 gotta be some way of doing this with note densification for better efficiency
+ -- Thin out notes in chord to not exceed params:get("chord_notes")
+  if max_notes ~= 25 then
+    if max_notes == 1 then
+      chord_transformed = {chord_transformed[1]}
+    elseif range > max_notes then -- todo- additional thinning algos, e.g. preserve base triad
+      chord_thinned = er.gen(max_notes - 1, range - 1, 0)
+      for i = range - 1, 2, -1 do
+        if chord_thinned[i] == false then
+          table.remove(chord_transformed, i)
+        end
       end
     end
   end
-  
-end
 
-
--- This triggers when mode param changes and allows seq and harmonizers to pick up the new mode immediately. Doesn't affect the chords and doesn't need chord transformations since the chord advancement will overwrite
-function update_chord_action()
-  chord_raw = musicutil.generate_chord_scale_degree(current_chord_o * 12, params:get("mode"), current_chord_c, true)
-  next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_c, true)
 end
 
 
@@ -3618,7 +3670,6 @@ end
 -- x == note number * .1
 -- to-do: can move upstream * 0.1 here but not sure what the implications are
 function curve_get_y(x, curve)
-  local curve = curve
   if curve == 0 then
     return x
   else
@@ -3712,7 +3763,11 @@ function play_chord()
   local speed = chord_div / global_clock_div * strum_lengths[params:get("chord_strum_length")][1]
   local start, finish, step -- Determine the starting and ending indices based on the direction
   local playback = params:string("chord_style")
+  local chord_transformed = chord_transformed
   local note_qty = #chord_transformed
+  local transpose = params:get("transpose") + (params:get("chord_octave") * 12) + 48
+  local dynamics = params:get("chord_dynamics") * .01
+  local ramp = params:get("chord_dynamics_ramp")
   
   if playback == "High-low" then
     start, finish, step = note_qty, 1, -1  -- Bottom to top
@@ -3725,19 +3780,17 @@ function play_chord()
   local max_pre_scale = curve_get_y((note_qty - 1) * .1, curve) * (1/((note_qty - 1) / note_qty)) -- scales to penultimate note
   local y_scaled = 0
 
-
   strum_clock = clock.run(function()
     latest_strum_coroutine = coroutine.running() -- sets coroutine each time a new strum occurs
     for i = start, finish, step do
-
+      
       -- Strums will interrupt one another by default. TODO p2 make this a param because overlap is p sweet
       if coroutine.running() == latest_strum_coroutine then
         local note_sequence = playback == "High-low" and (note_qty + 1 - i) or i  -- force counting upwards
         local elapsed = note_qty == 1 and 0 or (note_sequence - 1) / (note_qty - 1)
-        local dynamics = params:get("chord_dynamics") * .01
-        local dynamics = dynamics + (dynamics * params:get("chord_dynamics_ramp") * .01 * elapsed)
-        local dynamics = util.clamp(dynamics, 0, 1) -- per destination
-        local note = chord_transformed[i] + params:get("transpose") + (params:get("chord_octave") * 12) + 48
+        local dynamics = util.clamp(dynamics + (dynamics * ramp * .01 * elapsed), 0, 1)
+        local note = chord_transformed[i] + transpose
+
         to_player(player, note, dynamics, chord_duration, channel)
   
         if playback ~= "Off" and note_qty ~= 1 then
@@ -3762,109 +3815,165 @@ function play_chord()
 end
 
 
--- Get upcoming chord. Was used for harmonizers but disabling for now..
--- Pre-load upcoming chord to address race condition around map_note() events occurring before chord change
-function get_next_chord()
-  local pre_arrangement_reset = false
-  local pre_arranger_position = arranger_position
-  local pre_arranger_retrig = arranger_retrig
-  local pre_chord_pattern_position = chord_pattern_position
-  local pre_chord_pattern_q = chord_pattern_q
-        pre_pattern = active_chord_pattern
+-- -- Get upcoming chord. Was used for harmonizers but disabling for now..
+-- -- Pre-load upcoming chord to address race condition around map_note() events occurring before chord change
+-- function get_next_chord()
+--   local pre_arrangement_reset = false
+--   local pre_arranger_position = arranger_position
+--   local pre_arranger_retrig = arranger_retrig
+--   local pre_chord_pattern_position = chord_pattern_position
+--   local pre_chord_pattern_q = chord_pattern_q
+--         pre_pattern = active_chord_pattern
 
-  -- Move arranger sequence if On
-  if params:get("arranger") == 2 then
+--   -- Move arranger sequence if On
+--   if params:get("arranger") == 2 then
 
-    -- If it's post-reset or at the end of chord sequence
-    if (pre_arranger_position == 0 and pre_chord_pattern_position == 0) or pre_chord_pattern_position >= chord_pattern_length[pre_pattern] then
+--     -- If it's post-reset or at the end of chord sequence
+--     if (pre_arranger_position == 0 and pre_chord_pattern_position == 0) or pre_chord_pattern_position >= chord_pattern_length[pre_pattern] then
       
-      -- Check if it's the last pattern in the arrangement.
-      if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
-        pre_arrangement_reset = true
-      else
-        pre_arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or util.wrap(pre_arranger_position + 1, 1, arranger_length)
-        pre_pattern = arranger_padded[pre_arranger_position]
+--       -- Check if it's the last pattern in the arrangement.
+--       if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
+--         pre_arrangement_reset = true
+--       else
+--         pre_arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or util.wrap(pre_arranger_position + 1, 1, arranger_length)
+--         pre_pattern = arranger_padded[pre_arranger_position]
         
-      end
+--       end
       
-      -- Indicates arranger has moved to new pattern.
-      pre_arranger_retrig = true
-    end
+--       -- Indicates arranger has moved to new pattern.
+--       pre_arranger_retrig = true
+--     end
     
-  end
+--   end
   
-  -- If arrangement was not just reset, update chord position. 
-  if pre_arrangement_reset == false then
-    if pre_chord_pattern_position >= chord_pattern_length[pre_pattern] or pre_arranger_retrig then
-      if pre_chord_pattern_q then
-        pre_pattern = pre_chord_pattern_q
-        pre_chord_pattern_q = false
-      end
-      pre_chord_pattern_position = 1
-      pre_arranger_retrig = false
-    else  
-      pre_chord_pattern_position = util.wrap(pre_chord_pattern_position + 1, 1, chord_pattern_length[pre_pattern])
-    end
+--   -- If arrangement was not just reset, update chord position. 
+--   if pre_arrangement_reset == false then
+--     if pre_chord_pattern_position >= chord_pattern_length[pre_pattern] or pre_arranger_retrig then
+--       if pre_chord_pattern_q then
+--         pre_pattern = pre_chord_pattern_q
+--         pre_chord_pattern_q = false
+--       end
+--       pre_chord_pattern_position = 1
+--       pre_arranger_retrig = false
+--     else  
+--       pre_chord_pattern_position = util.wrap(pre_chord_pattern_position + 1, 1, chord_pattern_length[pre_pattern])
+--     end
     
-    -- Arranger automation step. todo: examine impact of running some events here rather than in advance_chord_pattern
-    -- Could be important for anything that changes patterns but might also be weird for grid redraw
+--     -- Arranger automation step. todo: examine impact of running some events here rather than in advance_chord_pattern
+--     -- Could be important for anything that changes patterns but might also be weird for grid redraw
 
-    -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord. 
-    -- Mode is always updated in case no chord has been set but user has changed Mode param.
-    -- todo p3 efficiency test vs if/then
-      next_chord_x = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and chord_pattern[pre_pattern][pre_chord_pattern_position] or next_chord_x
-      next_chord_o = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and (chord_pattern[pre_pattern][pre_chord_pattern_position] > 7 and 1 or 0) or next_chord_o
-      next_chord_c = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and util.wrap(chord_pattern[pre_pattern][pre_chord_pattern_position], 1, 7) or next_chord_c
-      next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_c, true)
-    
-  end
-end
+--     -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord. 
+--     -- Mode is always updated in case no chord has been set but user has changed Mode param.
+--     -- todo p3 efficiency test vs if/then
+--       next_chord_x = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and chord_pattern[pre_pattern][pre_chord_pattern_position] or next_chord_x
+--       next_chord_o = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and (chord_pattern[pre_pattern][pre_chord_pattern_position] > 7 and 1 or 0) or next_chord_o
+--       next_chord_d = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and util.wrap(chord_pattern[pre_pattern][pre_chord_pattern_position], 1, 7) or next_chord_d
+      
+--       -- equivalent of chord_raw but now kinda obsolete with custom chords in the mix
+--       next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
+
+--   end
+-- end
 
 
-function map_note_1(note_num, octave)-- , pre) -- triad chord mapping
+local transform_note = {} -- table containing note transformation functions
+
+transform_note[1] = function(note_num, octave) -- triad chord mapping
   local chord_length = 3
-  -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
-  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
+  local quantized_note = chord_triad[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
 
-function map_note_2(note_num, octave) --, pre) -- 7th chord mapping
-  local chord_length = 4
-  -- local quantized_note = pre == true and next_chord[util.wrap(note_num, 1, chord_length)] or chord_raw[util.wrap(note_num, 1, chord_length)]
-  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)]
-  local quantized_octave = math.floor((note_num - 1) / chord_length)
+transform_note[2] = function(note_num, octave) -- custom chords, densified to extend 2 octaves if necessary
+  local chord_length = #chord_extended or 0
+
+  -- jump to next octave if difference from chord min/max intervals is >1 octave.
+  -- local additional_octave = (chord_raw[chord_length] - chord_raw[1]) >= 12 and 1 or 0 -- fine if we have just 12 seq rows
+  local additional_octave = math.floor(((chord_extended[chord_length] or 0) - (chord_extended[1] or 0)) / 12) -- in anticipation of variable max_seqs
+  local quantized_note = chord_extended[util.wrap(note_num, 1, chord_length)] or 0
+  local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
+
   return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
 end
 
 
-function map_note_3(note_num, octave) --, pre)  -- mode mapping + diatonic transposition
+transform_note[3] = function(note_num, octave) -- custom chords, tones arranged into one octave
+  local chord_length = #chord_densified or 0
+  local quantized_note = chord_densified[util.wrap(note_num, 1, chord_length)] or 0
+  local quantized_octave = math.floor((note_num - 1) / chord_length)
+
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+end
+
+
+transform_note[4] = function(note_num, octave) -- custom chords, spanning multiple octaves
+  local chord_length = #chord_raw or 0
+  local additional_octave = math.floor(((chord_raw[chord_length] or 0) - (chord_raw[1] or 0)) / 12) or 0 -- in anticipation of variable max_seqs
+  local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)] or 0
+  local quantized_octave = (math.floor((note_num - 1) / chord_length) * (additional_octave + 1)) or 0 -- no work on 24
+
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+end
+
+
+transform_note[5] = function(note_num, octave) -- song scale mapping
+  local note_num = note_num
+  local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+
+  return(quantized_note + (octave * 12) + params:get("transpose"))
+end
+
+
+transform_note[6] = function(note_num, octave) -- song scale mapping + diatonic transposition
   -- local diatonic_transpose = (math.max(pre == true and next_chord_x or current_chord_x, 1)) -1
   local diatonic_transpose = (math.max(current_chord_x, 1)) -1
   local note_num = note_num + diatonic_transpose
-  local quantized_note = notes_nums[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+  local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
+
   return(quantized_note + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_4(note_num, octave) -- mode mapping
-  local note_num = note_num
-  local quantized_note = notes_nums[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
-  return(quantized_note + (octave * 12) + params:get("transpose"))
-end
 
-function map_note_5(note_num, octave) -- chromatic intervals from chord root
-  -- local diatonic_transpose = (math.max(current_chord_x, 1)) -1
-  local root = chord_raw[1] or 0
-  return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
-end
-
-function map_note_6(note_num, octave) -- chromatic mapping
+transform_note[7] = function(note_num, octave) -- chromatic mapping
   return(note_num -1 + (octave * 12) + params:get("transpose"))
 end
 
-function map_note_7(note_num, octave) -- drum kit mapping (no key transposition)
+
+transform_note[8] = function(note_num, octave) -- chromatic intervals + base triad root
+  local root = theory.chord_triad_intervals[params:get("mode")][current_chord_x][1]
+
+  return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
+end
+
+
+transform_note[9] = function(note_num, octave) -- drum kit/pass-thru mapping (no key transposition)
   return(note_num -1 + (octave * 12)) -- todo param to shift?
+end
+
+
+for i = 1, 8 do
+  table.insert(transform_note,
+    function(note_num, octave) -- custom scale
+      local note_num = note_num
+      local scale_custom = scale_custom[i]
+      local length = #scale_custom
+      local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
+      return(quantized_note + (octave * 12) + params:get("transpose"))
+    end
+  )
+
+  table.insert(transform_note,
+    function(note_num, octave) -- custom scale + base triad root transposition (kinda weird but designed to match mode+tr.)
+      -- local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
+      local note_num = note_num + (theory.chord_triad_intervals[params:get("mode")][current_chord_x][1])  -- alternative transposing by base triad root
+      local scale_custom = scale_custom[i]
+      local length = #scale_custom
+      local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
+      return(quantized_note + (octave * 12) + params:get("transpose"))
+    end
+  )
 end
 
 
@@ -3900,16 +4009,16 @@ function advance_seq_pattern(seq_no)
     local dynamics = dynamics + (dynamics * (_G["sprocket_seq_"..seq_no].downbeat and (params:get("seq_accent_"..seq_no) * .01) or 0))
     local priority = params:get("seq_note_priority_"..seq_no)
     local polyphony = params:get("seq_polyphony_"..seq_no)
-    local note_map = "map_note_" .. params:get("seq_note_map_"..seq_no)
     local octave = params:get("seq_octave_"..seq_no)
     local row = seq_pattern[seq_no][active_seq_pattern[seq_no]][seq_pattern_position[seq_no]]
+    local transform = transform_note[params:get("seq_note_map_"..seq_no)]
 
     
-    -- todo dynamic function set by seq_mono_poly action
+    -- todo dynamic function set by seq_priority action
     if priority == 1 then -- mono
       for x = 1, max_seq_cols do
         if row[x] == 1 then 
-          local note = _G[note_map](x, octave) + 36
+          local note = transform(x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
           break
         end
@@ -3920,7 +4029,7 @@ function advance_seq_pattern(seq_no)
       local count = 0
       for x = 1, max_seq_cols do
         if row[x] == 1 then
-          local note = _G[note_map](x, octave) + 36
+          local note = transform(x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
           count = count + 1
           if count == polyphony then 
@@ -3933,7 +4042,7 @@ function advance_seq_pattern(seq_no)
       local count = 0
       for x = max_seq_cols, 1, -1 do
         if row[x] == 1 then 
-          local note = _G[note_map](x, octave) + 36
+          local note = transform(x, octave) + 36
           to_player(player, note, dynamics, seq_duration[seq_no], channel)
           count = count + 1
           if count == polyphony then 
@@ -3954,7 +4063,7 @@ function advance_seq_pattern(seq_no)
       shuffle(pool)
 
       for i = 1, math.min(#pool, polyphony) do
-        local note = _G[note_map](pool[i], octave) + 36  -- make these local!
+        local note = transform(pool[i], octave) + 36  -- make these local!
         to_player(player, note, dynamics, seq_duration[seq_no], channel)
       end
       
@@ -3984,8 +4093,8 @@ end
 
 -- cv harmonizer input
 function sample_crow(volts)
-  -- local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave"), params:get("chord_preload") ~= 0) + 36
-  local note = _G["map_note_" .. params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave")) + 36
+  local note = transform_note[params:get("crow_note_map")](round(volts * 12, 0) + 1, params:get("crow_octave")) + 36
+
   -- Blocks duplicate notes within a chord step so rests can be added to simple CV sources
   if chord_pattern_retrig == true
   or params:get("crow_auto_rest") == 1
@@ -4011,7 +4120,8 @@ midi_event = function(data)
   if d.type == "note_on" then
     local player = params:lookup_param("midi_voice_raw"):get_player()
     local channel = player.channel and params:get("midi_channel") or nil
-    local note = _G["map_note_" .. params:get("midi_note_map")](d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
+    local transform = transform_note[params:get("midi_note_map")]
+    local note = transform(d.note - 35, params:get("midi_octave")) + 36 -- todo p1 octave validation for all sources
     local dynamics = params:get("midi_dynamics") * .01 -- todo p1 velocity passthru (normalize to 0-1)
 
     to_player(player, note, dynamics, midi_duration, channel)
@@ -4029,7 +4139,7 @@ function est_jf_time()
       clock.sleep(0.005) -- a small hold for usb round-trip
       local jf_time_s = math.exp(-0.694351 * jf_time + 3.0838) -- jf_time_v_to_s.
       print("jf_time_s = " .. jf_time_s)
-      -- return(jf_time_s)   
+      -- return(jf_time_s)
       end
   )
 end
@@ -4129,7 +4239,57 @@ function grid_redraw()
   
   g:all(0) -- todo look into efficiency of this
   
-  if screen_view_name == "Events" then -- EVENT EDITOR
+  if screen_view_name == "scale_editor" then
+    local editing_scale = editing_scale
+    local enabled_level = 8         -- can layer in_mode tones(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
+    local in_mode = {}  -- table containing 12 notes and t/f if they are in the current mode
+    local pattern_led = 0
+
+    for x = 1, 12 do
+      in_mode[x] = false
+    end
+    
+    for i = 1, 7 do
+      in_mode[scale_heptatonic[i] + 1] = true
+    end
+
+    local in_scale = theory.scales_bool
+
+    for y = 1, 8 do
+      local in_scale = in_scale[y]
+
+      for x = 1, 12 do
+        pattern_led = in_mode[x] and led_low or 0 -- low level highlight tones in mode
+        pattern_led = pattern_led + (in_scale and in_scale[x] and enabled_level or 0) -- draw enabled tones for each row/scale
+        if y == editing_scale and in_scale[x] and not in_mode[x] then -- pulse out-of-mode selections in editing scale/row
+          pattern_led = pattern_led - led_pulse
+        end
+        g:led(x, y, pattern_led)
+      end
+
+      g:led(16, y, y == editing_scale and led_high - led_pulse or led_low) --draw selected scale keys on right side
+    end
+
+
+  elseif screen_view_name == "chord_editor" then
+    local editing_chord_bools = editing_chord_bools
+    local mode_bool = editing_chord_mode_intervals
+    local enabled_level = 8
+    local pattern_led = 0
+
+    for i = 1, 24 do -- 2 octaves split across 2 rows
+      local in_mode = mode_bool[util.wrap(i, 1, 12)]
+      pattern_led = in_mode and led_low or 0 -- highlight tones in mode, starting with root note
+      if editing_chord_bools[i] then
+        pattern_led = pattern_led + enabled_level
+      end
+      if pattern_led > 0 and not in_mode then
+        pattern_led = pattern_led - led_pulse
+      end
+      g:led(util.wrap(i, 1, 12), ((i <= 12) and 8 or 7), pattern_led)
+    end
+
+  elseif screen_view_name == "Events" then -- EVENT EDITOR
     local length = chord_pattern_length[arranger_padded[event_edit_segment]] or 0
     local lanes = 15
     local saved_level = 8         -- can layer playhead(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
@@ -4432,7 +4592,7 @@ function set_page()
   local new_view = nil  
   local new_pattern = selected_seq_no
 
-  if params:string("sync_grid_norns") == "On" then 
+  if params:string("sync_views") == "On" then 
     if page_name == "SONG" then
       new_view = "Arranger"
     elseif page_name == "CHORD" then
@@ -4465,7 +4625,7 @@ function set_grid_view(new_view, new_seq_no) -- optional 2nd arg for seq no
     selected_seq_no = new_seq_no
     grid_dirty = true
 
-    if params:string("sync_grid_norns") == "On" then -- sync norns screen view with grid view
+    if params:string("sync_views") == "On" then -- sync norns screen view with grid view
       local new_page = nil
 
       if new_view == "Arranger" then
@@ -4500,12 +4660,157 @@ function update_chord_pattern_q() -- run after changes are made to arranger or a
   set_chord_pattern_q(arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)])
 end
 
+
+-- inits table of standard chord options for editing mode/degree
+-- todo p0 needs to be called on mode param change, too (events)
+-- or we need to lock in scales upon entering menu (prob better)
+function gen_chord_menus()
+  chord_menu_names = theory.lookup_scales[theory.base_scales[params:get("mode")]].chord_names[util.wrap(editing_chord_x, 1, 7)]
+end
+
+
+-- set initial states for bool table so grid_redraw doesn't have to do this every loop.
+-- intervals relative to degree I, in octave
+-- called by init_chord_editor, g.key, enc
+function gen_chord_bools(intervals)
+  local root = editing_chord_root
+
+  editing_chord_bools = {}
+
+  for i = 1, 24 do
+    editing_chord_bools[i] = false
+  end
+
+  for i = 1, #intervals do  -- set earlier to either standard or custom
+    editing_chord_bools[intervals[i] + 1 - root] = true
+  end
+end
+
+
+-- generates bool table for selected intervals in chord
+-- generates chord menus
+function init_chord_editor()
+  local pattern = editing_chord_pattern
+  local x = editing_chord_x
+  local y = editing_chord_y
+  local root = editing_chord_root
+  local name = "Custom"
+  local intervals = {}
+
+  gen_chord_menus() -- generates chord_menu_names table
+
+  -- set editing_chord_intervals table which gets the custom interval if available or the standard degree intervals
+  local custom = theory.custom_chords[params:get("mode")][pattern][x]
+
+  if custom[y] then
+    intervals = custom[y].intervals
+
+    if name == "Custom" then
+      editing_chord_type = "custom"
+    else
+      editing_chord_type = "named" -- default if the subsequent check is negative
+      -- check if the recognized chord is "in-mode"
+      for i = 1, #chord_menu_names do
+        if chord_menu_names[i] == name then
+          editing_chord_type = "in-mode"
+          break
+        end
+      end
+    end
+  else
+    intervals = theory.chord_triad_intervals[editing_chord_scale][x]
+    editing_chord_type = "standard"
+  end
+
+  c = find_chord(intervals, root) -- pass root so intervals can be converted from absolute to relative to root
+  gen_chord_bools(intervals)
+  chord_menu_index = c and tab.key(chord_menu_names, c.short_name) or 0
+end
+
+
+
+-- check if this is a named scale and set Scale menu appropriately
+function set_scale_menu()
+  local lookup = theory.lookup_scales
+  local name = find_scale_name(theory.scales[params:get("mode")][editing_scale]) or "Custom"
+  if name ~= "Custom" then -- set Scale menu if there's a match
+    for i = 1, #lookup do
+      if name == lookup[i].name then
+        scale_index = i
+        break
+      end
+    end
+  else
+    scale_index = 0 -- "Custom"
+  end
+end
+        
+        
 -- GRID KEYS
 ---@diagnostic disable-next-line: duplicate-set-field
 function g.key(x, y, z)
   if z == 1 then
+    if screen_view_name == "chord_editor" then
+      if x <= 12 and y >= 7 then
+        local interval = util.wrap(x, 1, 12) + (y == 7 and 12 or 0)
+        local pattern = editing_chord_pattern
+        local editing_chord_x = editing_chord_x -- distinct from x/y coords!
+        local editing_chord_y = editing_chord_y -- distinct from x/y coords!
+        local root = editing_chord_root
+        local editing_chord_bools = editing_chord_bools
+        local custom = theory.custom_chords[editing_chord_scale][pattern][editing_chord_x]
 
-    if screen_view_name == "Events" then
+        if not custom[editing_chord_y] then
+          custom[editing_chord_y] = {intervals = {}}
+        end
+        
+        editing_chord_bools[interval] = not editing_chord_bools[interval]
+
+        custom[editing_chord_y]["intervals"] = {} -- write back to custom_chords
+
+        for i = 1, #editing_chord_bools do
+          if editing_chord_bools[i] then
+            local i = i - 1
+            table.insert(custom[editing_chord_y]["intervals"], i + root)
+          end
+        end
+
+        local c = find_chord(custom[editing_chord_y].intervals, root) -- pass root so intervals can be converted from absolute to relative to root
+        chord_menu_index = c and tab.key(chord_menu_names, c.short_name) or 0
+        custom[editing_chord_y].name = c and c.short_name or "Custom"
+        custom[editing_chord_y].dash_name_1 = c and c.dash_name_1 --or (c.short_name .. "*") -- sub short_name if it's an unnamed chord
+        custom[editing_chord_y].dash_name_2 = c and c.dash_name_2 or nil
+
+        gen_chord_name()
+      end
+
+    elseif screen_view_name == "scale_editor" then
+      if x <= 12 then
+        local mode = params:get("mode")
+        local scale = theory.scales_bool[y]
+
+        editing_scale = y
+        scale[x] = not scale[x] -- set value in flat table
+
+        -- write the changed pattern back to theory.scales which is the save format
+        theory.scales[mode][y] = {}
+        for i = 1, 12 do
+          if theory.scales_bool[y][i] then
+            table.insert(theory.scales[mode][y], i - 1)
+          end
+        end
+
+        build_scale()
+        set_scale_menu()
+
+        grid_dirty = true
+      elseif x == 16 then
+        editing_scale = y
+        grid_dirty = true
+        set_scale_menu()
+      end
+    
+    elseif screen_view_name == "Events" then
       if x == 16 then -- loop length
         -- temporarily disabled as event loop length needs implementation
         -- events_length[event_edit_segment] = y + pattern_grid_offset
@@ -4516,7 +4821,7 @@ function g.key(x, y, z)
         -- Setting of events beyond the pattern length is permitted
         event_key_count = event_key_count + 1
       
-        -- function g.key events loading
+        -- load events
         -- First touched event is the one we edit, effectively resetting on key_count = 0
         if event_key_count == 1 then
           event_edit_step = y + pattern_grid_offset
@@ -4563,7 +4868,7 @@ function g.key(x, y, z)
             params:set("event_probability", events_path.probability)
 
 
-          elseif event_edit_lane_id ~= nil then -- load default event for locked lane
+          elseif event_edit_lane_id ~= nil then -- load default event for configured lane
 
             events_index = 1
             selected_events_menu = events_menus[1]
@@ -4582,10 +4887,17 @@ function g.key(x, y, z)
             params:set("event_name", index)
             change_event()
 
-          else -- what to load for unconfigured lanes?
+            -- todo wishlist:     
+            -- when working in a single lane, the last-set value persists across slots
+            -- but changing to a new lane then returning will reset to the current param value
+            -- would be nice to have a memory of the last-set value in lane, but this requires that it be explicitly saved somewhere
+
+          else -- unconfigured lanes
             event_edit_status = "(New)"
+            change_operation("change_event") -- sets starting value to param's current value rather than default value
           end
           gen_menu_events()
+
           event_edit_active = true
           
         else -- Subsequent keys down paste event
@@ -4614,8 +4926,7 @@ function g.key(x, y, z)
             end
           end
 
-          print("Copy+paste event from segment " .. event_edit_segment .. "." .. event_edit_step .. " lane " .. event_edit_lane  .. " to " .. event_edit_segment .. "." .. (y + pattern_grid_offset) .. " lane " .. x)
-
+          notification("COPIED " .. event_edit_step .. "." .. event_edit_lane  .. " TO " .. (y + pattern_grid_offset) .. "." .. x )
           update_lanes(x) -- update the lanes we've pasted into
         end
       end
@@ -4646,16 +4957,20 @@ function g.key(x, y, z)
       if x == 1 and y == 8 + extra_rows then
         if params:get("arranger") == 1 then
           params:set("arranger", 2)
+          notification("ARRANGER ON")
         else
           params:set("arranger", 1)
+          notification("ARRANGER OFF")
         end
 
       -- Switch between Arranger playback Loop or 1-shot mode
       elseif x == 2 and y == 8 + extra_rows then
         if params:get("playback") == 2 then
           params:set("playback", 1)
+          notification("LOOPING OFF")
         else
           params:set("playback", 2)
+          notification("LOOPING ON")
         end
         
       -- Arranger pagination jumps
@@ -4674,7 +4989,7 @@ function g.key(x, y, z)
         -- allow pasting of events while setting patterns (but not the other way around)
         if grid_interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
-          print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
+          notification("COPIED " .. event_edit_segment .. " TO " .. x_offset)
           gen_arranger_dash_data("Event copy+paste")
         end
         
@@ -4692,7 +5007,7 @@ function g.key(x, y, z)
           -- implicit here that more than 1 key is held down so we're pasting
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
-            print("Copy+paste events from segment " .. event_edit_segment .. " to segment " .. x)
+            notification("COPIED " .. event_edit_segment .. " TO " .. x_offset)
             gen_arranger_dash_data("Event copy+paste")
           end
         end
@@ -4700,25 +5015,53 @@ function g.key(x, y, z)
       end
       
     elseif grid_view_name == "Chord" then
+      if x < 15 then -- chord degrees
+        local x_wrapped = util.wrap(x, 1, 7)
+        chord_key_count = chord_key_count + 1 -- used to determine "chord_key_held" grid_interaction
 
-      if x < 15 then -- chord pattern
-        chord_key_count = chord_key_count + 1
+        -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by some other action
         if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
-          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = 0
+          if not pending_chord_disable[x] then
+            pending_chord_disable[x] = {}
+          end
+          pending_chord_disable[x][y + pattern_grid_offset] = active_chord_pattern
+
         else
           chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
+          -- pending_chord_disable = nil -- will be for copy+paste
         end
 
-        chord_no = util.wrap(x, 1, 7) + ((params:get("chord_type") + 2) == 4 and 7 or 0) -- or 0
-        gen_chord_readout()
-
         -- plays Chord when pressing on any Grid key (even turning chord off)
-        if transport_state == "stopped" or transport_state == "paused" then
-          update_chord(x)
+        if params:get("preview_notes") == 2 and (transport_state == "stopped" or transport_state == "paused") then
+          update_chord(x, y)
           play_chord()
         end
 
-      
+        -- todo p0 need to do copy+paste and figure out complications there with simultaneous keypresses
+        if not grid_interaction then -- first keypress which defines editing_chord
+          grid_interaction = "chord_key_held"
+          lvl = lvl_dimmed
+          update_dash_lvls()
+          editing_chord_scale = params:get("mode")
+          editing_chord_pattern = active_chord_pattern
+          editing_chord_x = x -- used for chord editor
+          editing_chord_y = y -- used for chord editor
+          editing_chord_root = theory.chord_triad_intervals[editing_chord_scale][x][1]
+
+          local mode = params:get("mode")
+          local key = util.wrap(params:get("transpose"), 0, 11)
+          editing_chord_letter = theory.scale_chord_letters[mode][key][x_wrapped]       -- letter
+          editing_chord_triad_name = theory.scale_chord_names[mode][key][x_wrapped]        -- base triad name+quality
+
+          -- todo p0!
+          editing_chord_degree = theory.chord_degree[mode]["numeral"][x_wrapped]        -- degree roman numeral only
+          
+          gen_chord_name()
+          init_chord_editor() -- moved here from K3 so this can be used for quick chord selection
+        end
+
+        preload_chord()
+
       elseif x == 15 then -- set chord_pattern_length
         params:set("chord_pattern_length", y + pattern_grid_offset)
         gen_arranger_dash_data("g.key chord_pattern_length")
@@ -4735,11 +5078,14 @@ function g.key(x, y, z)
           pattern_keys[1][y] = true -- pattern_keys is used by seqs as well so when in chord mode, always use table 1
           if pattern_key_count == 1 then
             copied_pattern = y
-          else-- if pattern_key_count > 1 then
-            print("Copying pattern " .. pattern_name[copied_pattern] .. " to pattern " .. pattern_name[y])
+          else -- if pattern_key_count > 1 then
+            notification("COPIED " ..  pattern_name[copied_pattern] .. " TO " .. pattern_name[y])
+
             pattern_copy_performed[1] = true
-            for i = 1, max_chord_pattern_length do
-              chord_pattern[y][i] = chord_pattern[copied_pattern][i]
+            chord_pattern[y] = simplecopy(chord_pattern[copied_pattern])
+
+            for scale = 1, #dreamsequence.scales do             -- copy custom chords (for all scales)
+              theory.custom_chords[scale][y] = deepcopy(theory.custom_chords[scale][copied_pattern])
             end
 
             -- If we're pasting to the currently viewed active_chord_pattern, do it via param so we update param/grid table.
@@ -4752,11 +5098,6 @@ function g.key(x, y, z)
 
           end
         end
-      end
-      
-      if transport_active == false then -- Pre-load chord for when play starts
-        get_next_chord()
-        chord_raw = next_chord
       end
       
     -- SEQ PATTERN KEYS
@@ -4778,12 +5119,14 @@ function g.key(x, y, z)
         -- Play note if stopped/paused. Todo: may want to have this be a pref for stopped/paused, stopped, off
         -- plays note when pressing on any Grid key (even turning note off)
         -- mostly shared with advance_seq. could be consolidated into one fn
-        if transport_state == "stopped" or transport_state == "paused" then
+        if params:get("preview_notes") == 2 and (transport_state == "stopped" or transport_state == "paused") then
           local player = params:lookup_param("seq_voice_raw_"..selected_seq_no):get_player()
           local channel = player.channel and params:get("seq_channel_"..selected_seq_no) or nil
           local dynamics = (params:get("seq_dynamics_"..selected_seq_no) * .01)
           -- local dynamics = dynamics + (dynamics * (sprocket_seq_1.downbeat and (params:get("seq_accent_1") * .01) or 0))
-          local note = _G["map_note_" .. params:get("seq_note_map_"..selected_seq_no)](x, params:get("seq_octave_"..selected_seq_no)) + 36
+          local transform = transform_note[params:get("seq_note_map_"..selected_seq_no)]
+          local note = transform(x, params:get("seq_octave_"..selected_seq_no)) + 36
+
           to_player(player, note, dynamics, seq_duration[selected_seq_no], channel)
         end
       elseif x == max_seq_cols + 1 then -- seq loop length
@@ -4829,9 +5172,8 @@ function g.key(x, y, z)
                 else
                   seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
                 end
+                notification("COPIED " ..  copied_seq_no .. "." .. pattern_name[copied_pattern] .. " TO " .. seq_no .. "." .. pattern_name[y])
 
-                print("Copying Seq " .. copied_seq_no .. " pattern " .. pattern_name[copied_pattern] .. " to Seq " .. seq_no .. " pattern " .. pattern_name[y])
-              -- end
             else -- simultaneous keypresses in other seq columns are interpreted as intent to switch patterns
               update_seq_pattern[seq_no] = y -- sets pattern we need to update seq_no/index to on key-up
             end
@@ -4846,7 +5188,10 @@ function g.key(x, y, z)
   --------------
   elseif z == 0 then
     -- Events key up
-    if screen_view_name == "Events" then
+    if screen_view_name == "scale_editor" then
+      -- reserved
+    
+    elseif screen_view_name == "Events" then
 
       event_key_count = math.max(event_key_count - 1,0)
       
@@ -4931,18 +5276,29 @@ function g.key(x, y, z)
         end
 
 
-      elseif x < 15 then -- patterns
-        chord_key_count = chord_key_count - 1
-        if chord_key_count == 0 then
-          -- This reverts the chord readout to the currently loaded chord but it is kinda confusing when paused so now it just wipes and refreshes at the next chord step. Could probably be improved todo p2
-          -- chord_no = current_chord_c + ((params:get("chord_type") + 2) == 4 and 7 or 0)          
-          -- gen_chord_readout()
-          chord_no = 0
+      elseif x < 15 then -- chord degrees
+        chord_key_count = math.max(chord_key_count - 1, 0)
+
+        local p = pending_chord_disable
+        if p[x] and p[x][y] then
+          local pattern = p[x][y]
+          chord_pattern[pattern][y] = 0
+          p[x][y] = nil
+          if count_table_entries(p[x]) == 0 then
+            p[x] = nil
+          end
         end
+      
+        if chord_key_count == 0 then
+          if grid_interaction == "chord_key_held" then
+            grid_interaction = nil
+            lvl = lvl_normal
+            update_dash_lvls()
+          end
+        end
+
       end
 
-    
-    
     elseif grid_view_name == "Seq" then -- Seq key up
       if x > max_seq_cols + 1 and y <= max_seq_patterns then
         local seq_no = x - (16 - max_seqs)
@@ -5037,12 +5393,37 @@ function apply_arranger_shift()
 end
 
 
+-- function called when K1 is released or K3 is used to enter scale editor
+function bang_params()
+  for k, v in pairs(preview_param_q_get) do
+    params:set(k, v)
+  end
+  preview_param = nil
+  preview_param_q_get = {}
+  preview_param_q_string = {}
+  norns_interaction = nil
+  gen_menu() -- re-hide any menus we don't need
+end
+
+
 ----------------------
 -- NORNS KEY FUNCTIONS
 ----------------------
-function key(n,z)
+--#region key local sub functions
+-- check if the currently-selected chord is the default triad for editing scale/degree
+-- if so, wipe the custom chord entry so we know it's default
+local function default_chord_check()
+  if chord_menu_names[chord_menu_index] == theory.chord_triad_names[editing_chord_scale][editing_chord_x] then -- if standard chord, delete chord_custom entry
+    theory.custom_chords[editing_chord_scale][editing_chord_pattern][editing_chord_x][editing_chord_y] = nil
+  end
+end
+
+--#endregion key local sub functions
+
+function key(n, z)
   if z == 1 then
     -- keys[n] = 1
+
     key_count = (key_count or 0) + 1
 
     if n == 1 then -- Key 1 is used to preview param changes before applying them on release
@@ -5052,34 +5433,49 @@ function key(n,z)
         norns_interaction = "event_actions"
         lvl = lvl_dimmed
         -- end
-      else
+      elseif not grid_interaction and not norns_interaction then
+        notification("HOLD TO DEFER EDITS")
         norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
           preview_param = clone_param(menus[page_index][menu_index])
         end
-        redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
+        -- redraw() -- only place other than refresh because I hate the K1 delay and if this makes it even <1/60fps faster it's worth it
       end
 
     elseif n == 2 then -- KEY 2
-      if norns_interaction == "k1" then
-        if params:get("sync_grid_norns") == 1 then
-          params:set("sync_grid_norns", 2) -- on
-          set_page() -- set Grid view to current page
-        else
-          params:set("sync_grid_norns", 1)
-        end
-        lvl = lvl_dimmed
-        update_dash_lvls()
-        screen_message = "sync_grid_norns_changed"
-        clock.run(do_timer, 7,
-          function()
-            screen_message = nil
-            lvl = lvl_normal
-            update_dash_lvls()
-          end
-        )
+      if screen_view_name == "scale_editor" then -- close and return to session
+        screen_view_name = "Session"
 
+      elseif screen_view_name == "chord_editor" then -- close and return to session
+        update_chord(editing_chord_x, editing_chord_y)
+        play_chord()
+
+      elseif grid_interaction == "chord_key_held" then -- propagate chord
+        local scale = params:get("mode")
+
+        notification("CHORD PROPAGATED") -- todo maybe replace with momentary rather than timed pop-up
+        pending_chord_disable = {} -- cancel any help chord disables to be safe
+
+
+        local custom = theory.custom_chords[scale][editing_chord_pattern][editing_chord_x]
+
+        if custom[editing_chord_y] then -- custom chord exists
+          for pattern = 1, 4 do
+            for y = 1, 16 do
+              theory.custom_chords[scale][pattern][editing_chord_x][y] = deepcopy(custom[editing_chord_y])
+            end
+          end
+        else
+          for pattern = 1, 4 do
+            for y = 1, 16 do
+              theory.custom_chords[scale][pattern][editing_chord_x][y] = nil
+            end
+          end
+        end
+
+      elseif norns_interaction == "k1" then
+        -- placeholder but prob don't want to stop in case they meant to press K3
       elseif view_key_count > 0 then -- Grid view key held down
         if screen_view_name == "Chord+seq" then
         
@@ -5288,19 +5684,57 @@ function key(n,z)
       end
 
     elseif n == 3 then -- KEY 3
-      -- if keys[1] == 1 then
-      -- rework to enter chord/scale editor, maybe
-      -- if view_key_count > 0 then -- Grid view key held down
-      --   if screen_view_name == "Chord+seq" then
-      --   elseif grid_view_name == "Chord" then       
-      --   elseif grid_view_name == "Seq" then       
-      --   grid_dirty = true
-      
-        ---------------------------------------------------------------------------
-        -- Event Editor --
-        -- K3 with Event Timeline key held down enters Event editor / function key event editor
-        ---------------------------------------------------------------------------        
-      if arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then
+
+      if screen_view_name == "scale_editor" then -- close and return to session
+        screen_view_name = "Session"
+      elseif screen_view_name == "chord_editor" then -- close and return to session
+        default_chord_check()
+        grid_interaction = nil
+        screen_view_name = "Session"
+        gen_chord_readout() -- in case we're editing 1st step while stopped
+      elseif norns_interaction == "k1" then
+
+        if params:get("sync_views") == 1 then
+          params:set("sync_views", 2) -- on
+          set_page() -- set Grid view to current page
+        else
+          params:set("sync_views", 1)
+        end
+
+        notification(params:get("sync_views") == 1 and "SYNC VIEWS OFF" or "SYNC VIEWS ON")
+
+      elseif grid_interaction == "chord_key_held" then
+        local root = editing_chord_root
+
+        -- todo generate when mode is selected so this can be used for dash
+        -- generate table of in-mode intervals for grid_redraw
+        editing_chord_mode_intervals = {}
+        for i = 1, 7 do
+          editing_chord_mode_intervals[util.wrap(scale_heptatonic[i] + 1 - root, 1, 12)] = true
+        end
+
+        screen_view_name = "chord_editor"
+        pending_chord_disable = {} -- cancel any help chord disables to be safe
+
+        lvl = lvl_normal
+        update_dash_lvls()
+
+    
+      elseif view_key_count > 0 and grid_view_name == "Arranger" then -- Grid view key held down
+        -- if grid_view_name == "Arranger" then
+
+        -- open scale editor
+        view_key_count = 0
+        grid_view_keys = {}
+        scale_menu_index = 0
+        screen_view_name = "scale_editor"
+        norns_interaction = nil
+        grid_interaction = nil
+        bang_params() -- apply any defered param edits. could also ignore but this feels okay
+        set_scale_menu()
+        -- end
+
+        elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- Event Editor --
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -5316,24 +5750,27 @@ function key(n,z)
 
 
       elseif screen_view_name == "Events" then
-        if norns_interaction == "event_actions" then
-          local action = params:string("event_quick_actions")
+        if norns_interaction == "event_actions" then -- previously K3 could be used to fire quick action while keeping window open. Now, nothing.
+        --   local action = params:string("event_quick_actions")
 
-          if action == "Clear segment events" then
-            delete_events_in_segment("event_actions") -- pass arg to keep window open
-          end
+        --   if action == "Clear segment events" then
+        --     delete_events_in_segment("event_actions") -- pass arg to keep window open
+        --   end
+
           ---------------------------------------
           -- K3 TO SAVE EVENT
           ---------------------------------------
         elseif event_edit_active then
           local event_index = params:get("event_name")
-          local id = events_lookup[event_index].id
-          local order = tonumber(events_lookup[event_index].order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
-          local event_type = events_lookup[event_index].event_type -- function or param
+          local lookup = events_lookup[event_index] -- not saved
+          local id = lookup.id
+          local order = tonumber(lookup.order) or 2 -- (order 1 fires before chord (no swing), order 2 fires after chord (with swing))
+          local event_type = lookup.event_type -- function or param
+          local t = event_type == "param" and params:t(id) or nil -- param "t" value, e.g. 3 == controlspec
           local value = params:get("event_value")
-          local value_type = events_lookup[event_index].value_type -- continuous, trigger
-          local operation = params:string("event_operation") -- Set, Increment, Wander, Random
-          local action = events_lookup[event_index].action
+          local value_type = lookup.value_type -- continuous, trigger
+          local operation = params:string("event_operation") -- Set, Increment, Wander, Random, Trigger
+          local action = lookup.action
           local limit = params:string(operation == "Random" and "event_op_limit_random" or "event_op_limit")
           local limit_min = params:get("event_op_limit_min")
           local limit_max = params:get("event_op_limit_max")
@@ -5356,12 +5793,12 @@ function key(n,z)
           if value_type == "trigger" then
             events[event_edit_segment][event_edit_step][event_edit_lane] = 
               {
-                id = id, 
+                id = id,
                 order = order,
                 event_type = event_type,
+                t = t,
                 value_type = value_type,
                 operation = operation,  -- sorta redundant but we do use it to simplify reads
-                -- value = 
                 probability = probability
               }
               
@@ -5369,6 +5806,7 @@ function key(n,z)
             print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
+            print(">> t = " .. (t or ""))
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
             print(">> probability = " .. probability)
@@ -5378,7 +5816,8 @@ function key(n,z)
               {
                 id = id, 
                 order = order,
-                event_type = event_type, 
+                event_type = event_type,
+                t = t,
                 value_type = value_type,
                 operation = operation,
                 value = value, 
@@ -5389,6 +5828,7 @@ function key(n,z)
             print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
+            print(">> t = " .. (t or ""))
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
             print(">> value = " .. value)
@@ -5400,7 +5840,8 @@ function key(n,z)
               {
                 id = id, 
                 order = order,
-                event_type = event_type, 
+                event_type = event_type,
+                t = t,
                 value_type = value_type,
                 operation = operation,
                 limit = limit, -- note different source here but using the same field for storage              
@@ -5411,7 +5852,8 @@ function key(n,z)
               {
                 id = id, 
                 order = order,
-                event_type = event_type, 
+                event_type = event_type,
+                t = t,
                 value_type = value_type,
                 operation = operation,
                 limit = limit, -- note different source here but using the same field for storage
@@ -5425,6 +5867,7 @@ function key(n,z)
             print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
+            print(">> t = " .. (t or ""))
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
             print(">> limit = " .. limit)
@@ -5441,7 +5884,8 @@ function key(n,z)
               {
                 id = id, 
                 order = order,
-                event_type = event_type, 
+                event_type = event_type,
+                t = t,
                 value_type = value_type,
                 operation = operation,
                 limit = limit,
@@ -5449,11 +5893,12 @@ function key(n,z)
                 probability = probability
               }
             else
-            events[event_edit_segment][event_edit_step][event_edit_lane] = 
+            events[event_edit_segment][event_edit_step][event_edit_lane] =
               {
                 id = id, 
                 order = order,
-                event_type = event_type, 
+                event_type = event_type,
+                t = t,
                 value_type = value_type,
                 operation = operation,
                 limit = limit,
@@ -5467,6 +5912,7 @@ function key(n,z)
             print(">> id = " .. id)
             print(">> order = " .. order)
             print(">> event_type = " .. event_type)
+            print(">> t = " .. (t or ""))
             print(">> value_type = " .. value_type)
             print(">> operation = " .. operation)
             print(">> limit = " .. limit)
@@ -5486,7 +5932,7 @@ function key(n,z)
           end
 
           event_lanes[event_edit_lane].id = id -- always set last-saved event id as lane type
-          update_lanes(event_edit_lane)
+          update_lanes(event_edit_lane) -- todo save last values for all ops and min/max!
 
           -- Back to event overview
           event_edit_active = false
@@ -5584,15 +6030,19 @@ function key(n,z)
             print(transport_state)            
           end
           
-        -- todo p0 untested in 1.3
-        -- elseif params:string("clock_source") == "crow" then
-        --   if transport_active == false then
-        --     clock.transport.start(1)  -- sync on next beat
-        --   else -- we can cancel a pending pause by pressing K3 before it fires
-        --     stop = false
-        --     transport_state = "playing"
-        --     print(transport_state)            
-        --   end          
+        else -- crow/midi clock source
+          -- todo look at crow although I think you're better off just using Internal
+          notification("N/A (" .. string.upper(params:string("clock_source")) .. " CLOCK)")
+
+          -- todo p0 untested in 1.3
+          -- elseif params:string("clock_source") == "crow" then
+          --   if transport_active == false then
+          --     clock.transport.start(1)  -- sync on next beat
+          --   else -- we can cancel a pending pause by pressing K3 before it fires
+          --     stop = false
+          --     transport_state = "playing"
+          --     print(transport_state)            
+          --   end          
         end
       end
       -----------------------------------
@@ -5602,16 +6052,8 @@ function key(n,z)
     -- keys[n] = nil
     key_count = key_count - 1
     if n == 1 then
-
       if norns_interaction == "k1" then
-        for k, v in pairs(preview_param_q_get) do
-          params:set(k, v)
-        end
-        preview_param = nil
-        preview_param_q_get = {}
-        preview_param_q_string = {}
-        norns_interaction = nil
-        gen_menu() -- re-hide any menus we don't need
+        bang_params() -- defered param changes
       elseif norns_interaction == "event_actions" then
 
         -- make function if this ends up being used by K1 release as well as K3 down
@@ -5634,7 +6076,57 @@ end
 
 -----------------------------------
 -- ENCODERS
-----------------------------------          
+-----------------------------------
+
+--#region local enc subfunctions
+
+-- select custom chord from menu, set value
+local function delta_chord(d)
+  local x = editing_chord_x
+  local y = editing_chord_y
+  local root = editing_chord_root
+  local custom = theory.custom_chords[editing_chord_scale][editing_chord_pattern][x]
+
+  chord_menu_index = util.clamp((chord_menu_index or 0) + d, 1, #chord_menu_names)
+  local name = chord_menu_names[chord_menu_index]
+  local dash_name_1 = nil
+  local dash_name_2 = nil
+
+  -- generate intervals for the selected menu and populate dash_name_ fields:
+  -- todo probably make this a theory function (replacement for generate_chord)
+  local intervals = {}
+  local chords = theory.chords
+
+  -- find selected chord in theory.chords
+  for c = 1, #chords do
+    if name == chords[c].short_name then
+      dash_name_1 = (chords[c].dash_name_1 or nil) -- don't include editing_chord_letter as key change may occur
+      dash_name_2 = chords[c].dash_name_2 or nil
+      
+      local c_int = chords[c].intervals
+      for i = 1, #c_int do
+        intervals[i] = c_int[i] + root
+      end
+      break
+    end
+  end
+
+  -- write intervals to chords_custom so they are available to sequencer
+  custom[y] = {intervals = {}}
+  for i = 1, #intervals do
+    custom[y]["intervals"][i] = intervals[i]
+  end
+
+  gen_chord_bools(intervals) -- update for grid leds
+  custom[y].name = name -- todo this should be more like "chord_type" as it's just used to match against menu selection
+  custom[y].dash_name_1 = dash_name_1
+  custom[y].dash_name_2 = dash_name_2
+
+  preload_chord()
+end
+--#endregion local enc subfunctions
+
+
 function enc(n,d)
   -- Scrolling/extending Arranger, Chord, Seq patterns
   if n == 1 then
@@ -5659,10 +6151,13 @@ function enc(n,d)
     if grid_interaction == "view_switcher" then
       if (grid_view_name == "Chord" or grid_view_name == "Seq") then-- Chord/Seq 
         local d = util.clamp(d, -1, 1) -- no acceleration
-        rotate_loop(grid_view_name, d)
+        rotate_pattern(grid_view_name, d, true)
         grid_dirty = true
       end
    
+    elseif screen_view_name == "scale_editor" then
+      scale_menu_index = util.clamp(scale_menu_index + d, 0, 1)
+
     elseif screen_view_name == "Events" then
       if norns_interaction == "event_actions" then
         params:delta("event_quick_actions", d) -- change focus on event_quick_actions
@@ -5690,7 +6185,50 @@ function enc(n,d)
         transpose_pattern(grid_view_name, d)
         grid_dirty = true
       end
+      
+    elseif screen_view_name == "chord_editor" then -- full chord editor screen
+      delta_chord(d)
+      gen_chord_name()
+    elseif grid_interaction == "chord_key_held" then -- quick chord editor
+      delta_chord(d)
+      default_chord_check()
+      pending_chord_disable = {} -- cancel any held chord disables to be safe
+      gen_chord_name()
+    elseif screen_view_name == "scale_editor" then  -- scale editor
+      local mode = params:get("mode")
+
+      if scale_menu_index == 0 then
+        editing_scale = util.clamp((editing_scale or 1) + d, 1, 8)
+        set_scale_menu()
+      else
+        local lookup = theory.lookup_scales
+
+        -- either show loaded/matching scale or "Custom" if altered
+        scale_index = util.clamp((scale_index or 0) + d, 1, #lookup)
         
+        -- set theory.scales to selected menu
+        theory.scales[mode][editing_scale] = {}
+
+        for i = 1, #lookup[scale_index].intervals do
+          theory.scales[mode][editing_scale][i] = lookup[scale_index]["intervals"][i]
+        end
+
+        -- set bool table
+        theory.scales_bool[editing_scale] = {}
+        for x = 1, 12 do
+          theory.scales_bool[editing_scale][x] = false
+        end
+  
+        for i = 1, #lookup[scale_index].intervals do
+          theory.scales_bool[editing_scale][lookup[scale_index]["intervals"][i] + 1] = true
+        end
+
+        build_scale()
+
+        grid_dirty = true
+      end
+
+
     ----------------------    
     -- Event editor menus
     ----------------------    
@@ -5729,11 +6267,9 @@ function enc(n,d)
           
         elseif selected_events_menu == "event_value" then
           if params:string("event_operation") == "Set" then
-            -- alternate function to process via preview
-            delta_menu_set(d, event_range[1], event_range[2]) -- Dynamic event_range lookup. no functions to call here
-
+            delta_menu_set(d) -- Dynamic event_range lookup. no manual action to call
           elseif params:string("event_operation") == "Wander" then
-            delta_menu(d, 1) -- nil max defaults to 9999
+            delta_menu(d, 1)
           else
             params:delta(selected_events_menu, d)
             edit_status_edited()
@@ -5778,8 +6314,8 @@ function enc(n,d)
 end
 
 
--- utility function for enc deltas
--- Performs a similar operation to params:delta with a couple of differences:
+-- utility functions for enc deltas:
+
 -- 1. Can accept optional arguments for min/max for parameters that don't have this set
 -- 2. Calls edit_status_edited() as a psuedo param action (that we only want to run for encoder-initiaded set/deltas)
 -- 3. Returns whether or not the value changed so that we can call followup change_xxxxx functions
@@ -5798,53 +6334,64 @@ function delta_menu(d, minimum, maximum)
 end
 
 
--- alt of delta_menu used when selected_events_menu == "event_value" to handle preview
-function delta_menu_set(d, minimum, maximum)
+-- alt of delta_menu used when previewing selected_events_menu == "event_value" and we're using "set" op
+function delta_menu_set(d)--, minimum, maximum) -- don't think we need min/max any more, actually
+  local event = preview_event
   local prev_value = params:get(selected_events_menu)
-  local minimum = minimum or params:get_range(selected_events_menu)[1]
-  local maximum = maximum or params:get_range(selected_events_menu)[2]
-  preview_event:delta(d)
-  local value = util.clamp(preview_event:get(), minimum, maximum)
-  if value ~= prev_value then
-    params:set(selected_events_menu, value)
-    edit_status_edited()
-    return(true)
+  local t = event.t
+
+  if t == 9 and event.behavior == "toggle" then -- toggle will effectively wrap so we have to delta manually
+    event.value = util.clamp(event.value + d, 0, 1)
   else
-    return(false)
+    event:delta(d)
   end
+
+  local new_value = event.t == 3 and event.raw or event:get() -- controlspec or standard param
+
+  if new_value ~= prev_value then
+    params:set(selected_events_menu, new_value)
+    edit_status_edited()
+  end
+
 end
 
 
--- alt of delta_menu used when using preview to adjust op range min/max
--- 1. store current preview value (or not... see alt)
--- 2. set current preview value to min/max
--- 3. use delta to adjust and return delta'd preview value as min/max
--- 4. restore preview value from step 1 (or just clone_param())
-function delta_menu_range(d, minimum, maximum)  -- TODO fix min/max can't be flipped
-  local prev_value = params:get(selected_events_menu) -- e.g. 0 or 1
+-- variant of delta_menu used to delta event_op_limit_min/max event params
+function delta_menu_range(d, minimum, maximum)
+  local event = preview_event
+  local t = event.t
+  local wrap = event.wrap
+  local prev_value = params:get(selected_events_menu)
+  local new_value
 
-  local wrap = preview_event.wrap
-  if wrap then  -- temporarily disable parameter wrapping which messes with min/max logic
-    preview_event.wrap = false
-  end
-  
-  preview_event:set(prev_value) -- pass the prev_value to preview so we can delta it
+  if wrap then event.wrap = false end -- temporarily disable parameter wrapping which messes with min/max logic
 
-  preview_event:delta(d)
+  -- for controlspec, we must delta raw rather than mapped values (precision issue that causes trouble)
+  if t == 3 then -- controlspec type param
+    if selected_events_menu == "event_op_limit_min" then -- either min or max
+      minimum = 0 -- max will be based on the raw value from event_op_limit_max
+    else
+      maximum = 1 -- min will be based on the raw value from event_op_limit_min
+    end
 
-  if wrap then -- re-enable wrap which we might want for Set operations
-    preview_event.wrap = true
-  end
+    event:set_raw(prev_value) -- for controlspec we use `set_raw`
+    event:delta(d)
+    new_value = util.clamp(event.raw, minimum, maximum) -- get delta'd raw and prevent min/max range overlap
 
-  local value = util.clamp(preview_event:get(), minimum, maximum) -- prevent min/max overlap
-  if value ~= prev_value then
-    params:set(selected_events_menu, value)
-
-    edit_status_edited()
-    return(true)
+  elseif t == 9 and event.behavior == "toggle" then -- toggle will effectively wrap so we have to delta manually
+    new_value = util.clamp(event.value + d, 0, 1)
   else
-    return(false)
+    event:set(prev_value) -- for other params, use `set`
+    event:delta(d)
+    new_value = util.clamp(event:get(), minimum, maximum) -- get value and prevent min/max range overlap
   end
+
+  if new_value ~= prev_value then
+    params:set(selected_events_menu, new_value)
+    edit_status_edited() -- flag that event has been edited for UI (clamped edits won't trigger this)
+  end
+
+  if wrap then event.wrap = true end -- re-enable wrap
 end
 
 
@@ -5887,9 +6434,12 @@ end
 
 function change_event() -- index
   local event = params:get("event_name")
+  local lookup = events_lookup[event]
+
   if debug_change_functions then print("3. change_event called") end
   if debug_change_functions then print("   new event: " .. events_lookup[event].name) end
   if event ~= prev_event then
+    derive_value_type() -- todo this is being called on-the-fly but we can also just iterate through everything in events_lookup
     update_event_operation_options("change_event")
     
     -- Currently only changing on new event. Changing operation keeps the limit type
@@ -5897,17 +6447,31 @@ function change_event() -- index
     params:set("event_op_limit_random", 1)
 
     set_event_range()
-    
-    -- can also move to set_event_range() but this seems fine
-    params:set("event_op_limit_min", event_range[1])
-    params:set("event_op_limit_max", event_range[2])
-    
+
+    -- set default min/max param ranges (todo look at maybe moving inside set_event_range())
+    if lookup.event_type == "param" then
+      local p = params:lookup_param(lookup.id)
+
+      if p.t == 3 then -- is controlspec
+        -- switch to using `value` to store `raw` so we need to convert the default value
+        local spec = p.controlspec
+        params:set("event_op_limit_min", spec.warp.unmap(spec, event_range[1]))
+        params:set("event_op_limit_max", spec.warp.unmap(spec, event_range[2]))
+      else
+        params:set("event_op_limit_min", event_range[1])
+        params:set("event_op_limit_max", event_range[2])
+      end
+    -- todo housekeeping
+    -- else -- pretty sure sure we don't even need to update ranges for non-param events
+    --   params:set("event_op_limit_min", event_range[1])
+    --   params:set("event_op_limit_max", event_range[2])
+    end
+
     params:set("event_operation", 1) -- no action so call on next line
     change_operation("change_event")  -- pass arg so we can tell change_operation to set values even if op hasn't changed
     params:set("event_probability", 100) -- Only reset probability when event changes
-    local event = events_lookup[params:get("event_name")]
-    if event.event_type == "param" then
-      preview_event = clone_param(event.id)
+    if lookup.event_type == "param" then
+      preview_event = clone_param(lookup.id)
     end
   end
   prev_event = event
@@ -5921,25 +6485,25 @@ function change_operation(source)
 
   -- We also need to set default value if the event changed!
   if source == "change_event" or operation ~= prev_operation then
-    
+    local lookup = events_lookup[params:get("event_name")]
+
     -- alternative placement if we want to reset change event_op_limit and event_op_limit_random on both event and op change
-    
+
     if debug_change_functions then print("    setting default values") end
 
-    local event_index = params:get("event_name")
-    local value_type = events_lookup[event_index].value_type
-    local event_type = events_lookup[event_index].event_type
+    local event_type = lookup.event_type
 
 		-- set default_value for this operation
 		if debug_change_functions then print("    event_type = " .. event_type) end
     if event_type == "param" then
       if debug_change_functions then print("4.1 param value") end
       if operation == "Set" then
-        --todo p2 if adding more Discreet functions, need to expand on this because it's setting param value on function event types
-        local default_value = params:get(events_lookup[event_index].id)
-        local default_value = util.clamp(default_value, event_range[1], event_range[2])
-        if debug_change_functions then print("5. Set: setting default value to " .. default_value) end
-        params:set("event_value", default_value)
+        local p = params:lookup_param(lookup.id)
+        local value = p.t == 3 and p.raw or p:get() -- controlspec (raw) or standard value
+        
+        if debug_change_functions then print("5. Set: setting default value to " .. value) end
+        params:set("event_value", value)
+
       elseif operation == "Wander" then
         if debug_change_functions then print("5. Wander: setting default value to " .. 1) end
         params:set("event_value", 1)
@@ -6002,26 +6566,21 @@ end
 -- Sets the min and max ranges for the event param or function. No formatting stuff.
 function set_event_range()
   local event_index = params:get("event_name")
+  local lookup = events_lookup[event_index]
   -- Determine if event range should be clamped
-  if events_lookup[event_index].event_type == "param" then
-    if events_lookup[event_index].value_type ~= "trigger" then
-      
-      -- 2024-03-20 removed this which was causing issues with range when flipping from chord step length to mode
-      -- if params:string("event_operation") == "Increment" then
-      --   event_range = {-9999,9999}
-      -- else -- discreet"
-        event_range = params:get_range(params.lookup[events_lookup[event_index].id]) or {-9999, 9999}
-      -- end
+  if lookup.event_type == "param" then
+    if lookup.value_type ~= "trigger" then
+      event_range = params:get_range(lookup.id) or {-math.huge, math.huge}
     end
   else -- function. May have hardcoded ranges in events_lookup at some point
-    event_range = {-9999,9999}
+    event_range = {-math.huge, math.huge} -- is it even necessary to set ranges for these?
   end
   
   if debug_change_functions then 
     print("  Set event_range[1] to " .. event_range[1]) 
     print("  Set event_range[2] to " .. event_range[2]) 
   end  
-end  
+end 
 
 
 function get_options(param)
@@ -6035,20 +6594,58 @@ function update_event_subcategory_options(source)
   swap_param_options("event_subcategory", event_subcategories[params:string("event_category")])
 end
 
+
+-- derives event_type for event (either `trigger` or `continuous`) and sets in events_lookup
+-- with no arg, operates on selected event
+-- pass events_lookup index to operate on a specific event
+function derive_value_type(index)
+  local lookup_idx = index or params:get("event_name")
+  local lookup = events_lookup[lookup_idx]
+  local event_type = lookup.event_type -- param or function
+  local value_type -- derived this time
+
+  -- todo p2 might want to set up momentary where the value determines how long between on and off (too quick for some stuff)
+  if event_type == "param" then
+    local t = params:t(lookup.id)
+
+    if t == 6 or (t == 9 and params:lookup_param(lookup.id).behavior ~= "toggle") then -- trigger and momentary or trigger styles of binary
+      value_type = "trigger"
+    else
+      value_type = "continuous" -- toggle binaries are reclassified so their state can be set directly
+    end
+
+  else -- function
+    value_type = "trigger" -- all functions are triggers for now
+  end
+
+  lookup.value_type = value_type -- bit of a WAG but try setting this as it's used a few places
+end
+
+-- configures available event ops for the selected event 
 function update_event_operation_options(source)
   if debug_change_functions then print("   updating operations on " .. (params:string("event_name") or "nil")) end
   swap_param_options("event_operation", _G["event_operation_options_" .. events_lookup[params:get("event_name")].value_type])
 end
 
-
 -- used to set default value of event after init and pset load
-function get_default_event_value()  
-  if events_lookup[params:get("event_name")].event_type == "param" then
-    return(params.params[params.lookup[events_lookup[params:get("event_name")].id]].default)
+-- for controlspec, will unmap and provide "default raw" value which can be used for preview_event
+function get_default_event_value()
+  local lookup = events_lookup[params:get("event_name")]
+
+  if lookup.event_type == "param" then
+    local p = params:lookup_param(lookup.id)
+    if p.t == 3 then -- controlspec
+      spec = p.controlspec
+      local raw_default = spec.warp.unmap(spec, spec.default)
+      return(raw_default)
+    else
+      return(p.default)
+    end
   else
     return(0)
   end
-end  
+
+end
   
   
 function chord_steps_to_seconds(steps)
@@ -6058,20 +6655,22 @@ end
 
 -- Alternative for more digits up to 9 hours LETSGOOOOOOO
 function s_to_min_sec(seconds)
-    -- hours = (string.format("%02.f", math.floor(seconds/3600));
-    hours_raw = math.floor(seconds/3600);
-    hours = string.format("%1.f", hours_raw);
-    mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
-    secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
-    -- Modify hours if it's 2+ digits
-    -- hours = hours < 10 and string.format("%2.f",hours) or ">";
-    if hours_raw < 1 then
-      return mins .. ":" .. secs
-    elseif hours_raw < 10 then
-      return hours .. "h:" .. mins .. "m"
-    else
-      return hours .. "h+"
-    end
+
+  -- hours = (string.format("%02.f", math.floor(seconds/3600));
+  hours_raw = math.floor(seconds/3600);
+  hours = string.format("%1.f", hours_raw);
+  mins = string.format("%02.f", math.floor(seconds/60 - (hours*60)));
+  secs = string.format("%02.f", math.floor(seconds - hours*3600 - mins *60));
+  -- Modify hours if it's 2+ digits
+  -- hours = hours < 10 and string.format("%2.f",hours) or ">";
+  if hours_raw < 1 then
+    return mins .. ":" .. secs
+  elseif hours_raw < 10 then
+    return hours .. "h:" .. mins -- .. "m" -- truncated a bit to fit dash
+  else
+    return hours .. "h+"
+  end
+
 end
 
 
@@ -6081,7 +6680,7 @@ end
 function gen_arranger_dash_data(source)
   local on = params:string("arranger") == "On"
   local dash_steps = 0
-  local stop = 23 -- width of chart
+  local stop = 29 -- width of chart
   local steps_remaining_in_pattern = nil
 
   -- print("gen_arranger_dash_data called by " .. (source or "?"))
@@ -6156,8 +6755,8 @@ function gen_arranger_dash_data(source)
       -- insert blanks between segments
       if dash_steps < stop then
         table.insert(dash_patterns, 0)
-        table.insert(dash_events, "chart_area")
-        table.insert(dash_levels, "chart_area")
+        table.insert(dash_events, "pane_selected")
+        table.insert(dash_levels, "pane_selected")
         dash_steps = dash_steps + 1 -- and 1 to grow on!
       end
 
@@ -6165,8 +6764,6 @@ function gen_arranger_dash_data(source)
   end
   calc_seconds_remaining() -- firing before lattice is running which causes error
 end
-
-
 
 
 
@@ -6179,28 +6776,31 @@ local function tooltips(header, strings)
   screen.level(lvl.menu_deselected)
   for i = 1, #strings do
     screen.move(0, xy.menu_y + (i * 10))
-    screen.text(strings[i])
+    screen.text(strings[i] or "")
   end
 end
 
 
 -- rectangles and K2/K3 text
-local function footer(k2, k3) -- todo move out of redraw loop and pass lvl_pane_dark
-  local lvl_pane_dark = lvl.pane_dark
+-- optional bool to override dynamic dimming
+local function footer(k2, k3, no_dim) -- todo move out of redraw loop and pass lvl_pane_dark
+  local lvl_pane = no_dim and lvl_normal.pane_dark or lvl.pane_dark
+  local lvl_txt = no_dim and 0 or lvl.pane_selected
   if k2 then
-    screen.level(lvl_pane_dark)
-    screen.rect(0, 55, 63, 9)
+    screen.level(lvl_pane)
+    -- screen.rect(0, 55, 63, 9) -- 2px border
+    screen.rect(0, 53, 63, 11) -- 3px border
     screen.fill()
-    screen.level(1)
-    screen.move(31, 62)
+    screen.level(lvl_txt)
+    screen.move(31, 61) -- 3px border
     screen.text_center("K2 ".. k2)
   end
   if k3 then
-    screen.level(lvl_pane_dark)
-    screen.rect(65, 55, 63, 9)
+    screen.level(lvl_pane)
+    screen.rect(65, 53, 63, 11) -- 3px border
     screen.fill()
-    screen.level(1)
-    screen.move(96, 62)
+    screen.level(lvl_txt)
+    screen.move(96, 61) -- 3px border
     screen.text_center("K3 " .. k3)
   end
 end
@@ -6235,11 +6835,12 @@ function redraw()
     --   footer("GENERATE") -- technically this should indicate generating patterns for chord+seq
     if grid_view_name == "Arranger" then
       tooltips("SONG ARRANGER GRID")
+      footer(nil,"EDIT SCALE")
     elseif grid_view_name == "Chord" then
-      tooltips("CHORD GRID FUNCTIONS", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
+      tooltips("CHORD GRID", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
       footer("GENERATE")
     elseif grid_view_name == "Seq" then
-      tooltips("SEQ " .. selected_seq_no .. " GRID FUNCTIONS", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
+      tooltips("SEQ " .. selected_seq_no .. " GRID", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
       footer("GENERATE")
     end
 
@@ -6251,7 +6852,7 @@ function redraw()
     footer("JUMP", "EVENTS")
   
   elseif grid_interaction == "pattern_switcher" then
-    if page_name == "CHORD" then
+    if grid_view_name == "Chord" then -- if page_name == "CHORD" then
       tooltips("CHORD PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: cue pattern", "Tap 2x while stopped: jump"})
     else
       if simultaneous then
@@ -6260,6 +6861,7 @@ function redraw()
         tooltips("SEQ " .. copied_seq_no .. ", PATTERN " .. pattern_name[copied_pattern], {"Hold+tap: paste pattern", "Release: choose pattern"})
       end
     end
+
 
   else -- Standard priority (not momentary) menus
     -- NOTE: UI elements placed here appear in all views
@@ -6305,7 +6907,7 @@ function redraw()
           screen.text("No events in lane")
         end
 
-        footer("EXIT") -- K3 also goes back to arranger 🤫. Might add footer but then its needs to be updated for quick menu.
+        footer(nil, "EXIT") -- K2 also goes back to arranger 🤫
 
       else -- EVENT EDITOR MENUS
         -- todo p2 move some of this to a function that can be called when changing event or entering menu first time (like get_range)
@@ -6313,9 +6915,10 @@ function redraw()
 
         -- local event_def = events_lookup[params:get("event_name")]  -- todo global + change_event()
         local event_type = events_lookup[params:get("event_name")].event_type
+        local is_controlspec = (preview_event.t == 3) -- todo make sure this isn't trouble for functions!
         local menu_offset = scroll_offset_locked(events_index, 10, 2) -- index, height, locked_row
         local line = 1
-        
+
         -- EVENT EDITOR HEADER
         -- lane_glyph (with dynamic preview)
         if lane_glyph_preview == "Single" then
@@ -6364,26 +6967,30 @@ function redraw()
               -- if debug then print("Set operator") end
               -- if event_def.event_type == "param" then  -- move above operation check?
               if event_type == "param" then  -- move above operation check?
-                preview_event:set(event_val_string)
-                event_val_string = preview_event:string()
+                -- same chunk of code shared by event_op_limit_min/max, below
+                if is_controlspec then
+                  preview_event:set_raw(event_val_string) -- SET using raw value which has greater precision than set/value
+                else
+                  preview_event:set(event_val_string) -- event_val_string is actually param index at this point
+                end
+                event_val_string = preview_event:string() -- convert from index to actual string
+
               end
               -- if debug then print("Nil formatter: skipping") end
             elseif operation == "Wander" then
               event_val_string = "\u{0b1}" .. event_val_string
             end
-
             -- if debug then print("Value passed raw") end
-              
-              -- hack to use preview to get formatting for min/max
-              -- elseif string.sub(menu_id, 1, 15) == "event_op_limit_" then
-            elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
-              -- print("DEBUG menu_id = " .. menu_id) 
-              -- print("DEBUG min/max event_val_string " .. (event_val_string or "nil"))
-              local actual_val = preview_event:get()
-              preview_event:set(event_val_string)
-              event_val_string = preview_event:string()
-              preview_event:set(actual_val) -- restore actual value in case we switch back to "Set" op. TEST
-            end -- end of event_value stuff
+      
+          elseif menu_id == "event_op_limit_min" or menu_id == "event_op_limit_max" then
+            if is_controlspec then
+              preview_event:set_raw(event_val_string) -- SET using raw value which has greater precision than set/value
+            else
+              preview_event:set(event_val_string) -- event_val_string is actually param index at this point
+            end
+            event_val_string = preview_event:string() -- convert from index to actual string
+
+          end -- end of event_value stuff
         
             ------------------------------------------------
             -- Draw menu and <> indicators for scroll range
@@ -6396,7 +7003,7 @@ function redraw()
                 (menu_id == "event_category" or menu_id == "event_subcategory" or menu_id == "event_operation") 
                 and params:get_range(menu_id)
                 or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
-                or event_range -- if all else fails, slap -9999 to 9999 on it from set_event_range lol
+                or event_range
 
               local single = menu_index == range[1] and (range[1] == range[2]) or false
               local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
@@ -6428,7 +7035,7 @@ function redraw()
         
         -- events editor scrollbar
         screen.level(lvl_menu_selected)
-        local offset = scrollbar_y + scrollbar(events_index, #events_menus, 4, 2, 41) -- (index, total, in_view, locked_row, screen_height)
+        local offset = scrollbar_y + scrollbar(events_index, #events_menus, 4, 2, 38) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 4 / #events_menus * 41
         screen.rect(127, offset, 1, bar_height)
         screen.fill()
@@ -6440,7 +7047,7 @@ function redraw()
 
       -- K1 event actions pop-up quick-menu
       if norns_interaction == "event_actions_done" then -- flash "DONE!" message
-        local border = 10 -- portion of lower layer still shown
+        local border = 12 -- portion of lower layer still shown
         local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
 
         screen.level(0)
@@ -6455,7 +7062,7 @@ function redraw()
         screen.text_center("DONE!")
 
       elseif norns_interaction == "event_actions" then
-        local border = 10 -- portion of lower layer still shown
+        local border = 12 -- portion of lower layer still shown
         local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
         
         screen.level(0)
@@ -6472,7 +7079,34 @@ function redraw()
         end
       end
 
-        
+    elseif screen_view_name == "scale_editor" then
+      local editing_scale = editing_scale
+      local paging = scale_menu_index == 0
+      local scale_index = scale_index
+      local scale_name = scale_index == 0 and "Custom" or theory.lookup_scales[scale_index].name
+      local editing_scale_modified = false -- flag to set if scale was manually modified
+
+      screen.move(header_x, header_y)
+      screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      screen.text("CUSTOM SCALE " .. editing_scale)
+
+      screen.move(header_x, menu_y + 10)
+      screen.level(paging and lvl_menu_deselected or lvl_menu_selected)
+      screen.text("Scale: " .. (editing_scale_modified and "custom" or scale_name))
+
+      footer(nil, "EXIT")
+
+    elseif screen_view_name == "chord_editor" then    
+      screen.move(header_x, header_y)
+      screen.level(lvl_menu_deselected)
+      screen.text("CHORD DEGREE " .. editing_chord_degree .. ", BASE: " .. editing_chord_triad_name)
+
+      screen.move(header_x, menu_y + 10)
+      screen.level(lvl_menu_selected)
+      screen.text("Chord: " .. editing_chord_name)
+
+      footer("PREVIEW", "EXIT")
+
     else -- SESSION VIEW (NON-EVENTS), not holding down Arranger segments g.keys  
       -- NOTE: UI elements placed here appear in all non-Events views
 
@@ -6483,10 +7117,9 @@ function redraw()
       -- todo p1 move calcs out of redraw
       -- todo don't draw offscreen
       local paging = menu_index == 0
-      local menu_offset = scroll_offset_locked(menu_index, 10, 3) -- index, height, locked_row
+      local menu_offset = scroll_offset_locked(menu_index, 10, 2) -- index, height, locked_row
       local line = 1
 
-      -- OG style
       for i = 1, #menus[page_index] do
         local param_id = menus[page_index][i]
         local q = preview_param_q_get[param_id] and "-" or "" -- indicates if delta is waiting on param_q
@@ -6494,7 +7127,7 @@ function redraw()
         local param_string = preview_param_q_string[param_id] or params:string(param_id)
         local y = line * 10 + menu_y - menu_offset
         
-        if y > 11 and y < 64 then
+        if y > 12 and y < 64 then
           screen.move(0, y)
        
           if menu_index == i then  -- Generate menu and draw ▶◀ indicators for scroll range
@@ -6514,54 +7147,72 @@ function redraw()
         line = line + 1
       end
 
-      -- -- alternate param menu-style. may add as pref option
-      -- -- lowercase, no range indicators (todo flash screen?), q indicator at end
-      -- for i = 1, #menus[page_index] do
-      --   local param_id = menus[page_index][i]
-      --   local q = preview_param_q_get[param_id] and "•" or "" -- indicates if delta is waiting on param_q -- req norns.ttf
-      --   local param_string = preview_param_q_string[param_id] or params:string(param_id)
-      --   local y = line * 10 + header_y  - menu_offset
-        
-      --   if y > header_y  and y < 64 then
-      --     screen.move(0, y)
-      --     screen.level(menu_index == i and lvl_menu_selected or lvl_menu_deselected)
-      --     screen.text(q .. string.lower(param_id_to_name(param_id)))
-      --     screen.move(dash_x - 5, y)
-      --     screen.text_right(string.lower(param_string))
-      --   end
-
-      --   line = line + 1
-      -- end
-
 
       -- main menu scrollbar
       if not paging then
         screen.level(lvl_menu_selected)
-        local offset = scrollbar_y + scrollbar(menu_index, #menus[page_index], 5, 3, 52) -- (index, total, in_view, locked_row, screen_height)
+        local offset = scrollbar_y + scrollbar(menu_index, #menus[page_index], 5, 2, 52) -- (index, total, in_view, locked_row, screen_height)
         local bar_height = 5 / #menus[page_index] * 52
         screen.rect(dash_x - 2, offset, 1, bar_height)
         screen.fill()
       end
       
 
-      -- MAIN MENUPAGE SELECTOR
-      if paging then  -- if we want it to only appear when changing pages
-        local width = (4 * #pages) - 1
-        local x = math.ceil((dash_x - width) / 2)
-        for i = 1, #pages do
-          screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
-          screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
-          screen.fill()
-        end
-      end
+      -- A: center pagination and small menu
 
+      -- -- MAIN MENU PAGINATION
+      -- if paging then  -- if we want it to only appear when changing pages
+      --   local width = (4 * #pages) - 1
+      --   local x = math.ceil((dash_x - width) / 2) -- 35 calculated
+      --   for i = 1, #pages do
+      --     screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
+      --     screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
+      --     -- screen.rect(((i - 1) * 4), 0, 3, 1) -- small left-aligned pagination
+      --     screen.fill()
+      --   end
+      -- end
+
+      -- screen.move(header_x, header_y)
+      -- screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      -- screen.text(page_name)
+      
+
+      -- B: small menu only, shifted up
       screen.move(header_x, header_y)
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
       screen.text(page_name)
 
-      -- if params:string("sync_grid_norns") == "On" then
-      --   screen.move(dash_x - 10, 7)
-      --   screen.text("▦")
+      -- -- C: Jumbotron
+      -- screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
+      -- screen.move(0, 10)
+      -- screen.font_size(16)
+      -- screen.text(page_name)
+      -- screen.font_size(8)
+
+      -- screen.level(lvl_menu_deselected)
+      -- screen.rect(0, 9, screen.text_extents(page_name), 1)
+      -- screen.fill()
+
+      -- -- WIP, optional glyph (todo norns.ttf required) to indicate when grid-norns syncing is enabled
+      -- if params:string("sync_views") == "On" then
+      --   screen.level(lvl_menu_deselected)
+
+      --   -- screen.move(dash_x - 10, 7)
+      --   -- screen.text("▦")
+
+      --   local x = dash_x - 10
+      --   screen.pixel(x, 2)
+      --   screen.pixel(x, 4)
+      --   screen.pixel(x, 6)
+      --   local x = dash_x - 8
+      --   screen.pixel(x, 2)
+      --   screen.pixel(x, 4)
+      --   screen.pixel(x, 6)
+      --   local x = dash_x - 6
+      --   screen.pixel(x, 2)
+      --   screen.pixel(x, 4)
+      --   screen.pixel(x, 6) 
+      --   screen.fill()
       -- end
 
       -- iterate through list of modular dashboard functions
@@ -6570,23 +7221,50 @@ function redraw()
         func()
       end
 
-      if screen_message == "sync_grid_norns_changed" then -- notify of sync change using K1+K2
-        local border = 20 -- portion of lower layer still shown
-        local rect = {1 + border, border, 127 - (border * 2), 63 - (border * 2)}
-
+      if grid_interaction == "chord_key_held" then       
         screen.level(0)
-        screen.rect(table.unpack(rect))
+        screen.rect(0, 0, dash_x - 2, 52)
+        screen.rect(0, 52, 128, 12) -- 1-px footer mask (3-border footer)
         screen.fill()
+
         screen.level(15)
-        screen.rect(table.unpack(rect))
+        screen.rect(1, 1, dash_x - 2, 51)
         screen.stroke()
 
-        screen.level(15)
-        screen.move(64, 34)
-        screen.text_center(params:get("sync_grid_norns") == 1 and "Sync OFF" or "Sync ON")
+        screen.move(44, 28)
+        screen.text_center(editing_chord_name)
+
+        screen.level(lvl_menu_deselected)
+        screen.move(dash_x - 4, 8)
+        screen.text_right("E2")
+        -- glyph, replace with norns.ttf
+        -- for i = 1, #glyphs.loop do
+        --   screen.pixel(dash_x - 9 + glyphs.loop[i][1], glyphs.loop[i][2] + 3)
+        -- end
+        screen.fill()
+
+        footer("PROPAGATE", "EDIT CHORD", true) -- true overrides dimming to emphasize momentary keys
       end
 
     end -- of event vs. non-event check
   end
+
+
+  if screen_message then
+    -- footer-area notification display
+    -- 1px border
+    screen.level(0)
+    screen.rect(0, 52, 128, 1)
+    screen.fill()
+
+    screen.level(15)
+    screen.rect(0, 53, 128, 12)
+    screen.fill()
+
+    screen.level(0)
+    screen.move(64, 61)
+    screen.text_center(screen_message)
+  end
+
   screen.update()
 end
