@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 1.4 240803 @modularbeat
+-- 1.4 240804 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -5045,17 +5045,18 @@ function g.key(x, y, z)
     elseif grid_view_name == "Chord" then
       if x < 15 then -- chord degrees
         local x_wrapped = util.wrap(x, 1, 7)
+        local y_offset = y + pattern_grid_offset
         chord_key_count = chord_key_count + 1 -- used to determine "chord_key_held" grid_interaction
 
         -- flag this pattern/chord as needing to be disabled on key-up, if not interrupted by some other action
-        if x == chord_pattern[active_chord_pattern][y + pattern_grid_offset] then
+        if x == chord_pattern[active_chord_pattern][y_offset] then
           if not pending_chord_disable[x] then
             pending_chord_disable[x] = {}
           end
-          pending_chord_disable[x][y + pattern_grid_offset] = active_chord_pattern
+          pending_chord_disable[x][y_offset] = active_chord_pattern
 
         else
-          chord_pattern[active_chord_pattern][y + pattern_grid_offset] = x
+          chord_pattern[active_chord_pattern][y_offset] = x
           -- pending_chord_disable = nil -- will be for copy+paste
         end
 
@@ -5305,13 +5306,15 @@ function g.key(x, y, z)
 
 
       elseif x < 15 then -- chord degrees
+        local y_offset = y + pattern_grid_offset
+
         chord_key_count = math.max(chord_key_count - 1, 0)
 
         local p = pending_chord_disable
-        if p[x] and p[x][y] then
-          local pattern = p[x][y]
-          chord_pattern[pattern][y] = 0
-          p[x][y] = nil
+        if p[x] and p[x][y_offset] then
+          local pattern = p[x][y_offset]
+          chord_pattern[pattern][y_offset] = 0
+          p[x][y_offset] = nil
           if count_table_entries(p[x]) == 0 then
             p[x] = nil
           end
