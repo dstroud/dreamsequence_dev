@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 1.4 240804 @modularbeat
+-- 1.4 240805 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -121,7 +121,7 @@ local latest_strum_coroutine = coroutine.running()
 function init()
   -----------------------------
   -- todo p0 prerelease ALSO MAKE SURE TO UPDATE ABOVE!
-  local version = "v1.4"
+  local version = 010400 --1.4.0
   -----------------------------
 
   function read_prefs()  
@@ -129,11 +129,18 @@ function init()
     local filepath = norns.state.data
     if util.file_exists(filepath) then
       if util.file_exists(filepath.."prefs.data") then
-        prefs = tab.load(filepath.."prefs.data")
-        print("table >> read: " .. filepath.."prefs.data")
+        local p = tab.load(filepath.."prefs.data")
+        if (tonumber(p.last_version) or 0) >= 010400 then -- todo p0 prerelease UPDATE if prefs have changed
+          print("table >> read: " .. filepath.."prefs.data")
+          prefs = p
         else
-          print("table >> missing: " .. filepath.."prefs.data")
+          print("Ignoring obsolete prefs.data")
+        end
+      else
+        print("table >> missing: " .. filepath.."prefs.data")
       end
+    else
+      print("table >> missing: " .. filepath.."prefs.data")
     end
   end
   read_prefs()
@@ -346,9 +353,9 @@ function init()
 
   params:add_option("default_pset", "Load pset", {"Off", "Last", "Template"}, 1)
   params:set_save("default_pset", false)
-  -- don't load last/template if it's a new version, assuming breaking changes
+
   -- param_option_to_index is used rather than set_param_string to handle any invalid/changed saved values
-  params:set("default_pset", prefs.last_version == version and param_option_to_index("default_pset", prefs.default_pset) or 1)
+  params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
   params:set_action("default_pset", function() save_prefs() end)
   
   -- params:add_separator("interaction","interaction")
@@ -358,9 +365,9 @@ function init()
   params:set("sync_views", param_option_to_index("sync_views", prefs.sync_views) or 2)
   params:set_action("sync_views", function() save_prefs() end)
 
-  params:add_option("notifications", "Notifications", {"Off", "Brief", "Extended"}, 2)
+  params:add_option("notifications", "Notifications", {"Off", "Momentary", "Brief", "Extended"}, 3)
   params:set_save("notifications", false)
-  params:set("notifications", param_option_to_index("notifications", prefs.notifications) or 2)
+  params:set("notifications", param_option_to_index("notifications", prefs.notifications) or 3)
   params:set_action("notifications", function() save_prefs() end)
 
   params:add_option("preview_notes", "Preview notes", {"Off", "On"}, 2)
@@ -826,7 +833,6 @@ function init()
   params:add_separator("VOICES")
   nb:add_player_params() -- modified to also add nb.indices
   
-  -- WIP TODAY
 
   -- insert MIDI events for active MIDI ports
   for port = 1, 16 do
@@ -1486,7 +1492,7 @@ function init()
   
   params:bang()
   -- Some actions need to be added post-bang.
-  params:set_action("arranger", function() update_arranger_active() end)
+  params:set_action("arranger", function(val) update_arranger_active(val) end)
 
   params:set_action("mode", 
     function()
@@ -2057,29 +2063,28 @@ end -- end of init
 -----------------------------------------------
  
 -- shows a brief pop-up message
-function notification(message)
-  local pref = params:get("notifications")
-
-  if pref ~= 1 then -- not "Off"
-    local time = (pref - 1) * 8
-    lvl = lvl_dimmed
-    update_dash_lvls()
-    screen_message = message
-    if (popup_countdown or 0) == 0 then -- start timer
-
-      clock.run(do_notification_timer, 
-      time, -- 1st arg (display time)
-        function() -- 2nd arg, function
-          screen_message = nil
-          lvl = lvl_normal
-          update_dash_lvls()
-        end
-      )
-    else  -- timer is already running so just restart the countdown
-      popup_countdown = time
+-- end_tab is table indicating which grid or norns key release will end the message
+-- e.g. {g, x, y} or {k, 3}
+-- nil end_tab will result in long notification (enc)
+function notification(message, end_tab)
+  local d = params:get("notifications")
+  if d > 1 then -- index 1 == off
+    if end_tab then
+      if message_clock then
+        clock.cancel(message_clock)
+        popup_countdown = nil
+      end
+      lvl = lvl_dimmed
+      update_dash_lvls()
+      screen_message = message
+      end_screen_message = end_tab
+    else
+      lvl = lvl_dimmed
+      update_dash_lvls()
+      screen_message = message
+      do_notification_timer_1(math.max(d, 3)) --  since no end_tab was supplied, to timer of some sort (unless notifs are off)
     end
   end
-
 end
 
 
@@ -2171,21 +2176,41 @@ function do_timer(countdown, func)
   end
 end
 
--- generic timer that runs function after counter reaches 0
--- eg: clock.run(do_timer, 10, function() print("copying") end)
-function do_notification_timer(countdown, func)
-  popup_countdown = countdown
-  while true do
-    popup_countdown = popup_countdown - 1
-    if popup_countdown == 0 then
-        func()
-      break
-    end
-    clock.sleep(.1)
-  end
-end
 
-function pattern_key_timer()
+-- optional arg to override popup duration pref(e.g. always show extended pop-up when initiated by enc, which has no end state)
+function do_notification_timer_1(pref)
+  local pref = pref or params:get("notifications")
+
+  if pref < 3 then -- index 1 == off, 2 == momentary
+    screen_message = nil
+    lvl = lvl_normal
+    update_dash_lvls()
+  elseif pref > 2 then -- index 3 == brief, 4 == extended
+    local time = (pref - 2) * 8
+    if (popup_countdown or 0) == 0 then -- start timer
+      message_clock = clock.run(
+        function()
+          popup_countdown = time
+          while true do
+            popup_countdown = popup_countdown - 1
+            if popup_countdown == 0 then
+              screen_message = nil
+              lvl = lvl_normal
+              update_dash_lvls()
+              break
+            end
+            clock.sleep(.1)
+          end
+        end
+      )
+    else  -- timer is already running so just restart the countdown
+      popup_countdown = time
+    end
+  end
+end   
+
+          
+          function pattern_key_timer()
   keydown_timer = 0
   while grid_interaction == "pattern_switcher" do
     keydown_timer = keydown_timer + 1
@@ -3325,12 +3350,21 @@ end
 -- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false
 -- Does not flip to true until Arranger is re-synced upon advance_chord_pattern (or transport reset)
 -- Also updates chord_pattern_q
-function update_arranger_active()
-  if params:string("arranger") == "Off" then
+function update_arranger_active(val)
+  if val == 1 then -- turning off
+    -- explicitly set arranger q position to show where arranger will resume
+    if arranger_active and not (arranger_position == 0 and chord_pattern_position == 0) then
+      if not arranger_queue then -- unless q is already set
+        local q = (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
+        arranger_queue = q
+      end
+    end
+    
+    -- og
     arranger_active = false
     set_chord_pattern_q(false)
 
-  elseif params:string("arranger") == "On" then
+  else -- turning on
     if chord_pattern_position == 0 then arranger_active = true end
     update_chord_pattern_q()
   end
@@ -4954,7 +4988,7 @@ function g.key(x, y, z)
             end
           end
 
-          notification("COPIED " .. event_edit_step .. "." .. event_edit_lane  .. " TO " .. (y + pattern_grid_offset) .. "." .. x )
+          notification("COPIED " .. event_edit_step .. "." .. event_edit_lane  .. " TO " .. (y + pattern_grid_offset) .. "." .. x , {"g", x, y})
           update_lanes(x) -- update the lanes we've pasted into
         end
       end
@@ -4985,20 +5019,20 @@ function g.key(x, y, z)
       if x == 1 and y == 8 + extra_rows then
         if params:get("arranger") == 1 then
           params:set("arranger", 2)
-          notification("ARRANGER ON")
+          notification("ARRANGER ON", {"g", x, y})
         else
           params:set("arranger", 1)
-          notification("ARRANGER OFF")
+          notification("ARRANGER OFF", {"g", x, y})
         end
 
       -- Switch between Arranger playback Loop or 1-shot mode
       elseif x == 2 and y == 8 + extra_rows then
         if params:get("playback") == 2 then
           params:set("playback", 1)
-          notification("LOOPING OFF")
+          notification("LOOPING OFF", {"g", x, y})
         else
           params:set("playback", 2)
-          notification("LOOPING ON")
+          notification("LOOPING ON", {"g", x, y})
         end
         
       -- Arranger pagination jumps
@@ -5017,7 +5051,7 @@ function g.key(x, y, z)
         -- allow pasting of events while setting patterns (but not the other way around)
         if grid_interaction == "event_copy" then
           events[x_offset] = deepcopy(events[event_edit_segment])
-          notification("COPIED " .. event_edit_segment .. " TO " .. x_offset)
+          notification("COPIED " .. event_edit_segment .. " TO " .. x_offset, {"g", x, y})
           gen_arranger_dash_data("Event copy+paste")
         end
         
@@ -5035,7 +5069,7 @@ function g.key(x, y, z)
           -- implicit here that more than 1 key is held down so we're pasting
           else
             events[x_offset] = deepcopy(events[event_edit_segment])
-            notification("COPIED " .. event_edit_segment .. " TO " .. x_offset)
+            notification("COPIED " .. event_edit_segment .. " TO " .. x_offset, {"g", x, y})
             gen_arranger_dash_data("Event copy+paste")
           end
         end
@@ -5108,8 +5142,7 @@ function g.key(x, y, z)
           if pattern_key_count == 1 then
             copied_pattern = y
           else -- if pattern_key_count > 1 then
-            notification("COPIED " ..  pattern_name[copied_pattern] .. " TO " .. pattern_name[y])
-
+            notification("COPIED " ..  pattern_name[copied_pattern] .. " TO " .. pattern_name[y], {"g", x, y})
             pattern_copy_performed[1] = true
             chord_pattern[y] = simplecopy(chord_pattern[copied_pattern])
 
@@ -5201,7 +5234,7 @@ function g.key(x, y, z)
                 else
                   seq_pattern_length[seq_no][y] = seq_pattern_length[copied_seq_no][copied_pattern]
                 end
-                notification("COPIED " ..  copied_seq_no .. "." .. pattern_name[copied_pattern] .. " TO " .. seq_no .. "." .. pattern_name[y])
+                notification("COPIED " ..  copied_seq_no .. "." .. pattern_name[copied_pattern] .. " TO " .. seq_no .. "." .. pattern_name[y], {"g", x, y})
 
             else -- simultaneous keypresses in other seq columns are interpreted as intent to switch patterns
               update_seq_pattern[seq_no] = y -- sets pattern we need to update seq_no/index to on key-up
@@ -5216,6 +5249,7 @@ function g.key(x, y, z)
   --G.KEY RELEASED
   --------------
   elseif z == 0 then
+
     -- Events key up
     if screen_view_name == "scale_editor" then
       -- reserved
@@ -5387,6 +5421,13 @@ function g.key(x, y, z)
       end
     end
 
+    local e = end_screen_message
+    if e and e[1] == "g" then
+      if x == e[2] and y == e[3] then
+        do_notification_timer_1()
+      end
+    end
+
   end
   grid_dirty = true
 end
@@ -5465,7 +5506,7 @@ function key(n, z)
         lvl = lvl_dimmed
         -- end
       elseif not grid_interaction and not norns_interaction then
-        notification("HOLD TO DEFER EDITS")
+        notification("HOLD TO DEFER EDITS", {"k",})
         norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
@@ -5485,7 +5526,7 @@ function key(n, z)
       elseif grid_interaction == "chord_key_held" then -- propagate chord
         local scale = params:get("mode")
 
-        notification("CHORD PROPAGATED") -- todo maybe replace with momentary rather than timed pop-up
+        notification("CHORD PROPAGATED", {"k", 2}) -- todo maybe replace with momentary rather than timed pop-up
         pending_chord_disable = {} -- cancel any help chord disables to be safe
 
 
@@ -5732,7 +5773,7 @@ function key(n, z)
           params:set("sync_views", 1)
         end
 
-        notification(params:get("sync_views") == 1 and "SYNC VIEWS OFF" or "SYNC VIEWS ON")
+        notification(params:get("sync_views") == 1 and "SYNC VIEWS OFF" or "SYNC VIEWS ON", {"k", 3})
 
       elseif grid_interaction == "chord_key_held" then
         local root = editing_chord_root
@@ -6063,7 +6104,7 @@ function key(n, z)
           
         else -- crow/midi clock source
           -- todo look at crow although I think you're better off just using Internal
-          notification("N/A (" .. string.upper(params:string("clock_source")) .. " CLOCK)")
+          notification("N/A (" .. string.upper(params:string("clock_source")) .. " CLOCK)", {"k", 3})
 
           -- todo p0 untested in 1.3
           -- elseif params:string("clock_source") == "crow" then
@@ -6101,6 +6142,14 @@ function key(n, z)
     -- elseif n == 3 then
 
     end
+
+    local e = end_screen_message
+    if e and e[1] == "k" then
+      if n == e[2] then
+        do_notification_timer_1()
+      end
+    end
+
   end
 end
 
@@ -6169,7 +6218,10 @@ function enc(n,d)
       end
     
       ------- SCROLL ARRANGER/PATTERN GRID VIEWS--------
-    elseif grid_view_name == "Chord" or screen_view_name == "Events" then
+    elseif grid_view_name == "Chord" then
+      pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_chord_pattern_length -  rows)
+      pending_chord_disable = {} -- forget about any pending chord disables (lotta options here but this is simple and works)
+    elseif screen_view_name == "Events" then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_chord_pattern_length -  rows)
     elseif grid_view_name == "Seq" then
       pattern_grid_offset = util.clamp(pattern_grid_offset + d, 0, max_seq_pattern_length -  rows)
@@ -7191,17 +7243,17 @@ function redraw()
 
       -- A: center pagination and small menu
 
-      -- -- MAIN MENU PAGINATION
-      -- if paging then  -- if we want it to only appear when changing pages
-      --   local width = (4 * #pages) - 1
-      --   local x = math.ceil((dash_x - width) / 2) -- 35 calculated
-      --   for i = 1, #pages do
-      --     screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
-      --     screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
-      --     -- screen.rect(((i - 1) * 4), 0, 3, 1) -- small left-aligned pagination
-      --     screen.fill()
-      --   end
-      -- end
+      -- MAIN MENU PAGINATION
+      if paging then  -- if we want it to only appear when changing pages
+        local width = (4 * #pages) - 1
+        local x = math.ceil((dash_x - width) / 2) -- 35 calculated
+        for i = 1, #pages do
+          screen.level(i == page_index and lvl_menu_selected or lvl_menu_deselected)
+          screen.rect(x + ((i - 1) * 4), 0, 3, 1) -- small top-centered pagination
+          -- screen.rect(((i - 1) * 4), 0, 3, 1) -- small left-aligned pagination
+          screen.fill()
+        end
+      end
 
       -- screen.move(header_x, header_y)
       -- screen.level(paging and lvl_menu_selected or lvl_menu_deselected)

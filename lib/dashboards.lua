@@ -69,13 +69,18 @@ function dash_functions.arranger_chart()
       screen.level(lvl_pane_deselected)
     end
 
-      -- todo norns.ttf change to ↳ probably
-      if valid_jump then
+    -- todo norns.ttf change to ↳ probably
+    if valid_jump then
       screen.text("→" .. arranger_queue)
-      elseif final_seg and params:string("playback") == "1-shot" then
+    elseif final_seg and params:string("playback") == "1-shot" then
       screen.text("→End") -- indicate we'll hit end, not wrap
+    else
+      if arranger_position == 0 and chord_pattern_position == 0 then -- stopped
+        screen.text("1") -- when arranger is off but we can enter arranger_active without any count-in
       else
-      screen.text("→" .. util.wrap(arranger_position + 1, 1, arranger_length)) -- segment we'll enter on
+        screen.text("→1") -- if there's a jump but it's invalid so we are looping
+      end
+
     end
 
   elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
@@ -239,47 +244,6 @@ end
 
 
 ----------------------------------------------------
--- METRONOME, TIME ELAPSED
-----------------------------------------------------
-table.insert(dash_ids, "metro_elapsed")
-table.insert(dash_name, "Metro T+")
-
-function dash_functions.metro_elapsed()
-  -- pane
-  screen.level(lvl_pane)
-  screen.rect(dash_x, dash_y, width, 11)
-  screen.fill()
-
-  -- transport state/metro glyph level
-  if transport_state == "starting" and params:string("clock_source") == "link" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
-    screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
-  elseif transport_state == "playing" then -- metronome with emphasis on new measure
-    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane - 2)
-  else
-    screen.level(lvl_pane_selected)
-  end
-
-  -- redefine/simplify for glyphs
-  local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
-
-  -- glyph
-  for i = 1, #glyphs[transport_state] do
-    screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 3 + glyphs[transport_state][i][2]) -- left
-  end
-  screen.fill()
-  
-  -- time elapsed text
-  screen.level(lvl_pane_selected)
-  screen.move(dash_x + 11, dash_y + 8)
-  screen.text(seconds_elapsed or "00:00")
-
-  dash_y = dash_y + 12 -- position for next dash
-end
-
-
-
-
-----------------------------------------------------
 -- METRONOME, TIME REMAINING IN ARRANGEMENT
 ----------------------------------------------------
 table.insert(dash_ids, "metro_remaining")
@@ -313,6 +277,47 @@ function dash_functions.metro_remaining()
   screen.level(params:string("arranger") == "On" and lvl_pane_selected or lvl_pane_deselected) -- dim if arranger is off
   screen.move(dash_x + 11, dash_y + 8)
   screen.text(seconds_remaining or "00:00")
+
+  dash_y = dash_y + 12 -- position for next dash
+end
+
+
+
+
+----------------------------------------------------
+-- METRONOME, TIME ELAPSED
+----------------------------------------------------
+table.insert(dash_ids, "metro_elapsed")
+table.insert(dash_name, "Metro T+")
+
+function dash_functions.metro_elapsed()
+  -- pane
+  screen.level(lvl_pane)
+  screen.rect(dash_x, dash_y, width, 11)
+  screen.fill()
+
+  -- transport state/metro glyph level
+  if transport_state == "starting" and params:string("clock_source") == "link" then -- blink glyph. can't do metronome count-in due to https://github.com/monome/norns/issues/1756
+    screen.level(blinky == 1 and lvl_pane_deselected or lvl_pane)
+  elseif transport_state == "playing" then -- metronome with emphasis on new measure
+    screen.level((metro_measure and lvl_pane_selected) or (sprocket_metro.downbeat and lvl_pane_deselected) or lvl_pane - 2)
+  else
+    screen.level(lvl_pane_selected)
+  end
+
+  -- redefine/simplify for glyphs
+  local transport_state = transport_state == "starting" and "playing" or transport_state == "pausing" and "paused" or transport_state -- fix?
+
+  -- glyph
+  for i = 1, #glyphs[transport_state] do
+    screen.pixel(dash_x + 3 + glyphs[transport_state][i][1], dash_y + 3 + glyphs[transport_state][i][2]) -- left
+  end
+  screen.fill()
+  
+  -- time elapsed text
+  screen.level(lvl_pane_selected)
+  screen.move(dash_x + 11, dash_y + 8)
+  screen.text(seconds_elapsed or "00:00")
 
   dash_y = dash_y + 12 -- position for next dash
 end

@@ -17,6 +17,7 @@ table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	even
 -- Chord								
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Pattern', 	event_type= 'param', 	id= 'chord_div_index', 	name= 'Step length', 		order= '1', 	})
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Pattern', 	event_type= 'param', 	id= 'chord_pattern_length', 	name= 'Pattern length', 			})
+table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Config', 	event_type= 'param', 	id= 'chord_mute', 	name= 'Play/mute', 			})
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Config', 	event_type= 'param', 	id= 'chord_voice', 	name= 'Voice', 			})
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Config', 	event_type= 'param', 	id= 'chord_channel', 	name= 'Channel', 			})
 table.insert(events_lookup, {	category= 'Chord', 	subcategory= 'Notes', 	event_type= 'param', 	id= 'chord_octave', 	name= 'Octave', 			})
