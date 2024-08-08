@@ -847,7 +847,7 @@ function init()
 
         -- generate param for each port/channel
         local name = "midi_bank_msb_" .. port .. "_" .. ch
-        params:add_number(name, name, 1, 128, 0)
+        params:add_number(name, name, 1, 128, 1)
         params:set_save(name, false)
         params:hide(name)
 
@@ -866,7 +866,7 @@ function init()
 
         -- generate param for each port/channel
         local name = "midi_bank_lsb_" .. port .. "_" .. ch
-        params:add_number(name, name, 1, 128, 0)
+        params:add_number(name, name, 1, 128, 1)
         params:set_save(name, false)
         params:hide(name)
 
@@ -884,8 +884,8 @@ function init()
 
 
         -- generate param for each port/channel
-        local name = "midi_pc_" .. port .. "_" .. ch
-        params:add_number(name, name, 1, 128, 0)
+        local name = "midi_program_change_" .. port .. "_" .. ch
+        params:add_number(name, name, 1, 128, 1)
         params:set_save(name, false)
         params:hide(name)
 
@@ -1145,7 +1145,7 @@ function init()
     grid_size()
   end
   grid_size()
-  --#endriogion grid globals
+  --#endregion grid globals
 
 
   start = false
@@ -3081,7 +3081,7 @@ function clear_chord_pattern()
 end
 
 
-function shuffle(tbl)
+function shuffle(tbl) -- doesn't deepcopy
   for i = #tbl, 2, -1 do
     local j = math.random(i)
     tbl[i], tbl[j] = tbl[j], tbl[i]
@@ -3685,7 +3685,8 @@ function gen_chord_readout()
 
   if custom[y] then -- is a custom chord
     if custom[y].name == "Custom" then -- unnamed custom chord
-      active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"
+      -- active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*" --
+      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"  -- letter*
       active_chord_name_2 = nil
 
     else
@@ -4597,7 +4598,14 @@ function grid_redraw()
       end
 
       -- enable Arranger, change playback mode
-      g:led(1, 8 + extra_rows, params:get("arranger") == 2 and 15 or 4)
+      if arranger_state == "on" then
+        g:led(1, 8 + extra_rows, 15)
+      elseif arranger_state == "off" then
+        g:led(1, 8 + extra_rows, 4)
+      else -- syncing
+        g:led(1, 8 + extra_rows, 15 - led_pulse)
+      end
+
       g:led(2, 8 + extra_rows, params:get("playback") == 2 and 15 or 4)
         
       -- pagination with scroll indicator for arranger grid view
@@ -5574,7 +5582,7 @@ function key(n, z)
         lvl = lvl_dimmed
         -- end
       elseif not grid_interaction and not norns_interaction then
-        notification("HOLD TO DEFER EDITS", {"k",})
+        notification("HOLD TO DEFER EDITS", {"k", 1})
         norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then
@@ -6207,6 +6215,7 @@ function key(n, z)
     if e and e[1] == "k" then
       if n == e[2] then
         do_notification_timer_1()
+      end_screen_message = {}
       end
     end
 
@@ -7147,10 +7156,11 @@ function redraw()
                 and params:get_range(menu_id)
                 or menu_id == "event_name" and {event_subcategory_index_min, event_subcategory_index_max}
                 or event_range
-
+                
               local single = menu_index == range[1] and (range[1] == range[2]) or false
               local menu_value_pre = single and "\u{25ba}" or menu_index == range[2] and "\u{25c0}" or " "
               local menu_value_suf = single and "\u{25c0}" or menu_index == range[1] and "\u{25ba}" or ""
+              
               -- local events_menu_txt = first_to_upper(param_id_to_name(menu_id)) .. ":" .. menu_value_pre .. first_to_upper(string.sub(event_val_string, 1, events_menu_trunc)) .. menu_value_suf
 
               -- if debug and menu_id == "event_value" then print("menu_id = " .. (menu_id or "nil")) end

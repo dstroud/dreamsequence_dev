@@ -241,7 +241,7 @@ Before taking a closer look at the [menu contents](todo), let's take a look at t
 - The chart will be grayed-out when the Arranger is disabled.
 - The number shown on the left is the active Arranger position (segment). If the Arranger is syncing (waiting for the in-progress chord pattern to complete before entering the Arranger), the upcoming segment will appear with a "→" symbol in front.
 - To the right, a symbol will indicate if the Arranger is in Loop mode (circular symbol as in the example above) or One-shot mode (arrow symbol). When on the last segment of the arranger, this symbol will flash to indicate the arrangement is about to end, or pulse to indicate that the arrangement is about to loop.
-- The chart, is a visual representation of the arrangement, showing patterns (A-D). One advantage this dashboard has over Grid for live performances is that it gives an indication of segment/chord pattern length.
+- The chart, is a visual representation of the arrangement, showing patterns (A-D), with rows corresponding to those on the Song Arranger Grid view. One advantage this dashboard has over Grid for live performances is that it gives an indication of segment/chord pattern length.
 
 --------------------------------------------------------------------------------
 
@@ -249,14 +249,14 @@ Before taking a closer look at the [menu contents](todo), let's take a look at t
 
 ![dreamsequence](doc/dash_3.svg)
 - The letter shown is the current active chord pattern (A-D).
-- The progress bar is a visual representation of how many steps are in this pattern (dark gray), and the current pattern position (light gray).
+- The progress bar is a visual representation of how many steps are in this pattern (dark gray), and the current pattern position (off-white).
 
 --------------------------------------------------------------------------------
 
 ### Chord name
 
 ![dreamsequence](doc/dash_4.svg)
-- Name of the active chord. If a custom chord has been created that isn't recognized, the base chord triad for this scale and chord degree will be shown with an asterisk (e.g. "Dm*").
+- The name of the active chord. If a custom chord has been created that isn't recognized, the root note of the selected chord degree will be shown with an asterisk (e.g. "D*").
     
 --------------------------------------------------------------------------------
 
@@ -266,26 +266,25 @@ Before taking a closer look at the [menu contents](todo), let's take a look at t
 The left portion of the Norns screen displays one of the following views and associated menu items:
   - SONG <> CHORD <> SEQ 1 <> SEQ 2 <> SEQ 3 <> MIDI IN <> CV IN
  
-To navigate between pages, use E2 to scroll to the top of the list of menu items until the page name is highlighted, then use E3 to change the page. To change a menu item, simply scroll down the list using E2 and change its value using E3. < and > symbols will appear when you are at the end of the range of possible values. Descriptions of each page and menu options follow.
+To navigate between pages, use E2 to scroll to the top of the list of menu items until the page name is highlighted, then use E3 to change the page.
+
+To edit a menu item, simply scroll down the list using E2 and change its value using E3. < and > symbols will appear when you are at the end of the range of possible values. Descriptions of each page and menu options follow.
+
+> **_TIP:_** Hold K1 while editing menus items to defer those changes until K1 is released. For example, if you want to switch voices while playback is ongoing, this lets you switch directly to the desired voice without needlessly sending notes to all the intermediate options. You can accumulate a number of edits, across views, and fire them all at once.
 
 
 #### SONG menu
 
-- Mode: 9 modes: Major, Natural Minor, Harmonic Minor, Melodic Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian.
+- Scale: 9 scales: Major, Natural Minor, Harmonic Minor, Melodic Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian.
 
 - Key: Song transposition of +/- 12 semitones.
 
 - Tempo: sets Norns system clock tempo in BPM.
 
-- Beats per bar: Time signature numerator. Used when syncing MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT).
+- Beats per bar: Time signature numerator. Used to determine the current measure, for metronome, and to sync MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT). At the moment, this item can only be changed when transport is stopped.
 
-- Beats length: Time signature denominator. Used when syncing MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT).
+- Beats length: Time signature denominator. Used to determine the current measure, for metronome, and to sync MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT). At the moment, this item can only be changed when transport is stopped.
  
-- Clock: System clock setting.
-	- System clock source; MIDI clock out ports must be set via K1>>PARAMETERS>>CLOCK
-
-	- Internal clock source allows pause/continue with "song" or "pattern" modes available to sync MIDI devices. Other clock sources will stop/start but not continue.
-
 - Crow outs: Outs 1-3 have options for "Off", "CV", "Env", and "Events". Out 4 also includes Dreamsequence's custom clock out option. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK.
   
 - Crow clk: Frequency of the pulses from Crow out port 4. Frequency is conveyed as fractions of a measure, with Pulses Per Quarter Note (PPQN) in parenthesis.
@@ -302,15 +301,16 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 
 - Voice: Where the output of the chord sequence is sent for playback. Default options include Crow and MIDI ports, but additional synths and devices are supported by installing [NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374).
 
-- Chord type: Selects between triads and 7th chords and displays the chord readout as such. Note that each sequence source can set this independently so it's possible for the Chord sequencer to output triads while the other sources output 7ths (and vice versa).
+- Channel: This menu item only appears when a MIDI port is selected as a voice (or when K1 is held).
 
-- Octave: Shifts output from -4 to +4 octaves.
+- Octave: Shifts output from -4 to +4 octaves from default. Note that this offset is not the same as MIDI octaves. In the key of C, the default value of 0 will result in chords ranging with root notes ranging from C2 to B3.
 
-- Range: Expands or shrinks the chord's pitch range, measured in note intervals. An asterisk (*) will appear if this value is less than the "Max notes" parameter, indicating that the value shown here is limiting the number of notes played. Note that a Range of 3 will effectively play 7th chords as triads.
+- Range: Expands or shrinks the chord's upper pitch range, conveyed as number of notes. The default value of "Chord" dynamically adjusts the range depending on the type of chord; triads will have a range of 3, 7ths will have a range of 4, 9ths will have a range of 5, etc... Manually selecting a specific value will remove or repeat notes in a higher octave so that every chord plays with the same number of notes. This can be helpful when you want a consistent strum pattern regardless of the base chord voicing.
 
-- Max notes: Applied after Range has been set, this parameter limits the number of notes in the chord using a note thinning algorithm. The algorithm prioritizes the first and last notes in the chord, after which the intermediate notes are thinned out and evenly distributed. The resulting chord voicing depends on Range, Max notes, and Inversion. It's possible to end up with some false "chords" like the same note repeated across multiple octaves.
+
+- Max notes: Applied after Range has been set, this option limits the number of notes in the chord using a note thinning algorithm. The algorithm prioritizes the first and last notes in the chord, after which the intermediate notes are thinned out and evenly distributed. The resulting chord voicing depends on Range, Max notes, and Inversion. It's possible to end up with some false "chords" like the same note repeated across multiple octaves. The default value of "Range" will follow the lead of the `Range` option setting, having no effect on the chord.
  
-- Inversion: Incrementally shifts the lowest note up an octave so that 1 = first inversion, 2 = second inversion, etc... Multiples of 3 (for triads) or 4 (for 7ths) will effectively transpose the sequence up an octave which might be desired when incrementing this parameter with an event automation.
+- Inversion: Incrementally shifts the lowest note up an octave so that 1 = first inversion, 2 = second inversion, etc... At multiples of the chord's Range/Max notes, this will effectively transpose the chord up an octave.
 
 - Strum: Determines if the chord's notes will play all at once (Off), or strum notes in one of two directions (Low-high or High-low).
 
@@ -326,12 +326,14 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 
 - Dynamics: Volume or amplitude of voice.
 
-- Ramp: Bipolar control (-100% to +100%) of the Velocity/Amp values for each note. When Strum is off, this will change the dynamic balance of low and high pitched notes in the chord. When strumming, negative values will lower dynamics over time and positive values will raise dynamics over time.
+- Ramp: Bipolar control (-100% to +100%) of the dynamics value for each note. When Strum is off, this will change the dynamic balance of low and high pitched notes in the chord. When strumming, negative values will lower dynamics over time and positive values will increase dynamics over time.
  
 #### SEQ menu
 
 - Voice: Where the output of the Seq is sent for playback. Default options include Crow and MIDI ports, but additional synths and devices are supported by installing [NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374).
   
+- Channel: This menu item only appears when a MIDI port is selected as a voice (or when K1 is held).
+
 - Notes: Five ways of configuring Grid's note mapping are available:
   - Triad: columns 1-3 map to notes 1-3 from the active chord interpreted as a triad. Columns 4-6 play the same notes one octave up, etc..
   - 7th: columns 1-4 map to notes 1-4 from the active chord interpreted as a 7th chord. Columns 5-8 play the same notes one octave up, etc..
@@ -386,6 +388,8 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 
 - Voice: Where the output of the harmonizer is sent for playback. Default options include Crow and MIDI ports, but additional synths and devices are supported by installing [NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374).
   
+- Channel: This menu item only appears when a MIDI port is selected as a voice (or when K1 is held).
+
 - Notes: Five ways of mapping incoming MIDI notes to output notes are available. This works just like the Seq but instead of choosing a column on Grid, we use the incoming note value starting from C1.
     - Triad: notes C1-D1 map to notes 1-3 from the active chord interpreted as a triad. Notes D#1-F1 play the same notes one octave up, etc..
 	  - 7th: columns C1-D#1 map to notes 1-4 from the active chord interpreted as a 7th chord. Columns E1-G1 play the same notes one octave up, etc..
@@ -402,7 +406,9 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 #### CV HARMONIZER menu
 
 - Voice: Where the output of the harmonizer is sent for playback. Default options include Crow and MIDI ports, but additional synths and devices are supported by installing [NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374).
-  
+
+- Channel: This menu item only appears when a MIDI port is selected as a voice (or when K1 is held).
+
 - Notes: Five ways of mapping voltage send to Crow input 1 to notes are available. This works just like the Seq but instead of choosing a column on Grid, we use the incoming voltage which is then quantized to 1v/oct or 1 semitone increments.
     - Triad: voltage of 0v, 1/12v, 2/12v map to notes 1-3 from the active chord interpreted as a triad. Voltage of 3/12v, 4/12v, 5/12v play the same notes one octave up, etc..
 	  - 7th: columns voltage of 0v, 1/12v, 2/12v, 3/12v map to notes 1-4 from the active chord interpreted as a 7th chord. Voltage of 4/12v, 5/12v, 6/12v play the same notes one octave up, etc..

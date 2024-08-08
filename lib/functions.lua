@@ -154,12 +154,28 @@ function event_seq_gen()
 end    
 
 
-function shuffle_seq(seq)
-  local shuffled_seq_pattern = shuffle(seq_pattern[seq])
-  seq_pattern[seq] = shuffled_seq_pattern
+function shuffle_seq_pattern(seq)
+  local shuffled_seq_pattern = shuffle(seq_pattern[seq][active_seq_pattern[seq]])
+  seq_pattern[seq][active_seq_pattern[seq]] = shuffled_seq_pattern
 end
-    
-        
+
+
+function shuffle_seq_loop(seq)
+  local shuffled_idx = {}
+  local length = seq_pattern_length[seq][active_seq_pattern[seq]]
+  local copy = simplecopy(seq_pattern[seq][active_seq_pattern[seq]])
+
+  for i = 1, length do
+    shuffled_idx[i] = i
+  end
+  shuffled_idx = shuffle(shuffled_idx)
+
+  for i = 1, length do
+    seq_pattern[seq][active_seq_pattern[seq]][i] = copy[shuffled_idx[i]]
+  end
+end
+
+
 -- Event Crow trigger out
 function crow_trigger(out)
   crow.output[out].action = "pulse(.01,10,1)" -- (time,level,polarity)
@@ -296,8 +312,6 @@ end
 -- function to swap options table on an existing param and reset count
 function swap_param_options(param, table)
   params:lookup_param(param).options = table
-  -- print("setting " .. param .. " options to :")
-  -- tab.print(table)
   params:lookup_param(param).count = #table   -- existing index may exceed this so it needs to be set afterwards by whatever called (not every time)
 end
 
