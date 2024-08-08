@@ -45,9 +45,10 @@ table.insert(dash_name,"Arranger chart")
 
 function dash_functions.arranger_chart()
   local lvl = lvl -- requires going to table for chart dimming :/
+  local state = arranger_state
   local on = params:string("arranger") == "On"
-  local final_seg = arranger_position >= arranger_length
-  local valid_jump = arranger_queue and (arranger_queue <= arranger_length)
+  local final_seg = arranger_next == 0 -- arranger_position or 0 >= arranger_length
+  local valid_jump = arranger_q and (arranger_q <= arranger_length)
 
   -- ARRANGER PANE
   screen.level(lvl_pane)
@@ -62,8 +63,10 @@ function dash_functions.arranger_chart()
   -- pulsing = syncing
 
   screen.move(dash_x + 3, dash_y + 8)
-  if arranger_active == false then  -- DE-SYNC, waiting until next chord pattern to sync
-    if on then
+  -- if arranger_active == false then  -- DE-SYNC, waiting until next chord pattern to sync
+  if state ~= "on" then  -- off or syncing
+
+    if state == "syncing" then
       screen.level(lvl_pane_selected + led_pulse) -- pulse while waiting to enter arrangement, (0 to 3)
     else
       screen.level(lvl_pane_deselected)
@@ -71,12 +74,12 @@ function dash_functions.arranger_chart()
 
     -- todo norns.ttf change to ↳ probably
     if valid_jump then
-      screen.text("→" .. arranger_queue)
+      screen.text("→" .. arranger_q)
     elseif final_seg and params:string("playback") == "1-shot" then
       screen.text("→End") -- indicate we'll hit end, not wrap
     else
       if arranger_position == 0 and chord_pattern_position == 0 then -- stopped
-        screen.text("1") -- when arranger is off but we can enter arranger_active without any count-in
+        screen.text("1") -- when arranger is off but we can enter arranger_state "on" without any count-in
       else
         screen.text("→1") -- if there's a jump but it's invalid so we are looping
       end
@@ -86,13 +89,13 @@ function dash_functions.arranger_chart()
   elseif arranger_position == 0 and chord_pattern_position == 0 then -- stopped
     screen.level(lvl_pane_selected)
     if valid_jump then
-    screen.text(arranger_queue)
+    screen.text(arranger_q)
     else
     screen.text(arranger_position == 0 and 1 or arranger_position)
     end
   else                                          -- standard playback
     screen.level(lvl_pane_selected)
-    screen.text(arranger_position)
+    screen.text(arranger_position or 1) ---- wag
   end
   screen.fill()
 

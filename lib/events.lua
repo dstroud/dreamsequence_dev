@@ -9,6 +9,7 @@ table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_t
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_out_4', 	name= 'Crow out 4', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_clock_index', 	name= 'Crow clock', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_clock_swing', 	name= 'Crow swing', 			})
+table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Arranger', 	event_type= 'param', 	id= 'next_arranger_pos', 	name= 'Next position', 	action= 'set_arranger_q(params:get("next_arranger_pos"))', 		})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	event_type= 'param', 	id= 'chord_generator', 	name= 'Chord algo', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	event_type= 'param', 	id= 'seq_generator', 	name= 'Seq algo', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Generator', 	event_type= 'function', 	id= 'event_chord_gen', 	name= 'Chord gen', 	action= 'event_chord_gen()', 		})

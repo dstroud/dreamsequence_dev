@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 1.4 240805 @modularbeat
+-- 1.4 240808 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -408,7 +408,7 @@ function init()
           if dash == "Metro T-" then
 
             function calc_seconds_remaining()
-              if arranger_active then
+              if arranger_state == "on" then
                 percent_step_elapsed = (arranger_position == 0 and 0 or sprocket_chord.phase) / (sprocket_chord.division * 4 * seq_lattice.ppqn) -- ppc
                 seconds_remaining = chord_steps_to_seconds(steps_remaining_in_arrangement - (percent_step_elapsed or 0))
               else
@@ -478,13 +478,11 @@ function init()
   ------------------
   params:add_group("arranger_group", "ARRANGER", 2)
 
-  params:add_option("arranger", "Arranger", {"Off", "On"}, 1)
-  -- params:set_action("arranger", function() update_arranger_active() end) post-bang action set
+  params:add_option("arranger", "Arranger", {"Off", "On"}, 1) -- action set post-bang
   
-  params:add_option("playback", "Playback", {"1-shot","Loop"}, 2)
-  params:set_action("playback", function() arranger_ending() end)
-  -- params:add_option("crow_assignment", "Crow 4", {"Reset", "On/high", "V/pattern", "Chord", "Pattern"},1) -- todo
-  
+  params:add_option("playback", "Playback", {"1-shot", "Loop"}, 2)
+  params:set_action("playback", function() update_arranger_next() end)
+    
     
   ------------------
   -- SONG PARAMS --
@@ -828,6 +826,12 @@ function init()
 
 
   ------------------
+  -- EVENT-SPECIFIC PARAMS --
+  ------------------  
+  params:add_number("next_arranger_pos", "Next Arranger Position", 1, 64, 1) -- event action as we need to bang even if index hasn't changed and don't want to bang on init/pset load
+  params:hide("next_arranger_pos")
+
+  ------------------
   -- NB PARAMS --
   ------------------  
   params:add_separator("VOICES")
@@ -835,9 +839,50 @@ function init()
   
 
   -- insert MIDI events for active MIDI ports
+
+  -- program change
   for port = 1, 16 do
     if midi.vports[port].connected then
       for ch = 1, 16 do
+
+        -- generate param for each port/channel
+        local name = "midi_bank_msb_" .. port .. "_" .. ch
+        params:add_number(name, name, 1, 128, 0)
+        params:set_save(name, false)
+        params:hide(name)
+
+        -- using event action rather than param action since:
+        -- 1. we don't want this being sent at param bang and 
+        -- 2. we do want it to bang every time event fires, even if param index hasn't changed
+        table.insert(events_lookup, {
+          category = "MIDI port " .. port,
+          subcategory = "Channel " .. ch,
+          event_type = "param",
+          id = name,
+          name = "Bank select",
+          action = 'midi.vports[' .. port .. ']:cc(0, params:get("' .. name .. '"), ' .. ch .. ')'
+        })
+
+
+        -- generate param for each port/channel
+        local name = "midi_bank_lsb_" .. port .. "_" .. ch
+        params:add_number(name, name, 1, 128, 0)
+        params:set_save(name, false)
+        params:hide(name)
+
+        -- using event action rather than param action since:
+        -- 1. we don't want this being sent at param bang and 
+        -- 2. we do want it to bang every time event fires, even if param index hasn't changed
+        table.insert(events_lookup, {
+          category = "MIDI port " .. port,
+          subcategory = "Channel " .. ch,
+          event_type = "param",
+          id = name,
+          name = "Bank select (fine)",
+          action = 'midi.vports[' .. port .. ']:cc(32, params:get("' .. name .. '"), ' .. ch .. ')'
+        })
+
+
         -- generate param for each port/channel
         local name = "midi_pc_" .. port .. "_" .. ch
         params:add_number(name, name, 1, 128, 0)
@@ -846,7 +891,7 @@ function init()
 
         -- using event action rather than param action since:
         -- 1. we don't want this being sent at param bang and 
-        -- 2. we do want it to be triggered every time event fires, even if param index hasn't changed
+        -- 2. we do want it to bang every time event fires, even if param index hasn't changed
         table.insert(events_lookup, {
           category = "MIDI port " .. port,
           subcategory = "Channel " .. ch,
@@ -855,10 +900,60 @@ function init()
           name = "Program change",
           action = 'midi.vports[' .. port .. ']:program_change(params:get("' .. name .. '") - 1, ' .. ch .. ')'
         })
+
       end
     end
   end
 
+  -- -- bank select MSB
+  -- for port = 1, 16 do
+  --   if midi.vports[port].connected then
+  --     for ch = 1, 16 do
+  --       -- generate param for each port/channel
+  --       local name = "midi_bank_msb_" .. port .. "_" .. ch
+  --       params:add_number(name, name, 1, 128, 0)
+  --       params:set_save(name, false)
+  --       params:hide(name)
+
+  --       -- using event action rather than param action since:
+  --       -- 1. we don't want this being sent at param bang and 
+  --       -- 2. we do want it to bang every time event fires, even if param index hasn't changed
+  --       table.insert(events_lookup, {
+  --         category = "MIDI port " .. port,
+  --         subcategory = "Channel " .. ch,
+  --         event_type = "param",
+  --         id = name,
+  --         name = "Bank select",
+  --         action = 'midi.vports[' .. port .. ']:cc(0, params:get("' .. name .. '"), ' .. ch .. ')'
+  --       })
+  --     end
+  --   end
+  -- end
+
+  --   -- bank select LSB
+  --   for port = 1, 16 do
+  --     if midi.vports[port].connected then
+  --       for ch = 1, 16 do
+  --         -- generate param for each port/channel
+  --         local name = "midi_bank_lsb_" .. port .. "_" .. ch
+  --         params:add_number(name, name, 1, 128, 0)
+  --         params:set_save(name, false)
+  --         params:hide(name)
+  
+  --         -- using event action rather than param action since:
+  --         -- 1. we don't want this being sent at param bang and 
+  --         -- 2. we do want it to bang every time event fires, even if param index hasn't changed
+  --         table.insert(events_lookup, {
+  --           category = "MIDI port " .. port,
+  --           subcategory = "Channel " .. ch,
+  --           event_type = "param",
+  --           id = name,
+  --           name = "Bank select (fine)",
+  --           action = 'midi.vports[' .. port .. ']:cc(32, params:get("' .. name .. '"), ' .. ch .. ')'
+  --         })
+  --       end
+  --     end
+  --   end
 
   -- due to crow_ds adding *all* shared params for Crow outs 1-4 in one player, break them up:
   local function subdivide_indices(string)
@@ -1061,7 +1156,7 @@ function init()
   global_clock_div = 48 -- todo replace with ppqn and update div lookup to be fractional
   build_scale()
   transport_multi_stop() --   -- Send out MIDI stop on launch if clock ports are enabled
-  arranger_active = false
+  arranger_state = "off"
   chord_pattern_retrig = true
   play_seq = {false, false}
   grid_dirty = true
@@ -1371,8 +1466,7 @@ function init()
       else
         gen_arranger_padded()
       end
-      arranger_queue = nil
-      arranger_one_shot_last_pattern = false -- Added to prevent 1-pattern arrangements from auto stopping.
+      arranger_q = nil
       set_chord_pattern_q(false)
       for seq_no = 1, max_seqs do
         reset_seq_pattern(seq_no)
@@ -1492,7 +1586,7 @@ function init()
   
   params:bang()
   -- Some actions need to be added post-bang.
-  params:set_action("arranger", function(val) update_arranger_active(val) end)
+  params:set_action("arranger", function(val) update_arranger_state(val) end)
 
   params:set_action("mode", 
     function()
@@ -1683,7 +1777,7 @@ function init()
           --     clock.link.stop()
           --   end
           --   transport_multi_stop()   
-          --   if arranger_active then
+          --   if arranger_state == "on" then
           --     print(transport_state)
           --   else
           --     reset_pattern()
@@ -1709,7 +1803,7 @@ function init()
 
             -- link_stop_source = nil
 
-            -- if arranger_active then --or transport_state == "stopped" then
+            -- if arranger_state == "on" then --or transport_state == "stopped" then
             --   reset_arrangement()
             -- else
             --   reset_pattern()
@@ -1746,7 +1840,7 @@ function init()
           -- -- todo p2 look at options for a start/continue mode for external sources that support this
           -- else -- external Link stop msg
           --   transport_multi_stop()   
-          --   if arranger_active then
+          --   if arranger_state == "on" then
           --     print(transport_state)
           --   else
           --     reset_pattern()
@@ -1922,24 +2016,20 @@ function init()
   
   function init_sprocket_chord(div)
     sprocket_chord = seq_lattice:new_sprocket{
-      pre_action = function(t)  -- handle div-quantized pause and div changes
-       
-        if params:string("arranger") == "On" then
-          arranger_ending() -- check if arranger is ending
-          if chord_pattern_position >= chord_pattern_length[active_chord_pattern] then -- advance arranger
-            if not arranger_one_shot_last_pattern then
-              do_events(arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1, 1)
-            end
-          elseif arranger_position == 0 and chord_pattern_position == 0 then  -- bodge for post-reset state
-            do_events(1, 1)
-          else
-            do_events(arranger_position, chord_pattern_position + 1)
+
+      -- fires order 1 events for upcoming segment (such as chord div change) that need to occur before action
+      pre_action = function(t)  
+        if params:string("arranger") == "On" then -- don't use arranger_state since we'll be have synced on advance_chord_pattern
+          if (arranger_position == 0 and chord_pattern_position == 0) or (chord_pattern_position >= chord_pattern_length[active_chord_pattern]) then -- if advancing arranger
+            update_arranger_next()
+            local q = arranger_q
+            local next = q ~= nil and q <= arranger_length and q or arranger_next
+            do_events(next, 1)
           end
         end
-        
       end,
+
       action = function(t)
-        -- get_next_chord()  -- Deprecated, in need of a new sprocket when ready to re-implement
         advance_chord_pattern()
         grid_dirty = true
       end,
@@ -2133,6 +2223,26 @@ function preload_chord()
     local y = 1 -- should always be step 1 if we're stopped, pretty sure
     update_chord(x, y)
     gen_chord_readout() -- bit of a WAG but seems ok
+  end
+end
+
+
+-- checks that arranger_q is valid, resets grid led phase, and sets derivative chord_pattern_q
+-- todo p2: not sure where to put this as a local so that event action can access it
+function set_arranger_q(seg) -- might have to make global or relocate for events
+  if seg <= arranger_length then
+    local current_arranger_q = arranger_q
+    arranger_q = seg
+    if current_arranger_q ~= arranger_q then
+      reset_grid_led_phase()
+    end
+    update_chord_pattern_q()
+
+  -- above will keep existing arranger_q, but we could optionally nil it...
+  -- could be useful to clear an existing q jump by jumping out-of-bounds, so to speak
+  -- else
+  --   arranger_q = nil
+  --   update_chord_pattern_q()
   end
 end
 
@@ -3121,7 +3231,7 @@ function clock.transport.start(sync_value)
       --   --------------------------
       --   -- todo: make this a function and figure out how to also call it when called by external link start
       --   transport_multi_stop()
-      --   if arranger_active then
+      --   if arranger_state == "on" then
       --     print(transport_state)  -- wtf is this for?
       --   else
       --     reset_pattern()
@@ -3194,12 +3304,13 @@ function reset_pattern() -- todo: Also have the chord readout updated (move from
 end
 
 
-function reset_arrangement() -- todo: Also have the chord readout updated (move from advance_chord_pattern to a function)
-  arranger_queue = nil
-  arranger_one_shot_last_pattern = false -- Added to prevent 1-pattern arrangements from auto stopping.
+function reset_arrangement()
+  arranger_next = nil
+  arranger_q = nil
+  chord_pattern_q = nil
   arranger_position = 0
   if arranger[1] > 0 then set_chord_pattern(arranger[1]) end
-  if params:string("arranger") == "On" then arranger_active = true end
+  if params:string("arranger") == "On" then arranger_state = "on" end
   reset_pattern()
 end
 
@@ -3220,79 +3331,56 @@ end
 
 function advance_chord_pattern()
   -- local debug = false
-
   chord_pattern_retrig = true -- indicates when we're on a new chord seq step for CV harmonizer auto-rest logic
   local arrangement_reset = false
-  local arranger_param = params:string("arranger") == "On"
+  local arranger_param = params:get("arranger")
 
   -- Advance arranger sequence if enabled
-  if arranger_param then
+  if arranger_param == 2 then -- "on"
 
-    -- arranger_ending() moved to pre-action so this can be used for events, too
-    
-    -- If it's post-reset or at the end of chord sequence
-    -- TODO: Really need a global var for when in a reset state (arranger_position == 0 and chord_pattern_position == 0)
+    -- If arranger is reset or at the end of chord sequence
     if (arranger_position == 0 and chord_pattern_position == 0) or chord_pattern_position >= chord_pattern_length[active_chord_pattern] then
-      
-      -- This variable is only set when the "arranger" param is "On" and we're moving into a new Arranger segment (or after reset)
-      arranger_active = true
-      
+      arranger_state = "on" -- Only set when the "arranger" param is "On" and we're moving into a new Arranger segment (or after reset)
+      local q = arranger_q
+
       -- Check if it's the last pattern in the arrangement.
-      if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
-        -- print("DEBUG arranger_one_shot_last_pattern")
-        
-        -- 24-02-13 instant stop after one-shot arranger
-        -- link_stop_source = "norns"  -- obsolete?
-        clock.link.stop() -- no stop quantization for sending Link stop out
-
+      if arranger_next == 0 and not q then -- arranger is ending
+        clock.link.stop()            -- no stop quantization for sending Link stop out
         transport_multi_stop()
-        -- clock.link.stop() -- no stop quantization for sending Link stop out
-        -- link_stop_source = "norns"
-        transport_active = false
-        -- transport_state = "stopped"
-        -- print(transport_state)
-        -- link_stop_source = nil
-
         transport_active = false
         stop = false
         start = false
         seq_lattice:stop()
         disable_sprockets()
-        -- end of new bits
-
         arrangement_reset = true
-        reset_arrangement() -- also reset_pattern() >> reset_lattice
-        -- stop = true
-        seq_lattice.transport = -1           --24.02.15 roll back since lattice has yet to increment
+        reset_arrangement()          -- also reset_pattern() >> reset_lattice
+        seq_lattice.transport = -1   -- roll back since lattice has yet to increment
       else
-        -- changed from wrap to a check if incremented arranger_position exceeds seq_pattern_length
-        arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
+        arranger_position = (q ~= nil and q <= arranger_length and q) or arranger_next
         set_chord_pattern(arranger_padded[arranger_position])
         update_chord_pattern_q()
-        arranger_queue = nil
+        arranger_q = nil             -- clear arranger_q after being processed
+        update_arranger_next()       -- for pulsing led indicating loop, etc...
       end
-      
-      -- Indicates arranger has moved to new pattern.
-      arranger_retrig = true
+      arranger_retrig = true         -- indicates arranger has moved to new pattern
     end
-    -- Flag if arranger is on the last pattern of a 1-shot sequence
-    -- arranger_ending() -- moved to beginning of fn
   end
 
   -- If arrangement was not just reset, update chord position. 
   if arrangement_reset == false then
     if chord_pattern_position >= chord_pattern_length[active_chord_pattern] or arranger_retrig then
-      if arranger_param == false and chord_pattern_q then -- make arranger into local bool check (used above)
+      if arranger_param == 1 and chord_pattern_q then -- arranger "off"
         set_chord_pattern(chord_pattern_q)
         set_chord_pattern_q(false)
       end
       chord_pattern_position = 1
       arranger_retrig = false
     else
-      chord_pattern_position = util.wrap(chord_pattern_position + 1, 1, chord_pattern_length[active_chord_pattern])
+      local next = chord_pattern_position + 1
+      chord_pattern_position = next > chord_pattern_length[active_chord_pattern] and 1 or next
     end
 
-    if arranger_active then
+    if arranger_state == "on" then
       do_events()
       gen_arranger_dash_data("advance_chord_pattern")
     end
@@ -3321,6 +3409,7 @@ function advance_chord_pattern()
       gen_chord_readout()  -- update chord names in dash any time a chord is enabled on this step
 
     else -- no chord but we might need to start/reset seq
+
       for seq_no = 1, max_seqs do
         local start_on = params:string("seq_start_on_"..seq_no)
         local reset_on = params:string("seq_reset_on_"..seq_no)
@@ -3333,48 +3422,64 @@ function advance_chord_pattern()
           play_seq[seq_no] = true
         end
       end
+
     end
 
   end
 end
 
 
-function arranger_ending()
-  arranger_one_shot_last_pattern = 
-    arranger_position >= arranger_length 
-    and params:string("playback") == "1-shot"
-    and (arranger_queue == nil or arranger_queue > arranger_length)
+-- returns next segment (including loop/end(0))
+function get_next_seg()
+  local nx = arranger_position + 1
+  local seg
+  if nx > arranger_length then
+    if params:get("playback") == 1 then -- 1-shot
+      seg = 0
+    else
+      seg = 1
+    end
+  else
+    seg = nx
+  end
+  return(seg)
 end
 
 
--- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_active var to false
+-- Update and set arranger_next, which can be one of 3 things:
+-- 1. sequential arranger segment
+-- 2. if looping, segment 1
+-- 3. if ending, segment 0
+-- notably, this is separate from arranger_q which takes priority
+function update_arranger_next()
+  arranger_next = get_next_seg()
+  update_chord_pattern_q()
+end
+
+
+-- Checks each time arrange_enabled param changes to see if we need to also immediately set the corresponding arranger_state var to "off"
 -- Does not flip to true until Arranger is re-synced upon advance_chord_pattern (or transport reset)
 -- Also updates chord_pattern_q
-function update_arranger_active(val)
+function update_arranger_state(val)
   if val == 1 then -- turning off
-    -- explicitly set arranger q position to show where arranger will resume
-    if arranger_active and not (arranger_position == 0 and chord_pattern_position == 0) then
-      if not arranger_queue then -- unless q is already set
-        local q = (arranger_position + 1 > arranger_length) and 1 or arranger_position + 1
-        arranger_queue = q
-      end
-    end
-    
-    -- og
-    arranger_active = false
+    update_arranger_next()
+    arranger_state = "off"
     set_chord_pattern_q(false)
 
-  else -- turning on
-    if chord_pattern_position == 0 then arranger_active = true end
+  else -- turning on OR syncing
+    if chord_pattern_position == 0 then
+      arranger_state = "on"
+    else
+      arranger_state = "syncing"
+    end
     update_chord_pattern_q()
   end
-  gen_arranger_dash_data("update_arranger_active")
+  gen_arranger_dash_data("update_arranger_state")
 end
-
 
 
 -- if optional args are passed, they indicate that `order 1` events need to be fired before chord advancement
--- todo: optimize his by storing order 1 events in a separate table
+-- todo p0: optimize his by storing separate tables based on `order`
 function do_events(arranger_pos, chord_pos)
   local do_order = arranger_pos and 1 or 2
   local arranger_position = arranger_pos or arranger_position
@@ -3877,67 +3982,7 @@ function play_chord()
 end
 
 
--- -- Get upcoming chord. Was used for harmonizers but disabling for now..
--- -- Pre-load upcoming chord to address race condition around map_note() events occurring before chord change
--- function get_next_chord()
---   local pre_arrangement_reset = false
---   local pre_arranger_position = arranger_position
---   local pre_arranger_retrig = arranger_retrig
---   local pre_chord_pattern_position = chord_pattern_position
---   local pre_chord_pattern_q = chord_pattern_q
---         pre_pattern = active_chord_pattern
-
---   -- Move arranger sequence if On
---   if params:get("arranger") == 2 then
-
---     -- If it's post-reset or at the end of chord sequence
---     if (pre_arranger_position == 0 and pre_chord_pattern_position == 0) or pre_chord_pattern_position >= chord_pattern_length[pre_pattern] then
-      
---       -- Check if it's the last pattern in the arrangement.
---       if arranger_one_shot_last_pattern then -- Reset arrangement and block chord seq advance/play
---         pre_arrangement_reset = true
---       else
---         pre_arranger_position = arranger_padded[arranger_queue] ~= nil and arranger_queue or util.wrap(pre_arranger_position + 1, 1, arranger_length)
---         pre_pattern = arranger_padded[pre_arranger_position]
-        
---       end
-      
---       -- Indicates arranger has moved to new pattern.
---       pre_arranger_retrig = true
---     end
-    
---   end
-  
---   -- If arrangement was not just reset, update chord position. 
---   if pre_arrangement_reset == false then
---     if pre_chord_pattern_position >= chord_pattern_length[pre_pattern] or pre_arranger_retrig then
---       if pre_chord_pattern_q then
---         pre_pattern = pre_chord_pattern_q
---         pre_chord_pattern_q = false
---       end
---       pre_chord_pattern_position = 1
---       pre_arranger_retrig = false
---     else  
---       pre_chord_pattern_position = util.wrap(pre_chord_pattern_position + 1, 1, chord_pattern_length[pre_pattern])
---     end
-    
---     -- Arranger automation step. todo: examine impact of running some events here rather than in advance_chord_pattern
---     -- Could be important for anything that changes patterns but might also be weird for grid redraw
-
---     -- Update the chord. Only updates the octave and chord # if the Grid pattern has something, otherwise it keeps playing the existing chord. 
---     -- Mode is always updated in case no chord has been set but user has changed Mode param.
---     -- todo p3 efficiency test vs if/then
---       next_chord_x = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and chord_pattern[pre_pattern][pre_chord_pattern_position] or next_chord_x
---       next_chord_o = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and (chord_pattern[pre_pattern][pre_chord_pattern_position] > 7 and 1 or 0) or next_chord_o
---       next_chord_d = chord_pattern[pre_pattern][pre_chord_pattern_position] > 0 and util.wrap(chord_pattern[pre_pattern][pre_chord_pattern_position], 1, 7) or next_chord_d
-      
---       -- equivalent of chord_raw but now kinda obsolete with custom chords in the mix
---       next_chord = musicutil.generate_chord_scale_degree(next_chord_o * 12, params:get("mode"), next_chord_d, true)
-
---   end
--- end
-
-
+-- note transformation function for seqs, harmonizers, are stored in a table indexed to matched `notes` params
 local transform_note = {} -- table containing note transformation functions
 
 transform_note[1] = function(note_num, octave) -- triad chord mapping
@@ -4210,36 +4255,52 @@ end
 
 -- function for drawing arranger patterns + playhead
 -- used by regular or shifted arranger (latter will pass modified x_offset depending on section)
+-- Q: It's not clear when a jump is occuring if said jump is off-screen. How to address this?
 local function draw_patterns_playheads(x, y, x_offset, arranger_led)
+  local q = arranger_q
+  if arranger_padded[q] then -- if arranger_q is valid, this takes priority for position pulsing
 
-  -- q jump supercedes all
-  if x_offset == arranger_queue then
-    arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse -- kinda weird
-
-  -- loop or end of arranger  
-  elseif (arranger_position >= arranger_length) and (not arranger_queue) then
-
-    -- pulse 1st seg at end of loop
-    if params:string("playback") == "Loop" then
-      if x_offset == 1 then
-        arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
-      elseif x_offset == arranger_position and arranger_led ~= 15 then
-        arranger_led = (arranger_led or 0) + 3
-      end
-    
-    -- flicker at end of arrangement     
-    elseif x_offset == arranger_position and arranger_led ~= 15 then
-      arranger_led = led_low_blink
+    if x_offset == arranger_q then
+      arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+    elseif x_offset == arranger_position and arranger_led ~= 15 then -- regular segments
+      arranger_led = (arranger_led or 0) + 3
     end
 
-  -- regular segments  
-  elseif x_offset == arranger_position and arranger_led ~= 15 then
-    arranger_led = (arranger_led or 0) + 3
+
+  elseif arranger_next == 0 then                                      -- arranger ending
+    if x_offset == arranger_position and arranger_led ~= 15 then
+      arranger_led = led_low_blink
+    elseif x_offset == arranger_position and arranger_led ~= 15 then  -- regular segments  
+      arranger_led = (arranger_led or 0) + 3
+    end
+
+    -- pulse @ arranger_next when:
+      -- End of arrangement and looping to 1
+      -- arranger is either syncing or will need to sync when arranger is enabled (based on chord_pattern_position)
+    -- DON'T pulse when:
+      -- Arranger is reset (arranger/chord_position == 0)
+      -- Arranger is advancing as usual. pulse indicates non-sequential changes.
+  else
+    local next = arranger_next
+    if arranger_position ~= 0 and (next == 1 or (arranger_state ~= "on" and chord_pattern_position > 0)) then -- == "syncing" then
+      if x_offset == next then
+        arranger_led = (arranger_led or 0) + (arranger_led == 15 and 0 or 3) - led_pulse
+      elseif x_offset == arranger_position and arranger_led ~= 15 then     -- regular segments  
+        arranger_led = (arranger_led or 0) + 3
+      end
+
+    else
+      if x_offset == arranger_position and arranger_led ~= 15 then     -- regular segments  
+        arranger_led = (arranger_led or 0) + 3
+      end
+    end
+
   end
 
   if arranger_led then
     g:led(x, y, arranger_led)
   end
+
 end
 
 
@@ -4709,19 +4770,24 @@ function set_grid_view(new_view, new_seq_no) -- optional 2nd arg for seq no
 end
 
 
+-- sets chord_pattern_q var and resets grid_led_phase when appropriate
+-- 0 or nil arg will cancel q
 function set_chord_pattern_q(new_pattern)
-  local current_pattern = chord_pattern_q
-  chord_pattern_q = new_pattern
-  if current_pattern ~= new_pattern then -- actions to take if pattern q changed
-    reset_grid_led_phase()
+  if new_pattern == 0 then
+    chord_pattern_q = nil
+  else
+    local current_pattern = chord_pattern_q
+    chord_pattern_q = new_pattern
+    if current_pattern ~= new_pattern then -- actions to take if pattern q changed
+      reset_grid_led_phase()
+    end
   end
 end
 
-
+-- update chord_pattern_q with what's next up in arranger
 function update_chord_pattern_q() -- run after changes are made to arranger or arranger pos (arranger_shift, keys, etc...)
-  set_chord_pattern_q(arranger_padded[util.wrap(arranger_position + 1, 1, arranger_length)])
+  set_chord_pattern_q(arranger_padded[arranger_q] or arranger_padded[arranger_next])
 end
-
 
 -- inits table of standard chord options for editing mode/degree
 -- todo p0 needs to be called on mode param change, too (events)
@@ -5055,6 +5121,8 @@ function g.key(x, y, z)
           gen_arranger_dash_data("Event copy+paste")
         end
         
+        update_arranger_next() -- updates/sets arranger_next if needed
+
       -- ARRANGER EVENTS TIMELINE KEY DOWN
       elseif y == 5 then
         arranger_loop_key_count = arranger_loop_key_count + 1
@@ -5490,7 +5558,7 @@ local function default_chord_check()
   end
 end
 
---#endregion key local sub functions
+ --#endregion key local sub functions
 
 function key(n, z)
   if z == 1 then
@@ -5548,7 +5616,7 @@ function key(n, z)
 
       elseif norns_interaction == "k1" then
         -- placeholder but prob don't want to stop in case they meant to press K3
-      elseif view_key_count > 0 then -- Grid view key held down
+      elseif view_key_count > 0 then -- Grid view key(s) held down
         if screen_view_name == "Chord+seq" then
         
           -- When Chord+Seq Grid View keys are held down, K3 runs Generator (and resets pattern+seq on internal clock)
@@ -5576,15 +5644,7 @@ function key(n, z)
       
   
       elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- jump arranger playhead
-        local current_arranger_queue = arranger_queue
-        
-        arranger_queue = event_edit_segment
-        if current_arranger_queue ~= arranger_queue then
-          reset_grid_led_phase()
-        end
-
-        -- jumping arranger queue interrupts existing pattern change on key up
-        if arranger_queue <= arranger_length then arranger_one_shot_last_pattern = false end -- instantly de-blink glyph
+        set_arranger_q(event_edit_segment)
         grid_dirty = true
       
       elseif screen_view_name == "Events" then -- events
@@ -5664,8 +5724,8 @@ function key(n, z)
             -- don't want a full reset_arrangement as this changes the current chord pattern for arranger seg 1
             -- instead, manually reset arranger
             arranger_position = 0
-            arranger_queue = nil
-
+            arranger_next = nil
+            arranger_q = nil -- no need to set_arranger_q() here
           else
             reset_external_clock()
             if params:get("arranger") == 2 then
@@ -6079,7 +6139,7 @@ function key(n, z)
             -- --------------------------
             -- -- todo: make this a function and figure out how to also call it when called by external link start
             -- transport_multi_stop()   
-            -- if arranger_active then
+            -- if arranger_state == "on" then
             --   print(transport_state)
             -- else
             --   reset_pattern()
@@ -6785,7 +6845,7 @@ function gen_arranger_dash_data(source)
   -- _sticky vars handle instances when the active arranger segment is interrupted, in which case we want to freeze its vars to stop the segment from updating on the dash (while still allowing upcoming segments to update)
   -- Scenarios to test for:
     -- 1. User changes the current arranger segment pattern while on that segment. In this case we want to keep displaying the currently *playing* chord pattern
-    -- 2. User changes the current chord pattern by double tapping it on the Chord grid view. This sets arranger_active to false and should suspend the arranger mini chart until Arranger pickup occurs.
+    -- 2. User changes the current chord patarranger_positiontern by double tapping it on the Chord grid view. This sets arranger_state to false and should suspend the arranger mini chart until Arranger pickup occurs.
     -- 3. Current arranger segment is turned off, resulting in it picking up a different pattern (either the previous pattern or wrapping around to grab the last pattern. arranger_padded shenanigans)
     -- 4. We DO want this to update if the arranger is reset (arranger_position = 0, however)
     
@@ -6794,7 +6854,7 @@ function gen_arranger_dash_data(source)
     -- Note: arranger_position == i idenifies if we're on the active segment. Implicitly false when arranger is reset (arranger_position 0) todo p2 make local
     if arranger_position == i then
       -- todo p2 would be nice to rewrite this so these can be local
-      if arranger_active then
+      if arranger_state == "on" then
         active_pattern = active_chord_pattern
         active_chord_pattern_length = chord_pattern_length[active_pattern]
         active_chord_pattern_position = math.max(chord_pattern_position, 1)
