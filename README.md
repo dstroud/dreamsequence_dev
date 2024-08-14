@@ -18,16 +18,16 @@ Dreamsequence is a script for theory-informed musical exploration with Norns + G
 
 Key features include:
 
-	•	Degree-based chord sequencer with performance controls for voicing and strumming
-	•	Quick selection of scale-appropriate chords, plus custom chord editor
-	•	Three sequencers configurable for mono, poly, kit, arp, and hybrid modes
-	•	MIDI/CV Harmonizers to transform incoming notes/voltages into new sequences
-	•	Eight custom scales for each of the nine song-level scales/modes
-	•	Up to six NB voices- or merging of multiple sequences into a single voice
-	•	Song Arranger to build fixed or looping compositions from chord patterns
-	•	Events to change any script or voice parameter, plus control CV gear via Crow
-	•	Independent division and swing settings for sequences and Crow clock output
-	•	Algorithmic chord and sequence pattern generation
+- Degree-based chord sequencer with performance controls for voicing and strumming
+- Quick selection of scale-appropriate chords, plus custom chord editor
+- Three sequencers configurable for mono, poly, kit, arp, and hybrid modes
+- MIDI/CV Harmonizers to transform incoming notes/voltages into new sequences
+- Eight custom scales for each of the nine song-level scales/modes
+- Up to six NB voices- or merging of multiple sequences into a single voice
+- Song Arranger to build fixed or looping compositions from chord patterns
+- Events to change any script or voice parameter, plus control CV gear via Crow
+- Independent division and swing settings for sequences and Crow clock output
+- Algorithmic chord and sequence pattern generation
 
 Despite the depth of its feature set, Dreamsequence is designed to be approachable for people of all musical backgrounds. After learning a few basics, sketching out a new song idea takes just a few minutes.
 
@@ -40,77 +40,52 @@ Dan
 
 # Contents
 
-- Quickstart
-- Overview
-- Grid interface
-- Norns interface
-- Preferences
-- Crow
-- Changelog
+- [Overview](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#technical-overview)
+- [Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#grid-interface)
+- [Norns interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#norns-interface)
+- [Preferences](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#preferences)
+- [Crow](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#crow)
+- [Changelog](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#changelog)
 
 
-
-Quickstart
-- Overview
-- Grid interface
-  - Chord
-  - Seq
-  - Arranger
-  - Events
-- Norns interface
-  - Keys and encoders
-  - Screen
-    - Dashboard
-    - Menus
-      - SONG
-      - CHORD
-      - SEQs 1-3
-      - MIDI (Harmonizer)
-      - CV (Harmonizer)
-- Preferences
-- Crow
-- Changelog
-- Credits
-
-
-# Technical Overview
+# Overview
 
 ![dreamsequence](doc/tech_map.svg)
 
-This Technical Overview will explain how the components that make up Dreamsequence operate. Understanding how these components work is entirely optional, so feel free to [install some NB voices](https://llllllll.co/t/n-b-et-al-v0-1/60374/156?u=modularbeat) then skip ahead to the [Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#grid-interface) and [Norns interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#norns-interface) sections if you want to explore the script on your own.
-
+This Overview will explain how the components that make up Dreamsequence operate together. It's a bit technical and isn't required knowledge for using the script, so feel free to [install some NB voices](https://llllllll.co/t/n-b-et-al-v0-1/60374/156?u=modularbeat) then skip ahead to the [Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#grid-interface) and [Norns interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#norns-interface) sections if you want to explore the script at your own pace.
 
 > **_NOTE:_** Dreamsequence supports saving/loading of your song through the system PARAMETERS>>PSET menu but you should expect these saves to break when doing updates. I'll do my best to notify of breaking changes in patch notes, but things will be missed and I recommend you wrap up any work before updating.
 >
 
-## Chord sequencer
-*Grid-based chord pattern sequencer.*
-- The chord sequencer broadcasts the "active" chord which downstream components (Seqs 1-3, MIDI/CV Harmonizers) can use to transform their sequences.
+### Chord sequencer
+*Grid-based chord pattern sequencer*
+- The chord sequencer broadcasts the "active" chord which allows downstream components (Seqs 1-3, MIDI/CV Harmonizers) to adapt their sequences using a number of chord-based note transformations.
 - Optionally, the active chord can shaped with various parameters (voicing, inversion, note-thinning, strumming) and played directly.
-- Chord patterns entered on Grid are references to chord degrees (I-VII) for a given song key (scale and root, as defined in the SONG view). In this way, changing the song's scale will result in different chords for the same Grid pattern. In addition to triads, alternate chord types and user-defined chords are available.
+- Patterns entered on Grid are references to chord degrees (I-VII) of the song key (`Tonic` and `Scale` parameters in the SONG view). This means that the available chords are always appropriate for the song's harmonic framework and adapt to key changes.
+- In addition to triads, alternate chord types and user-defined chords are available.
 - 4 chord patterns (A, B, C, D) can be saved and switched between manually or with the Arranger.
-- See the [Chord Grid interface](TODO) and [Chord menus](https://github.com/dstroud/dreamsequence/blob/main/README.md#chord-menu) documentation for more details.
+- See the [Chord Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-grid-interface) and [Chord menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-menu) documentation for more details.
 
-## Sequencers 1-3
+
+### Sequencers 1-3
 *Three Grid-based pattern sequencers/arpeggiators*
-- Seqs can be configured as chord-based arpeggiators, step sequencers, or various hybrids of the two. Sequences may be monophonic or polyphonic.
-- Each column on the Seq grid pattern represents a note as determined by the `NOTE` parameter. These can be notes from the active chord, the song scale, chromatic notes, drum kit mode, or one of 8 custom note masks per song scale.
-- New patterns can be generated by holding down the Seq view key on Grid (last column, row 8/16) and pressing K2. Or hold rows 7/15 and 8/16 then press K2 to generate Chord and Seq patterns together.
-- See the [Seq Grid interface](TODO) and [Seq menus](https://github.com/dstroud/dreamsequence/blob/main/README.md#seq-menu) documentation for more details.
+- Seqs can be configured as step sequencers, chord-based arpeggiators, or various hybrids. Sequences may be monophonic or polyphonic.
+- Each column on the Seq grid pattern represents a note which is determined by the `NOTE` parameter which offers a number of methods to transform sequences. These transformations can include playing notes from the active chord, the song scale, the chromatic scale, a fixed drum kit scale, or custom scale masks.
+- See the [Seq Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-grid-interface) and [Seq menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-menu) documentation for more details.
 
 
-## MIDI Harmonizer
-*MIDI note transformer suitable for chords, sequences, and arpeggios.*
+### MIDI Harmonizer
+*MIDI note transformer suitable for chords, sequences, and arpeggios*
 - Transforms incoming MIDI to play notes from the selected chord or mode.
 - Examples:
   - Turn a synced step sequencer into a chord-aware secondary arpeggio, melody, bassline, etc...
   - Pass through a drum pad/sequencer to trigger virtual percussion voices.
   - Improvise with a MIDI controller for live performances.
   - Use a looping MIDI clip from a synced DAW for off-the-grid timing.
-- See the [MIDI Harmonizer menus](https://github.com/dstroud/dreamsequence/blob/main/README.md#midi-harmonizer-menu) documentation for more details.
+- See the [MIDI Harmonizer menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#midi-harmonizer-menu) documentation for more details (no Grid interface).
 
 
-## CV Harmonizer
+### CV Harmonizer
 *Sample and hold + quantizer/transformer (requires Crow)*
 - A trigger received at Crow input 2 will sample the voltage at input 1 and use this to play a note using a number of transformation options.
 - Alternately, voltage sampling can be triggered on a fixed clock using the `Trigger` setting.
@@ -119,21 +94,23 @@ This Technical Overview will explain how the components that make up Dreamsequen
   - Process CV from a eurorack sequencer then send it back out via Crow outputs 1-2.
   - Turn LFOs, function generators, S&H modules, etc... into sequencers.
   - Use trigger/clock/voltage sources for novel sequence timing or to inject chaos into a merged sequence.
-- See the [CV Harmonizer menus](https://github.com/dstroud/dreamsequence/blob/main/README.md#cv-harmonizer-menu) documentation for more details.
+- See the [CV Harmonizer menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#cv-harmonizer-menu) documentation for more details (no Grid interface).
 
-## Arranger
+
+### Arranger
 *Chord pattern arranger and Event manager for automation*
 - Sequences playback of chord patterns (A, B, C, D) and is the entry point to the Event Editor.
 - Events set, increment, randomize, or incite parameters to "wander" throughout an arrangement, with clamping or wrapping value ranges and probability control. Events can be used like rudimentary DAWesque automation lanes or they can be used more sparingly to reconfigure your patch at certain key points in your arrangement. Events can also be used to control NB voices, directly output triggers/gates/CV via Crow, and send MIDI bank/program changes to connected devices.
-- See the [Arranger Grid interface](TODO) and [Events Grid interface](TODO) documentation for more details.
+- See the [Arranger Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#arranger-grid-interface) documentation for more details.
 
 ---
 
 # Grid interface
 
+### Chord Grid interface
 ![dreamsequence](doc/grid_chord.svg)
 
-The Chord view is used to program chord patterns A-D. Since Seqs 1-3 and the harmonizers can create notes based on the active chord, this is typically where you'll begin composing.
+The Chord view is used to program chord patterns A-D. Since Seqs 1-3 and the harmonizers by default create notes based on the active chord, this is typically where you'll begin composing.
 
 - Playhead moves from top to bottom and sequence length is set using column 15. On 16x8 Grids, E1 can be used to scroll up and down the full 16-step pattern.
 
@@ -155,6 +132,7 @@ The Chord view is used to program chord patterns A-D. Since Seqs 1-3 and the har
     - Holding the Chord+Seq view keys together enables K2 to generate both a new chord and Seq pattern.
 
 ---
+### Seq Grid interface
 ![dreamsequence](doc/grid_seq.svg)
 
 The Sequence view is used to program notes into the 3 pattern sequencers.
@@ -175,9 +153,10 @@ The Sequence view is used to program notes into the 3 pattern sequencers.
     - E3 shifts the pattern left one note position, with wrapping.
     - K2 generates a new pattern.
     - Holding the Chord+Seq view keys together enables K2 to generate both a new chord and Seq pattern.
-    - K3 accesses the Note Mask editor, which allows the customization of 8 note masks available to Seqs and Harmonizers via the `Notes` menu. Use E2 or column 16 on Grid to select row 1-8, representing masks 1-8. E3 may be used to select from a menu of predefined scales, or a custom mask may be created with Grid where each column is a semitone interval relative to the song `Root`. In-scale intervals are highlighted, but it's possible to select other intervals.
+    - K3 accesses the Scale Mask editor, which allows the customization of 8 scale masks available to Seqs and Harmonizers via the `Notes` menu. Use E2 or column 16 on Grid to select row 1-8, representing masks 1-8. E3 may be used to select from a menu of predefined scales, or a custom mask may be created with Grid where each column is a semitone interval relative to the song `Root`. In-scale intervals are highlighted, but it's possible to select other intervals.
 
 ---
+### Arranger Grid interface
 ![dreamsequence](doc/grid_arranger.svg)
 
 The Arranger view is used to linearly sequence chord patterns and access the Events editor.
@@ -196,10 +175,11 @@ The Arranger view is used to linearly sequence chord patterns and access the Eve
  
 - The last three keys on the bottom of the rightmost column switch between Arranger, Chord, and Seq views. 
 
-----------------------------------------------------------------------------------------------------------------------
+---
+### Events Grid interface
 ![dreamsequence](doc/grid_events.svg)
 
-The Events view is used to schedule automation of parameter changes and functions at certain points in the Arrangement.
+The Events view is used to schedule automation of parameter changes and functions at certain points in the Arrangement. Events will be ignored when the Arranger is disabled.
 
 - Events view is entered by holding down a segment on the Arranger Timeline (row 5) then pressing K3. Think of it as zooming in on that segment- and the chord pattern (A-D) active in that segment.
 
@@ -208,9 +188,9 @@ The Events view is used to schedule automation of parameter changes and function
   - Rows 1-16 correspond to steps in the chord pattern.
   - Columns 1-15 are event "lanes" that typically will be used to store one type of event at a time (e.g. tempo changes in lane 1, scale changes in lane 2, etc...). As the chord sequencer advances to a new step, any events on that step fire, left-to-right, just before the chord is played.
 
-- Dreamsequence will help keep track of which events are stored in which lanes. On Norns, glyphs indicate which lanes are empty (□), contain a single type of event(⊡), or multiple types of events(☰). Selecting a lane with E3 will show the event type (last event for multi-event lanes).
+- Dreamsequence will help keep track of which events are stored in which lanes, across all segments of the arranger. On Norns, glyphs indicate which lanes are empty (□), contain a single type of event(⊡), or multiple types of events(☰). Selecting a lane with E3 will show the last edited event type in that lane.
 
-- To create/edit an event, tap a position on Grid and use E2 and E3 to configure. To revert changes made to an event, just tap the illuminated event on Grid and it will revert to the saved state so you can exit with K3.
+- To create/edit an event, tap a position on Grid and use E2/E3 to configure. To revert changes made to an event, just tap the illuminated event on Grid and it will revert to the saved state so you can exit with K3.
 
 - Holding one event and tapping on one or more slots will copy and paste the settings from the held event- this can also be used to paste an empty event over a populated one, effectively deleting it.
 
@@ -237,7 +217,6 @@ The Events view is used to schedule automation of parameter changes and function
 	- Default K3 behavior is to start playback.
    	- When using Internal clock source, K3 continues after pausing. Settings are available for each MIDI clock port via K3>>PARAMETERS>>EDIT>>PREFERENCES. [See prefs](TODO) 
   - Under certain conditions, alternate functions are enabled and will be shown at the bottom of the screen.
-
 
 - Encoder 1 (E1): Scroll Grid
   - For 16x8 Grids, scrolls the Chord and Seq pattern views up and down (8 steps of 16 shown at a time).
@@ -396,7 +375,7 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
   - Kit: Outputs chromatic semitones, beginning with C, no matter the song's key. Typically used to trigger notes on a drum machine or sampler, but can also be used for static pattern sequencing.
 
-  - Custom 1-8: Custom scales that can be edited by holding down the Song Arranger Grid key (column 8, row 6) and pressing K3 to enter the editor. These custom scales exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom scales which would change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom scale (Custom 1) for each `SONG>>Scale`. Custom scales will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save scales`.
+  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the mask editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
 
   - Custom 1-8+tr: Custom scales transposed within the scale by the active chord degree. This works just like the diatonic transposition in the Mode+tr option, but can produce curious results when the custom scale is not heptatonic.
 
@@ -482,7 +461,7 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
   
   - Kit: Uses the same pitch of incoming note for the outgoing note. This is typically used to trigger notes on a drum machine or sampler, but can also be used to play voices directly (although note duration and velocity are determined by their respective menus, not by the incoming note).
 
-  - Custom 1-8: Custom scales that can be edited by holding down the Song Arranger Grid key (column 8, row 6) and pressing K3 to enter the editor. These custom scales exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom scales which would change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom scale (Custom 1) for each `SONG>>Scale`. Custom scales will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save scales`.
+  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the mask editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
 
   - Custom 1-8+tr: Custom scales transposed within the scale by the active chord degree. This works just like the diatonic transposition in the Mode+tr option, but can produce curious results when the custom scale is not heptatonic.
 
@@ -526,7 +505,7 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
   
   - Kit: Outputs chromatic semitones, beginning with C, no matter the song's key. Typically used to trigger notes on a drum machine or sampler, but can also be used for static pattern sequencing.
 
-  - Custom 1-8: Custom scales that can be edited by holding down the Song Arranger Grid key (column 8, row 6) and pressing K3 to enter the editor. These custom scales exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom scales which would change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom scale (Custom 1) for each `SONG>>Scale`. Custom scales will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save scales`.
+  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the mask editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
 
   - Custom 1-8+tr: Custom scales transposed within the scale by the active chord degree. This works just like the diatonic transposition in the Mode+tr option, but can produce curious results when the custom scale is not heptatonic.
   
@@ -595,7 +574,7 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 
 - Crow OUT 2: Envelope when a voice is set to "Crow n/2" (CV/Env pair).
 
-- Crow OUT 3: [Arranger Events](https://github.com/dstroud/dreamsequence/blob/main/README.md#events-view).
+- Crow OUT 3: [Arranger Events](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#events-view).
 - Crow OUT 4: Dreamsequence's clock out. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK.
 
 ### Tips
