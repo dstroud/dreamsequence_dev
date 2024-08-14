@@ -487,14 +487,14 @@ gen_chord_lookups()
 
 
 
--- handling of custom scales:
+-- handling of custom scale masks:
 -- 1. If globals dust/data/dreamsequence/scales.data file exists, use it
 -- 2. Otherwise, DS calls gen_default_scales() to generate default scale tables (but don't save to dust so these can be updates with new releases)
 -- 3. If pset folder contains scales.data, load it
 -- 4. Build derivative scales_bool table
 
 -- Default scales for each of the base scales
-function gen_default_scales()
+function gen_default_masks()
   -- option a: populates all scales that fit within selected mode
   -- -- keep around in case we need to re-check or do alternate defaults
   -- local scales = find_matching_scales()
@@ -620,19 +620,19 @@ end
 
 
 -- initialize tables where custom scales don't exist (DS-specific)
-if not theory.scales then
-  theory.scales = {}
+if not theory.masks then
+  theory.masks = {}
 end
 
 for mode_no = 1, #theory.base_scales do
   -- print("DEBUG generating custom scale tables for base_scale idx " .. mode_no)
-  if not theory.scales[mode_no] then -- create mode table if needed
-    theory.scales[mode_no] = {}
+  if not theory.masks[mode_no] then -- create mode table if needed
+    theory.masks[mode_no] = {}
   end
   
   for scale_no = 1, 8 do -- custom scales
-    if not theory.scales[mode_no][scale_no] then -- create scale table if needed
-      theory.scales[mode_no][scale_no] = {}
+    if not theory.masks[mode_no][scale_no] then -- create scale table if needed
+      theory.masks[mode_no][scale_no] = {}
     end
   end
 
@@ -641,21 +641,21 @@ end
 
 
 
--- working table with bools to set state for LEDs.
--- Contains custom scales 1-8 for the current mode
-function gen_custom_scale()
-  theory.scales_bool = {}
+-- working table with bools to set state for masks LEDs.
+-- Contains custom scale masks 1-8 for the current scale
+function gen_custom_mask()
+  theory.masks_bool = {}
   for y = 1, 8 do
-    local custom = theory.scales[params:get("mode")][y] -- todo hook up to notes param somehow
+    local custom = theory.masks[params:get("scale")][y] -- todo hook up to notes param somehow
 
     if custom then
-      theory.scales_bool[y] = {}
+      theory.masks_bool[y] = {}
       for x = 1, 12 do
-        theory.scales_bool[y][x] = false
+        theory.masks_bool[y][x] = false
       end
 
       for i = 1, #custom do
-        theory.scales_bool[y][custom[i] + 1] = true
+        theory.masks_bool[y][custom[i] + 1] = true
       end
     end
   end

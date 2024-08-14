@@ -1,5 +1,5 @@
 -- Dreamsequence
--- 1.4 240808 @modularbeat
+-- 1.4 240814 @modularbeat
 -- l.llllllll.co/dreamsequence
 --
 -- Chord-based sequencer, 
@@ -10,7 +10,7 @@
 -- K2: Pause/Stop(2x)
 -- K3: Play
 --
--- E1: Scroll (16x8 Grid)
+-- E1: Scroll Grid
 -- E2: Select
 -- E3: Edit (+K1 to defer)
 --
@@ -96,20 +96,20 @@ norns.version.required = 231114 -- rolling back for Fates but 240221 is required
 g = grid.connect()
 include(norns.state.shortname.."/lib/includes")
 
--- load global scales file if present
+-- load global scale mask file if present
 local filepath = norns.state.data
-local scales = {}
+local masks = {}
 
 if util.file_exists(filepath) then
-  if util.file_exists(filepath.."scales.data") then
-    scales = tab.load(filepath.."scales.data")
-    print("table >> read: " .. filepath.."scales.data")
+  if util.file_exists(filepath.."masks.data") then
+    masks = tab.load(filepath.."masks.data")
+    print("table >> read: " .. filepath.."masks.data")
   else
-    scales = gen_default_scales()
+    masks = gen_default_masks()
   end
 end
 
-theory.scales = scales
+theory.masks = masks
 
 
 clock.link.stop() -- transport won't start if external link clock is already running
@@ -343,20 +343,19 @@ function init()
 
   -- params:add_separator("pset","pset")
 
+  params:add_option("default_pset", "Default song", {"New", "Last PSET", "Template"}, 1)
+  params:set_save("default_pset", false)
+  -- param_option_to_index is used rather than set_param_string to handle any invalid/changed saved values
+  params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
+  params:set_action("default_pset", function() save_prefs() end)
+
   params:add_trigger("save_template", "Save template")
   params:set_save("save_template", false)
   params:set_action("save_template", function() params:write(00,"template") end)
 
-  params:add_trigger("save_scales", "Save scales")
-  params:set_save("save_scales", false)
-  params:set_action("save_scales", function() write_global_scales() end)
-
-  params:add_option("default_pset", "Load pset", {"Off", "Last", "Template"}, 1)
-  params:set_save("default_pset", false)
-
-  -- param_option_to_index is used rather than set_param_string to handle any invalid/changed saved values
-  params:set("default_pset", param_option_to_index("default_pset", prefs.default_pset) or 1)
-  params:set_action("default_pset", function() save_prefs() end)
+  params:add_trigger("save_masks", "Save masks")
+  params:set_save("save_masks", false)
+  params:set_action("save_masks", function() write_global_scales() end)
   
   -- params:add_separator("interaction","interaction")
 
@@ -490,9 +489,13 @@ function init()
   params:add_group("song", "SONG", 13)
  
   -- TODO rename as SCALE and make option type
-  params:add_option("mode", "Scale", dreamsequence.scales, 1) -- post-bang action
+  local scales = {}
+  for i = 1, #dreamsequence.scales do
+    scales[i] = dreamsequence.scales[i]:gsub("%f[%a]Minor%f[%A]", "Min")
+  end
+  params:add_option("scale", "Scale", scales, 1) -- post-bang action
 
-  params:add_number("transpose", "Key", -12, 12, 0, function(param) return transpose_string(param:get()) end)
+  params:add_number("tonic", "Tonic", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
   params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
   params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
@@ -613,8 +616,8 @@ function init()
 
   local note_map = {"Triad", "Chord extd.", "Chord dense", "Chord raw", "Scale", "Scale+tr.", "Chromatic", "Chromatic+tr.", "Kit"} -- used by all but chord
   for i = 1, 8 do
-    table.insert(note_map, "Custom " .. i)
-    table.insert(note_map, "Custom " .. i .. "+tr.")
+    table.insert(note_map, "Mask " .. i)
+    table.insert(note_map, "Mask " .. i .. "+tr.")
   end
 
   for seq_no = 1, max_seqs do
@@ -627,20 +630,20 @@ function init()
 
     params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, max_seq_cols, 1) -- to 0??
 
-    params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Blank steps", "Measure", "Cue/event"}, 1)
+    params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Empty steps", "Measure", "Off/trigger"}, 1)
 
-    params:add_option("seq_reset_on_"..seq_no, "Reset", {"Every step", "Chord steps", "Blank steps", "Measure", "Stop/event"}, 4)
+    params:add_option("seq_reset_on_"..seq_no, "Reset",         {"Every step", "Chord steps", "Empty steps", "Measure", "Off/trigger"}, 4)
 
-    params:add_binary("seq_start_"..seq_no,"Start on", "trigger")
-    params:set_action("seq_start_"..seq_no,function()  play_seq[seq_no] = true end) -- seq_1_shot_1 = true end)
+    params:add_binary("seq_start_"..seq_no, "Trigger start", "trigger")
+    params:set_action("seq_start_"..seq_no, function()  play_seq[seq_no] = true end)
     
-    params:add_binary("seq_reset_"..seq_no,"Reset on", "trigger")
-    params:set_action("seq_reset_"..seq_no,function() reset_seq_pattern(seq_no) end)
+    params:add_binary("seq_reset_"..seq_no, "Trigger reset", "trigger")
+    params:set_action("seq_reset_"..seq_no, function() reset_seq_pattern(seq_no) end)
 
     params:add_option("seq_pattern_change_"..seq_no, "Change", {"Instantly", "On loop", "On reset"}, 1)
     params:set_action("seq_pattern_change_"..seq_no, 
-      function(var) -- immediately switch to any pending pattern q
-        if var == 1 and seq_pattern_q[seq_no] then
+      function(val) -- immediately switch to any pending pattern q
+        if val == 1 and seq_pattern_q[seq_no] then
           params:set("seq_pattern_" .. seq_no, seq_pattern_q[seq_no])
           seq_pattern_q[seq_no] = false
         end
@@ -1208,8 +1211,8 @@ function init()
   for i = 1, max_seqs do
     table.insert(pages, "SEQ " .. i)
   end
-  table.insert(pages, "MIDI IN")
-  table.insert(pages, "CV IN")
+  table.insert(pages, "MIDI")
+  table.insert(pages, "CV")
   page_index = 1
   page_name = pages[page_index]
   menus = {}
@@ -1339,8 +1342,8 @@ function init()
   preload_chord()
 
   --#region PSET callback functions
-  -- table names we want pset callbacks to act on
-  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice", "scale", "chord"}
+  -- prefs .data table names we want pset callbacks to act on
+  pset_lookup = {"arranger", "events", "event_lanes", "chord_pattern", "chord_pattern_length", "seq_pattern", "seq_pattern_length", "misc", "voice", "masks", "chord"}
 
   function params.action_write(filename, name, number)
     local number = number or "00" -- template
@@ -1354,7 +1357,7 @@ function init()
     misc.clock_tempo = params:get("clock_tempo")
     -- misc.clock_source = params:get("clock_source") -- defer to system
     
-    scale = deepcopy(theory.scales)
+    masks = deepcopy(theory.masks)
     chord = deepcopy(theory.custom_chords)
 
     -- need to save and restore nb voices which can change based on what mods are enabled
@@ -1396,7 +1399,7 @@ function init()
       screen_view_name = "Session"
       misc = {}
       voice = {}
-      scale = {}
+      masks = {}
       for i = 1, #pset_lookup do
         local tablename = pset_lookup[i]
           if util.file_exists(filepath..tablename..".data") then
@@ -1407,8 +1410,8 @@ function init()
         end
       end
 
-      if scale and #scale > 0 then
-        theory.scales = deepcopy(scale)
+      if masks and #masks > 0 then
+        theory.masks = deepcopy(masks)
       end
 
       if chord and #chord > 0 then
@@ -1578,7 +1581,7 @@ function init()
 
 
   -- Optional: load most recent pset on init
-  if params:string("default_pset") == "Last" then
+  if params:string("default_pset") == "Last PSET" then
     params:default()
   elseif params:string("default_pset") == "Template" then
     params:read(00)
@@ -1588,7 +1591,7 @@ function init()
   -- Some actions need to be added post-bang.
   params:set_action("arranger", function(val) update_arranger_state(val) end)
 
-  params:set_action("mode", 
+  params:set_action("scale", 
     function()
       build_scale()
       if transport_state == "stopped" then
@@ -2181,10 +2184,10 @@ end
 -- param action function that saves current scales to global folder location
 function write_global_scales()
   local filepath = norns.state.data  
-  local scales = deepcopy(theory.scales)
+  local masks = deepcopy(theory.masks)
 
-  tab.save(scales, filepath .. "scales.data")
-  print("table >> write: " .. filepath .. "scales.data")
+  tab.save(masks, filepath .. "masks.data")
+  print("table >> write: " .. filepath .. "masks.data")
 end
 
 
@@ -2517,7 +2520,7 @@ function gen_menu()
   menus = {}
 
   -- SONG MENU
-  table.insert(menus, {"mode", "transpose", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
+  table.insert(menus, {"scale", "tonic", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
 
   -- CHORD MENU
   table.insert(menus, {"chord_voice", "chord_octave", "chord_range", "chord_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
@@ -2770,17 +2773,17 @@ end
 
 
 function build_scale()
-  local mode = params:get("mode")
+  local mode = params:get("scale")
 
-  scale_heptatonic = theory.lookup_scales[theory.base_scales[params:get("mode")]].intervals
-  gen_custom_scale() -- generates bool table with notes for each of the 8 custom scales
+  scale_heptatonic = theory.lookup_scales[theory.base_scales[params:get("scale")]].intervals
+  gen_custom_mask() -- generates bool table with notes for each of the 8 custom masks
 
   -- todo p1 optimize
   -- could also do this for each source so no lookup is necessary each time a note plays
   scale_custom = {}
   for i = 1, 8 do
-    if theory.scales[mode][i] and theory.scales[mode][i][1] then
-      scale_custom[i] = theory.scales[mode][i]
+    if theory.masks[mode][i] and theory.masks[mode][i][1] then
+      scale_custom[i] = theory.masks[mode][i]
     else
       scale_custom[i] = scale_heptatonic -- fall back on standard scale if custom one doesn't exist
     end
@@ -3025,7 +3028,7 @@ end
 
 function transpose_string(x)
   return(
-    theory.scale_chord_letters[params:get("mode")][util.wrap(x, 0, 11)][1]
+    theory.scale_chord_letters[params:get("scale")][util.wrap(x, 0, 11)][1]
     .. (x == 0 and "" or " ") ..  (x >= 1 and "+" or "") .. (x ~= 0 and x or "")
   )
 end
@@ -3414,11 +3417,11 @@ function advance_chord_pattern()
         local start_on = params:string("seq_start_on_"..seq_no)
         local reset_on = params:string("seq_reset_on_"..seq_no)
 
-        if reset_on == "Every step" or reset_on == "Blank steps" then
+        if reset_on == "Every step" or reset_on == "Empty steps" then
           reset_seq_pattern(seq_no)
         end
 
-        if start_on == "Every step" or start_on == "Blank steps" then
+        if start_on == "Every step" or start_on == "Empty steps" then
           play_seq[seq_no] = true
         end
       end
@@ -3679,25 +3682,25 @@ end
 function gen_chord_readout()
   local x = current_chord_x
   local x_wrapped = util.wrap(x, 1, 7)
-  local scale = params:get("mode")
+  local scale = params:get("scale")
   local custom = theory.custom_chords[scale][active_chord_pattern][x]
   local y = chord_pattern_position == 0 and 1 or chord_pattern_position -- 0 to 1 so this can be used while transport is stopped to preview upcoming
 
   if custom[y] then -- is a custom chord
     if custom[y].name == "Custom" then -- unnamed custom chord
-      -- active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*" --
-      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. "*"  -- letter*
+      -- active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("tonic"), 0, 11)][x_wrapped] .. "*" --
+      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("tonic"), 0, 11)][x_wrapped] .. "*"  -- letter*
       active_chord_name_2 = nil
 
     else
-      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped] .. (custom[y].dash_name_1 or "")
+      active_chord_name_1 = theory.scale_chord_letters[scale][util.wrap(params:get("tonic"), 0, 11)][x_wrapped] .. (custom[y].dash_name_1 or "")
       active_chord_name_2 = custom[y].dash_name_2 or nil
     end
 
     -- todo:
     -- active_chord_degree = theory.chord_degree[scale]["chords"][x_wrapped] .. "*"
   else -- standard triad
-    active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
+    active_chord_name_1 = theory.scale_chord_names[scale][util.wrap(params:get("tonic"), 0, 11)][x_wrapped]
     active_chord_name_2 = nil
 
     -- todo:
@@ -3722,7 +3725,7 @@ function gen_chord_name()
       editing_chord_name = editing_chord_letter .. custom[y].name
     end
   else -- standard triad
-    editing_chord_name = theory.scale_chord_names[scale][util.wrap(params:get("transpose"), 0, 11)][x_wrapped]
+    editing_chord_name = theory.scale_chord_names[scale][util.wrap(params:get("tonic"), 0, 11)][x_wrapped]
   end
 end
 
@@ -3739,7 +3742,7 @@ function update_chord(x, y) -- y is optional when playing chord using g.key
   -- todo p1 optimize- might build chord_raw, chord_densified, and chord_extended whenever chord is edited or mode changes
   local y = y or chord_pattern_position
   local raw = {}
-  local scale = params:get("mode")
+  local scale = params:get("scale")
   local custom = theory.custom_chords[scale][active_chord_pattern][x]
 
   -- determines if we're using a custom chord or standard
@@ -3933,7 +3936,7 @@ function play_chord()
   local playback = params:string("chord_style")
   local chord_transformed = chord_transformed
   local note_qty = #chord_transformed
-  local transpose = params:get("transpose") + (params:get("chord_octave") * 12) + 48
+  local transpose = params:get("tonic") + (params:get("chord_octave") * 12) + 48
   local dynamics = params:get("chord_dynamics") * .01
   local ramp = params:get("chord_dynamics_ramp")
   
@@ -3990,11 +3993,11 @@ transform_note[1] = function(note_num, octave) -- triad chord mapping
   local chord_length = 3
   local quantized_note = chord_triad[util.wrap(note_num, 1, chord_length)]
   local quantized_octave = math.floor((note_num - 1) / chord_length)
-  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("tonic"))
 end
 
 
-transform_note[2] = function(note_num, octave) -- custom chords, densified to extend 2 octaves if necessary
+transform_note[2] = function(note_num, octave) -- Chord extd., insert notes from 1st octave into 2nd octave
   local chord_length = #chord_extended or 0
 
   -- jump to next octave if difference from chord min/max intervals is >1 octave.
@@ -4003,26 +4006,26 @@ transform_note[2] = function(note_num, octave) -- custom chords, densified to ex
   local quantized_note = chord_extended[util.wrap(note_num, 1, chord_length)] or 0
   local quantized_octave = math.floor((note_num - 1) / chord_length) * (additional_octave + 1) -- no work on 24
 
-  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("tonic"))
 end
 
 
-transform_note[3] = function(note_num, octave) -- custom chords, tones arranged into one octave
+transform_note[3] = function(note_num, octave) -- Chord dense: custom chords with notes in 2nd octave played in 1st octave (removes duplicates in pitch class)
   local chord_length = #chord_densified or 0
   local quantized_note = chord_densified[util.wrap(note_num, 1, chord_length)] or 0
   local quantized_octave = math.floor((note_num - 1) / chord_length)
 
-  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("tonic"))
 end
 
 
-transform_note[4] = function(note_num, octave) -- custom chords, spanning multiple octaves
+transform_note[4] = function(note_num, octave) -- Chord raw: custom chords played exactly as-is
   local chord_length = #chord_raw or 0
   local additional_octave = math.floor(((chord_raw[chord_length] or 0) - (chord_raw[1] or 0)) / 12) or 0 -- in anticipation of variable max_seqs
   local quantized_note = chord_raw[util.wrap(note_num, 1, chord_length)] or 0
   local quantized_octave = (math.floor((note_num - 1) / chord_length) * (additional_octave + 1)) or 0 -- no work on 24
 
-  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("transpose"))
+  return(quantized_note + ((octave + quantized_octave) * 12) + params:get("tonic"))
 end
 
 
@@ -4030,29 +4033,29 @@ transform_note[5] = function(note_num, octave) -- song scale mapping
   local note_num = note_num
   local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
 
-  return(quantized_note + (octave * 12) + params:get("transpose"))
+  return(quantized_note + (octave * 12) + params:get("tonic"))
 end
 
 
 transform_note[6] = function(note_num, octave) -- song scale mapping + diatonic transposition
   -- local diatonic_transpose = (math.max(pre == true and next_chord_x or current_chord_x, 1)) -1
-  local diatonic_transpose = (math.max(current_chord_x, 1)) -1
-  local note_num = note_num + diatonic_transpose
+  -- local diatonic_transpose = (math.max(current_chord_x, 1)) -1
+  local note_num = note_num + (math.max(current_chord_x, 1)) -1 --(diatonic_transpose)
   local quantized_note = scale_heptatonic[util.wrap(note_num, 1, 7)] + (math.floor((note_num -1) / 7) * 12)
 
-  return(quantized_note + (octave * 12) + params:get("transpose"))
+  return(quantized_note + (octave * 12) + params:get("tonic"))
 end
 
 
 transform_note[7] = function(note_num, octave) -- chromatic mapping
-  return(note_num -1 + (octave * 12) + params:get("transpose"))
+  return(note_num -1 + (octave * 12) + params:get("tonic"))
 end
 
 
 transform_note[8] = function(note_num, octave) -- chromatic intervals + base triad root
-  local root = theory.chord_triad_intervals[params:get("mode")][current_chord_x][1]
+  local root = theory.chord_triad_intervals[params:get("scale")][current_chord_x][1]
 
-  return(note_num  -1 + root + (octave * 12) + params:get("transpose"))
+  return(note_num  -1 + root + (octave * 12) + params:get("tonic"))
 end
 
 
@@ -4063,23 +4066,23 @@ end
 
 for i = 1, 8 do
   table.insert(transform_note,
-    function(note_num, octave) -- custom scale
+    function(note_num, octave) -- custom mask
       local note_num = note_num
       local scale_custom = scale_custom[i]
       local length = #scale_custom
       local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
-      return(quantized_note + (octave * 12) + params:get("transpose"))
+      return(quantized_note + (octave * 12) + params:get("tonic"))
     end
   )
 
   table.insert(transform_note,
-    function(note_num, octave) -- custom scale + base triad root transposition (kinda weird but designed to match mode+tr.)
-      -- local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
-      local note_num = note_num + (theory.chord_triad_intervals[params:get("mode")][current_chord_x][1])  -- alternative transposing by base triad root
+    function(note_num, octave) -- custom mask + degree transposition
+      local note_num = note_num + (math.max(current_chord_x, 1)) -1 -- + transpose by chord degree
+      -- local note_num = note_num + (theory.chord_triad_intervals[params:get("scale")][current_chord_x][1])  -- alternative transposing by base triad root (like chromatic+tr)
       local scale_custom = scale_custom[i]
       local length = #scale_custom
       local quantized_note = scale_custom[util.wrap(note_num, 1, length)] + (math.floor((note_num -1) / length) * 12)
-      return(quantized_note + (octave * 12) + params:get("transpose"))
+      return(quantized_note + (octave * 12) + params:get("tonic"))
     end
   )
 end
@@ -4363,7 +4366,7 @@ function grid_redraw()
   
   g:all(0) -- todo look into efficiency of this
   
-  if screen_view_name == "scale_editor" then
+  if screen_view_name == "mask_editor" then
     local editing_scale = editing_scale
     local enabled_level = 8         -- can layer in_mode tones(3) + editing_lane_level(4 - 3 = 1) + pulse(3) = 7 max
     local in_mode = {}  -- table containing 12 notes and t/f if they are in the current mode
@@ -4377,7 +4380,7 @@ function grid_redraw()
       in_mode[scale_heptatonic[i] + 1] = true
     end
 
-    local in_scale = theory.scales_bool
+    local in_scale = theory.masks_bool
 
     for y = 1, 8 do
       local in_scale = in_scale[y]
@@ -4683,12 +4686,12 @@ function grid_redraw()
         
       end
 
-      -- #region active seq pattern selector
+      -- active seq pattern selector
       for seq_no = 1, max_seqs do
         local x = seq_no + max_seq_cols + 1
         local selected = seq_no == selected_seq_no
         local mute = params:get("seq_mute_"..seq_no) == 2
-        local q = params:string("seq_pattern_change_"..seq_no) ~= "Instantly"
+        -- local q = params:string("seq_pattern_change_"..seq_no) ~= "Instantly"
         local lvl_selected = mute and led_high_blink or led_high
         local lvl_unselected = mute and led_med_blink or led_med
 
@@ -4703,7 +4706,6 @@ function grid_redraw()
         end
 
       end
-      -- #endregion
 
     end
   end
@@ -4801,7 +4803,7 @@ end
 -- todo p0 needs to be called on mode param change, too (events)
 -- or we need to lock in scales upon entering menu (prob better)
 function gen_chord_menus()
-  chord_menu_names = theory.lookup_scales[theory.base_scales[params:get("mode")]].chord_names[util.wrap(editing_chord_x, 1, 7)]
+  chord_menu_names = theory.lookup_scales[theory.base_scales[params:get("scale")]].chord_names[util.wrap(editing_chord_x, 1, 7)]
 end
 
 
@@ -4836,7 +4838,7 @@ function init_chord_editor()
   gen_chord_menus() -- generates chord_menu_names table
 
   -- set editing_chord_intervals table which gets the custom interval if available or the standard degree intervals
-  local custom = theory.custom_chords[params:get("mode")][pattern][x]
+  local custom = theory.custom_chords[params:get("scale")][pattern][x]
 
   if custom[y] then
     intervals = custom[y].intervals
@@ -4868,7 +4870,7 @@ end
 -- check if this is a named scale and set Scale menu appropriately
 function set_scale_menu()
   local lookup = theory.lookup_scales
-  local name = find_scale_name(theory.scales[params:get("mode")][editing_scale]) or "Custom"
+  local name = find_scale_name(theory.masks[params:get("scale")][editing_scale]) or "Custom"
   if name ~= "Custom" then -- set Scale menu if there's a match
     for i = 1, #lookup do
       if name == lookup[i].name then
@@ -4920,19 +4922,19 @@ function g.key(x, y, z)
         gen_chord_name()
       end
 
-    elseif screen_view_name == "scale_editor" then
+    elseif screen_view_name == "mask_editor" then
       if x <= 12 then
-        local mode = params:get("mode")
-        local scale = theory.scales_bool[y]
+        local mode = params:get("scale")
+        local scale = theory.masks_bool[y]
 
         editing_scale = y
         scale[x] = not scale[x] -- set value in flat table
 
-        -- write the changed pattern back to theory.scales which is the save format
-        theory.scales[mode][y] = {}
+        -- write the changed pattern back to theory.masks which is the save format
+        theory.masks[mode][y] = {}
         for i = 1, 12 do
-          if theory.scales_bool[y][i] then
-            table.insert(theory.scales[mode][y], i - 1)
+          if theory.masks_bool[y][i] then
+            table.insert(theory.masks[mode][y], i - 1)
           end
         end
 
@@ -5181,14 +5183,14 @@ function g.key(x, y, z)
           grid_interaction = "chord_key_held"
           lvl = lvl_dimmed
           update_dash_lvls()
-          editing_chord_scale = params:get("mode")
+          editing_chord_scale = params:get("scale")
           editing_chord_pattern = active_chord_pattern
           editing_chord_x = x -- used for chord editor
           editing_chord_y = y -- used for chord editor
           editing_chord_root = theory.chord_triad_intervals[editing_chord_scale][x][1]
 
-          local mode = params:get("mode")
-          local key = util.wrap(params:get("transpose"), 0, 11)
+          local mode = params:get("scale")
+          local key = util.wrap(params:get("tonic"), 0, 11)
           editing_chord_letter = theory.scale_chord_letters[mode][key][x_wrapped]       -- letter
           editing_chord_triad_name = theory.scale_chord_names[mode][key][x_wrapped]        -- base triad name+quality
 
@@ -5327,7 +5329,7 @@ function g.key(x, y, z)
   elseif z == 0 then
 
     -- Events key up
-    if screen_view_name == "scale_editor" then
+    if screen_view_name == "mask_editor" then
       -- reserved
     
     elseif screen_view_name == "Events" then
@@ -5592,7 +5594,7 @@ function key(n, z)
       end
 
     elseif n == 2 then -- KEY 2
-      if screen_view_name == "scale_editor" then -- close and return to session
+      if screen_view_name == "mask_editor" then -- close and return to session
         screen_view_name = "Session"
 
       elseif screen_view_name == "chord_editor" then -- close and return to session
@@ -5600,7 +5602,7 @@ function key(n, z)
         play_chord()
 
       elseif grid_interaction == "chord_key_held" then -- propagate chord
-        local scale = params:get("mode")
+        local scale = params:get("scale")
 
         notification("CHORD PROPAGATED", {"k", 2}) -- todo maybe replace with momentary rather than timed pop-up
         pending_chord_disable = {} -- cancel any help chord disables to be safe
@@ -5825,7 +5827,7 @@ function key(n, z)
 
     elseif n == 3 then -- KEY 3
 
-      if screen_view_name == "scale_editor" then -- close and return to session
+      if screen_view_name == "mask_editor" then -- close and return to session
         screen_view_name = "Session"
       elseif screen_view_name == "chord_editor" then -- close and return to session
         default_chord_check()
@@ -5860,21 +5862,19 @@ function key(n, z)
         update_dash_lvls()
 
     
-      elseif view_key_count > 0 and grid_view_name == "Arranger" then -- Grid view key held down
-        -- if grid_view_name == "Arranger" then
+      elseif view_key_count > 0 and grid_view_name == "Seq" then -- Grid view key held down
 
-        -- open scale editor
+        -- open mask editor
         view_key_count = 0
         grid_view_keys = {}
         scale_menu_index = 0
-        screen_view_name = "scale_editor"
+        screen_view_name = "mask_editor"
         norns_interaction = nil
         grid_interaction = nil
         bang_params() -- apply any defered param edits. could also ignore but this feels okay
         set_scale_menu()
-        -- end
 
-        elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- Event Editor --
+      elseif arranger_loop_key_count > 0 and grid_interaction ~= "arranger_shift" then -- Event Editor --
         pattern_grid_offset = 0
         arranger_loop_key_count = 0
         event_edit_step = 0
@@ -6307,7 +6307,7 @@ function enc(n,d)
         grid_dirty = true
       end
    
-    elseif screen_view_name == "scale_editor" then
+    elseif screen_view_name == "mask_editor" then
       scale_menu_index = util.clamp(scale_menu_index + d, 0, 1)
 
     elseif screen_view_name == "Events" then
@@ -6346,8 +6346,8 @@ function enc(n,d)
       default_chord_check()
       pending_chord_disable = {} -- cancel any held chord disables to be safe
       gen_chord_name()
-    elseif screen_view_name == "scale_editor" then  -- scale editor
-      local mode = params:get("mode")
+    elseif screen_view_name == "mask_editor" then  -- scale editor
+      local mode = params:get("scale")
 
       if scale_menu_index == 0 then
         editing_scale = util.clamp((editing_scale or 1) + d, 1, 8)
@@ -6358,21 +6358,21 @@ function enc(n,d)
         -- either show loaded/matching scale or "Custom" if altered
         scale_index = util.clamp((scale_index or 0) + d, 1, #lookup)
         
-        -- set theory.scales to selected menu
-        theory.scales[mode][editing_scale] = {}
+        -- set theory.masks to selected menu
+        theory.masks[mode][editing_scale] = {}
 
         for i = 1, #lookup[scale_index].intervals do
-          theory.scales[mode][editing_scale][i] = lookup[scale_index]["intervals"][i]
+          theory.masks[mode][editing_scale][i] = lookup[scale_index]["intervals"][i]
         end
 
         -- set bool table
-        theory.scales_bool[editing_scale] = {}
+        theory.masks_bool[editing_scale] = {}
         for x = 1, 12 do
-          theory.scales_bool[editing_scale][x] = false
+          theory.masks_bool[editing_scale][x] = false
         end
   
         for i = 1, #lookup[scale_index].intervals do
-          theory.scales_bool[editing_scale][lookup[scale_index]["intervals"][i] + 1] = true
+          theory.masks_bool[editing_scale][lookup[scale_index]["intervals"][i] + 1] = true
         end
 
         build_scale()
@@ -6987,13 +6987,12 @@ function redraw()
     --   footer("GENERATE") -- technically this should indicate generating patterns for chord+seq
     if grid_view_name == "Arranger" then
       tooltips("SONG ARRANGER GRID")
-      footer(nil,"EDIT SCALE")
     elseif grid_view_name == "Chord" then
       tooltips("CHORD GRID", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap pattern A-D: mute"})
       footer("GENERATE")
     elseif grid_view_name == "Seq" then
       tooltips("SEQ " .. selected_seq_no .. " GRID", {"E1: pattern ↑↓ ", "E2: loop ↑↓", "E3: transpose ←→", "Tap SEQ 1-" .. max_seqs .. ": mute"})
-      footer("GENERATE")
+      footer("GENERATE", "EDIT MASK")
     end
 
   elseif grid_interaction == "arranger_shift" then
@@ -7232,7 +7231,7 @@ function redraw()
         end
       end
 
-    elseif screen_view_name == "scale_editor" then
+    elseif screen_view_name == "mask_editor" then
       local editing_scale = editing_scale
       local paging = scale_menu_index == 0
       local scale_index = scale_index
@@ -7241,7 +7240,7 @@ function redraw()
 
       screen.move(header_x, header_y)
       screen.level(paging and lvl_menu_selected or lvl_menu_deselected)
-      screen.text("CUSTOM SCALE " .. editing_scale)
+      screen.text("CUSTOM SCALE MASK " .. editing_scale)
 
       screen.move(header_x, menu_y + 10)
       screen.level(paging and lvl_menu_deselected or lvl_menu_selected)

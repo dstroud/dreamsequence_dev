@@ -1,9 +1,8 @@
+local lib = norns.state.shortname.."/lib/"
+
+
 -- ships with norns
 er = require("er")
-
-musicutil = require("musicutil") -- subbed
-
-local lib = norns.state.shortname.."/lib/"
 
 -- modular dashboard functions
 include(lib .. "dashboards")

@@ -1,7 +1,7 @@
 events_lookup = {}								--
 -- Song								
-table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'mode', 	name= 'Scale', 			})
-table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'transpose', 	name= 'Key', 			})
+table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'scale', 	name= 'Scale', 			})
+table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'tonic', 	name= 'Tonic', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'clock_tempo', 	name= 'Tempo', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_out_1', 	name= 'Crow out 1', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_out_2', 	name= 'Crow out 2', 			})

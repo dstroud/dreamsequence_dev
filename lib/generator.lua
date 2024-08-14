@@ -12,13 +12,13 @@ function generator()
   params:set("seq_octave_"..selected_seq_no, math.random(-1,1))
     
   --SEQUENCE RANDOMIZATION
-  params:set("transpose", math.random(-6,6))
+  params:set("tonic", math.random(-6,6))
 
   if params:get("clock_source") == 1 then 
     params:set("clock_tempo", math.random(50,140))
   end
   
-  params:set("mode", math.random(1, 9)) -- Currently this is called each time c-gen runs, but might change this
+  params:set("scale", math.random(1, 9)) -- Currently this is called each time c-gen runs, but might change this
   -- not really the best option but this is what the OG algos were built around
   set_param_string("seq_start_on_"..selected_seq_no, "Loop")
   set_param_string("seq_reset_on_"..selected_seq_no, "Measure")
@@ -41,13 +41,13 @@ function chord_generator_lite()
   params:set("chord_octave", math.random(-1,0))
     
   --SEQUENCE RANDOMIZATION
-  params:set("transpose", math.random(-6,6))
+  params:set("tonic", math.random(-6,6))
 
   if params:get("clock_source") == 1 then 
     params:set("clock_tempo", math.random(50,140))
   end
   
-  params:set("mode", math.random(1,9))
+  params:set("scale", math.random(1,9))
   params:set("chord_div_index", 15)
   params:set("chord_duration_index", params:get("chord_div_index"))
   
@@ -663,7 +663,7 @@ function build_mode_chord_types()
   safe_chord_degrees = {}    
 
   for i = 1,7 do
-    local modifier = theory.chord_degree[params:get("mode")]["quality"][i]
+    local modifier = theory.chord_degree[params:get("scale")]["quality"][i]
     local chord_type = chord_type_simplified(modifier)
     
     mode_chord_types[i] = chord_type
@@ -671,7 +671,7 @@ function build_mode_chord_types()
   end
   
   -- print("--------")
-  -- print("mode " .. params:get("mode") .. " chord types")    
+  -- print("mode " .. params:get("scale") .. " chord types")    
   -- tab.print(mode_chord_types)
   -- print("--------")
 end

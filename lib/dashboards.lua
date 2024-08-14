@@ -95,7 +95,7 @@ function dash_functions.arranger_chart()
     end
   else                                          -- standard playback
     screen.level(lvl_pane_selected)
-    screen.text(arranger_position or 1) ---- wag
+    screen.text(arranger_position or 1)
   end
   screen.fill()
 
