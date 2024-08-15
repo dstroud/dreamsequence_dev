@@ -40,19 +40,19 @@ Dan
 
 # Contents
 
-- [Overview](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#technical-overview)
-- [Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#grid-interface)
-- [Norns interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#norns-interface)
-- [Preferences](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#preferences)
-- [Crow](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#crow)
-- [Changelog](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#changelog)
+- [Overview](https://github.com/dstroud/dreamsequence/blob/main/README.md#technical-overview)
+- [Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#grid-interface)
+- [Norns interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#norns-interface)
+- [Preferences](https://github.com/dstroud/dreamsequence/blob/main/README.md#preferences)
+- [Crow](https://github.com/dstroud/dreamsequence/blob/main/README.md#crow)
+- [Changelog](https://github.com/dstroud/dreamsequence/blob/main/README.md#changelog)
 
 
 # Overview
 
 ![dreamsequence](doc/tech_map.svg)
 
-This Overview will explain how the components that make up Dreamsequence operate together. It's a bit technical and isn't required knowledge to enjoy the script, so feel free to skim the [Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#grid-interface) and [Norns interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#norns-interface) documentation if you want to explore the script at your own pace. Don't forget to [install some NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374/156?u=modularbeat) if you're not using just MIDI/Crow!
+This Overview will explain how the components that make up Dreamsequence operate together. It's a bit technical and isn't required knowledge to enjoy the script, so feel free to skim the [Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#grid-interface) and [Norns interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#norns-interface) documentation if you want to explore the script at your own pace. Don't forget to [install some NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374/156?u=modularbeat) if you're not using just MIDI/Crow!
 
 > **_NOTE:_** Dreamsequence supports saving/loading of your song through the system PARAMETERS>>PSET menu but you should expect these saves to break when doing updates. I'll do my best to notify of breaking changes in patch notes, but things will be missed and I recommend you wrap up any work before updating.
 >
@@ -64,14 +64,14 @@ This Overview will explain how the components that make up Dreamsequence operate
 - Patterns entered on Grid are references to chord degrees (I-VII) of the song key (determined by the `Tonic` and `Scale` parameters in the SONG view). This means that the available chords are always appropriate for the song's harmonic framework and adapt to key changes.
 - In addition to triads, alternate chord types and user-defined chords are available.
 - 4 chord patterns (A, B, C, D) can be saved and switched between manually or with the Arranger.
-- See the [Chord Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-grid-interface) and [Chord menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-menu) documentation for details.
+- See the [Chord Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#chord-grid-interface) and [Chord menu](https://github.com/dstroud/dreamsequence/blob/main/README.md#chord-menu) documentation for details.
 
 
 ### Sequencers 1-3
 *Three Grid-based pattern sequencers/arpeggiators*
 - Seqs 1-3 can be configured as step sequencers, chord-based arpeggiators, or various hybrids. Sequences may be monophonic or polyphonic.
 - Each column on the Grid pattern represents a note, which can be transformed per the `NOTE` parameter. These transformations include playing notes from the active chord, the song scale, the chromatic scale, a fixed drum kit scale, or custom scale masks.
-- See the [Seq Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-grid-interface) and [Seq menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-menu) documentation for details.
+- See the [Seq Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#seq-grid-interface) and [Seq menu](https://github.com/dstroud/dreamsequence/blob/main/README.md#seq-menu) documentation for details.
 
 
 ### MIDI Harmonizer
@@ -82,7 +82,7 @@ This Overview will explain how the components that make up Dreamsequence operate
   - Pass a drum pad/sequencer to trigger virtual percussion voices.
   - Improvise with a MIDI controller during live/recorded performances.
   - Use a looping MIDI clip from a synced DAW for off-grid timing.
-- See the [MIDI Harmonizer menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#midi-harmonizer-menu) documentation for details (no Grid interface).
+- See the [MIDI Harmonizer menu](https://github.com/dstroud/dreamsequence/blob/main/README.md#midi-harmonizer-menu) documentation for details (no Grid interface).
 
 
 ### CV Harmonizer
@@ -93,14 +93,14 @@ This Overview will explain how the components that make up Dreamsequence operate
   - Process CV from a eurorack sequencer then send it back out via Crow outputs.
   - Turn LFOs, function generators, S&H modules, etc... into sequencers.
   - Use trigger/clock/voltage sources for novel sequence timing or to inject chaos into a merged sequence.
-- See the [CV Harmonizer menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#cv-harmonizer-menu) documentation for details (no Grid interface).
+- See the [CV Harmonizer menu](https://github.com/dstroud/dreamsequence/blob/main/README.md#cv-harmonizer-menu) documentation for details (no Grid interface).
 
 
 ### Arranger
 *Chord pattern arranger and Events manager for automation*
 - Sequences playback of chord patterns (A, B, C, D) and is the entry point to the Events Editor.
 - Events set, increment, randomize, or prompt parameters to "wander" throughout an arrangement, with clamping or wrapping of value ranges and probability control. Events can be used like rudimentary DAWesque automation lanes or they can be used more sparingly to reconfigure your patch at certain key points in your arrangement. Events can also be used to control NB voices, directly output triggers/gates/CV via Crow, and send MIDI bank/program changes to connected devices.
-- See the [Arranger Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#arranger-grid-interface) and [Events Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#events-grid-interface) documentation for details.
+- See the [Arranger Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#arranger-grid-interface) and [Events Grid interface](https://github.com/dstroud/dreamsequence/blob/main/README.md#events-grid-interface) documentation for details.
 
 ---
 
@@ -214,7 +214,7 @@ The Events Editor view is used to schedule automation of parameter changes and f
 
 - Key 3 (K3): Play
 	- Default K3 behavior is to start playback.
-   	- When using Norns' internal clock source, K3 continues/resumes after pausing. This will also send out MIDI Song Position Pointer (SPP) depending on the MIDI port settings in PARAMETERS>>EDIT>>PREFERENCES. [See preferences](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#preferences) documentation. 
+   	- When using Norns' internal clock source, K3 continues/resumes after pausing. This will also send out MIDI Song Position Pointer (SPP) depending on the MIDI port settings in PARAMETERS>>EDIT>>PREFERENCES. [See preferences](https://github.com/dstroud/dreamsequence/blob/main/README.md#preferences) documentation. 
   - Under certain conditions, alternate functions are enabled for K3 and will be shown at the bottom of the screen.
 
 - Encoder 1 (E1): Scroll Grid
@@ -299,7 +299,7 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
 - Beats length: Time signature denominator. Used to determine the current measure, for metronome, and to sync MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT). Can only be changed when transport is stopped.
  
-- Crow outs: Outs 1-3 have options for "Off", "CV", "Env", and "Events". Out 4 also includes Dreamsequence's custom Crow clock out option. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK. For more information, see [Crow](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#crow) documentation.
+- Crow outs: Outs 1-3 have options for "Off", "CV", "Env", and "Events". Out 4 also includes Dreamsequence's custom Crow clock out option. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK. For more information, see [Crow](https://github.com/dstroud/dreamsequence/blob/main/README.md#crow) documentation.
   
 - Crow clk: Frequency of the pulses from Crow out port 4. Frequency is conveyed as fractions of a measure, with Pulses Per Quarter Note (PPQN) in parenthesis.
 
@@ -571,7 +571,7 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 
 - Crow OUT 2 (Env): Sends envelope along with CV when a voice is set to "Crow n/2" (CV/Env pair).
 
-- Crow OUT 3 (Events): Reserves output for [Arranger Events](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#events-view). Technically, Crow events can be sent to any out, but this makes sure that notes are not mistakenly sent to an out intended solely for events.
+- Crow OUT 3 (Events): Reserves output for [Arranger Events](https://github.com/dstroud/dreamsequence/blob/main/README.md#events-view). Technically, Crow events can be sent to any out, but this makes sure that notes are not mistakenly sent to an out intended solely for events.
 - Crow OUT 4: Dreamsequence's clock out. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK.
 
 ### Tips

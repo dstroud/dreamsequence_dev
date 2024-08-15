@@ -98,7 +98,7 @@ include(norns.state.shortname.."/lib/includes")
 
 -- load global scale mask file if present
 local filepath = norns.state.data
-local masks = {}
+masks = {} -- has to be global because of pset write function. todo p2 fix
 
 if util.file_exists(filepath) then
   if util.file_exists(filepath.."masks.data") then
@@ -1356,6 +1356,7 @@ function init()
     misc.clock_tempo = params:get("clock_tempo")
     -- misc.clock_source = params:get("clock_source") -- defer to system
     
+    -- these have to be global which is dumb
     masks = deepcopy(theory.masks)
     chord = deepcopy(theory.custom_chords)
 
