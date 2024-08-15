@@ -1,6 +1,6 @@
 -- Dreamsequence
--- 1.4 240814 @modularbeat
--- l.llllllll.co/dreamsequence
+-- 1.4 240815 Dan Stroud
+-- llllllll.co/t/dreamsequence
 --
 -- Chord-based sequencer, 
 -- arpeggiator, and harmonizer 
@@ -488,14 +488,13 @@ function init()
   ------------------
   params:add_group("song", "SONG", 13)
  
-  -- TODO rename as SCALE and make option type
+  params:add_number("tonic", "Tonic", -12, 12, 0, function(param) return transpose_string(param:get()) end)
+
   local scales = {}
   for i = 1, #dreamsequence.scales do
     scales[i] = dreamsequence.scales[i]:gsub("%f[%a]Minor%f[%A]", "Min")
   end
   params:add_option("scale", "Scale", scales, 1) -- post-bang action
-
-  params:add_number("tonic", "Tonic", -12, 12, 0, function(param) return transpose_string(param:get()) end)
 
   params:add_number("ts_numerator", "Beats per bar", 1, 99, 4) -- Beats per bar
   params:add_option("ts_denominator", "Beat length", {1, 2, 4, 8, 16}, 3) -- Beat length
@@ -626,9 +625,9 @@ function init()
 
     params:add_option("seq_note_map_"..seq_no, "Notes", note_map, 1)
     
-    params:add_option("seq_note_priority_"..seq_no, "Priority", {"Mono", "L→", "←R", "Random"}, 1)
+    params:add_option("seq_grid_"..seq_no, "Grid", {"Mono", "Pool L→", "Pool ←R", "Pool Random"}, 1)
 
-    params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, max_seq_cols, 1) -- to 0??
+    params:add_number("seq_polyphony_"..seq_no, "Polyphony", 1, max_seq_cols, 1)
 
     params:add_option("seq_start_on_"..seq_no, "Start", {"Loop", "Every step", "Chord steps", "Empty steps", "Measure", "Off/trigger"}, 1)
 
@@ -2175,7 +2174,7 @@ function notification(message, end_tab)
       lvl = lvl_dimmed
       update_dash_lvls()
       screen_message = message
-      do_notification_timer_1(math.max(d, 3)) --  since no end_tab was supplied, to timer of some sort (unless notifs are off)
+      do_notification_timer_1(math.max(d, 3)) --  since no end_tab was supplied, do timer of some sort (unless notifs are off)
     end
   end
 end
@@ -2520,7 +2519,7 @@ function gen_menu()
   menus = {}
 
   -- SONG MENU
-  table.insert(menus, {"scale", "tonic", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
+  table.insert(menus, {"tonic", "scale", "clock_tempo", "ts_numerator", "ts_denominator", "crow_out_1", "crow_out_2", "crow_out_3", "crow_out_4", "crow_clock_index", "crow_clock_swing", "dedupe_threshold", "chord_generator", "seq_generator"})
 
   -- CHORD MENU
   table.insert(menus, {"chord_voice", "chord_octave", "chord_range", "chord_notes", "chord_inversion", "chord_style", "chord_strum_length", "chord_timing_curve", "chord_div_index", "chord_duration_index", "chord_swing", "chord_dynamics", "chord_dynamics_ramp"})  
@@ -2533,7 +2532,7 @@ function gen_menu()
     table.insert(menus, {
       "seq_voice_"..seq_no,
       "seq_note_map_"..seq_no,
-      "seq_note_priority_"..seq_no,
+      "seq_grid_"..seq_no,
       "seq_polyphony_"..seq_no,
       "seq_octave_"..seq_no,
       "seq_pattern_rotate_"..seq_no,
@@ -3468,7 +3467,6 @@ function update_arranger_state(val)
     update_arranger_next()
     arranger_state = "off"
     set_chord_pattern_q(false)
-
   else -- turning on OR syncing
     if chord_pattern_position == 0 then
       arranger_state = "on"
@@ -4118,7 +4116,7 @@ function advance_seq_pattern(seq_no)
     local channel = player.channel and params:get("seq_channel_"..seq_no) or nil
     local dynamics = (params:get("seq_dynamics_"..seq_no) * .01)
     local dynamics = dynamics + (dynamics * (_G["sprocket_seq_"..seq_no].downbeat and (params:get("seq_accent_"..seq_no) * .01) or 0))
-    local priority = params:get("seq_note_priority_"..seq_no)
+    local priority = params:get("seq_grid_"..seq_no)
     local polyphony = params:get("seq_polyphony_"..seq_no)
     local octave = params:get("seq_octave_"..seq_no)
     local row = seq_pattern[seq_no][active_seq_pattern[seq_no]][seq_pattern_position[seq_no]]
@@ -4612,9 +4610,25 @@ function grid_redraw()
       g:led(2, 8 + extra_rows, params:get("playback") == 2 and 15 or 4)
         
       -- pagination with scroll indicator for arranger grid view
+      -- to flash page of if arranger position is off-grid
+      local view_min = arranger_grid_offset + 1
+      local view_max = arranger_grid_offset + 16
+      local position_page
+
+      if arranger_position < view_min or arranger_position > view_max then
+        position_page = math.floor((arranger_position - 1)/16)
+      else
+        position_page = -1
+      end
+
       for i = 0, 3 do
         local target = i * 16
         local led = math.max(10 + util.round((math.min(target, arranger_grid_offset) - math.max(target, arranger_grid_offset))/2), 1) + 2
+ 
+          if position_page == i then
+            led = led - (math.ceil(led / 6) * blinky) -- scale blink intensity to led
+          end
+
         g:led(i + 7, 8 + extra_rows , led)
       end
 
@@ -4623,6 +4637,7 @@ function grid_redraw()
         g:led(7 + (arranger_grid_offset / 16), 8 + extra_rows, 15)
       end
       
+
     elseif grid_view_name == "Chord" then   -- CHORD GRID REDRAW
       local mute = params:get("chord_mute") == 2
       local level_next = led_med - led_pulse
@@ -5246,7 +5261,7 @@ function g.key(x, y, z)
         local y_offset = y + pattern_grid_offset
         local selected = seq_pattern[selected_seq_no][active_seq_pattern[selected_seq_no]][y_offset]
 
-        if params:string("seq_note_priority_"..selected_seq_no) == "Mono" then
+        if params:string("seq_grid_"..selected_seq_no) == "Mono" then
           local note = selected[x]
           for col = 1, max_seq_cols do
             selected[col] = 0
@@ -5376,8 +5391,11 @@ function g.key(x, y, z)
               
               -- Resets current active_chord_pattern immediately if transport is stopped
               if y == active_chord_pattern and transport_active == false then
-                print("Manual reset of current pattern; disabling arranger")
-                params:set("arranger", 1)
+                -- print("Manual reset of current pattern; disabling arranger")
+                if params:get("arranger") == 2 then
+                  params:set("arranger", 1)
+                  notification("ARRANGER OFF", {"g", x, y})
+                end
                 chord_pattern_position = 0
                 reset_external_clock()
                 reset_pattern()
@@ -5398,9 +5416,12 @@ function g.key(x, y, z)
     
               -- Cue up a new pattern        
               else
-                print("New pattern queued; disabling arranger")
+                -- print("New pattern queued; disabling arranger")
                 if pattern_copy_performed[1] == false then
-                  params:set("arranger", 1)
+                  if params:get("arranger") == 2 then
+                    params:set("arranger", 1)
+                    notification("ARRANGER OFF", {"g", x, y})
+                  end
                   set_chord_pattern_q(y)
                 end
               end
@@ -5584,7 +5605,7 @@ function key(n, z)
         lvl = lvl_dimmed
         -- end
       elseif not grid_interaction and not norns_interaction then
-        notification("HOLD TO DEFER EDITS", {"k", 1})
+        notification("HOLD TO DEFER EDITS")--, {"k", 1}) --always show with timer rather than with a hold for this one 
         norns_interaction = "k1"
         gen_menu() -- show hidden menus so they aren't affected by events and user can switch to specific MIDI channel
         if menu_index ~= 0 then

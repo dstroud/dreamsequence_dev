@@ -320,7 +320,7 @@ function seq_generator(mode)
   -- Pre-randomizations which can be overwritten by the individual algorithms
   -- This step is omitted when running init (used to populate algo table for menus)
   if mode == "run" then
-    params:set("seq_note_priority_"..selected_seq_no, 1) -- for now, only does mono seq
+    params:set("seq_grid_"..selected_seq_no, 1) -- for now, only does mono seq
     -- clear_seq(selected_seq_no) -- moving this into each algo instead
     -- Pattern/session randomizations
     params:set("seq_pattern_length_" .. selected_seq_no, length)

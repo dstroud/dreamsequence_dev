@@ -14,7 +14,7 @@ Optional: Supports MIDI and Crow by default. Installation of additional [NB voic
 
 # Intro
 
-Dreamsequence is a script for theory-informed musical exploration with Norns + Grid, designed for improvisational, experimental, and classical approaches to composition and performance.
+Dreamsequence is a script for theory-informed musical composition and performance with Norns + Grid.
 
 Key features include:
 
@@ -22,16 +22,16 @@ Key features include:
 - Quick selection of scale-appropriate chords, plus custom chord editor
 - Three sequencers configurable for mono, poly, kit, arp, and hybrid modes
 - MIDI/CV Harmonizers to transform incoming notes/voltages into new sequences
-- Eight custom scale masks for each of the nine song-level scales
-- Up to six NB voices- or merging of multiple sequences into a single voice
-- Song Arranger to build fixed or looping compositions from chord patterns
-- Events to change any script or voice parameter, plus control CV gear via Crow
+- Eight custom scale masks for each song scale
+- Support for up to six Nota Bene (NB) voices, or merging of sequences to a single voice
+- Song Arranger to build fixed-length or looping compositions from chord patterns
+- Events to change any script or voice parameter, plus control over CV gear via Crow
 - Independent division and swing settings for sequences and Crow clock output
 - Algorithmic chord and sequence pattern generation
 
-Despite the depth of its feature set, Dreamsequence is designed to be approachable for people of all musical backgrounds. After learning a few basics, sketching out a new song idea takes just a few minutes.
+Dreamsequence is designed to be approachable for people of all musical backgrounds. After learning a few basics, sketching out a new song takes just a few minutes.
 
-If you have feedback, questions, or creations to share, join the conversation at l.llllllll.co/dreamsequence
+If you have feedback, questions, or creations to share, join the conversation at [https://llllllll.co/t/dreamsequence](https://llllllll.co/t/dreamsequence)
 
 Cheers,
 Dan
@@ -52,55 +52,54 @@ Dan
 
 ![dreamsequence](doc/tech_map.svg)
 
-This Overview will explain how the components that make up Dreamsequence operate together. It's a bit technical and isn't required knowledge for using the script, so feel free to [install some NB voices](https://llllllll.co/t/n-b-et-al-v0-1/60374/156?u=modularbeat) then skip ahead to the [Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#grid-interface) and [Norns interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#norns-interface) sections if you want to explore the script at your own pace.
+This Overview will explain how the components that make up Dreamsequence operate together. It's a bit technical and isn't required knowledge to enjoy the script, so feel free to skim the [Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#grid-interface) and [Norns interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#norns-interface) documentation if you want to explore the script at your own pace. Don't forget to [install some NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374/156?u=modularbeat) if you're not using just MIDI/Crow!
 
 > **_NOTE:_** Dreamsequence supports saving/loading of your song through the system PARAMETERS>>PSET menu but you should expect these saves to break when doing updates. I'll do my best to notify of breaking changes in patch notes, but things will be missed and I recommend you wrap up any work before updating.
 >
 
 ### Chord sequencer
 *Grid-based chord pattern sequencer*
-- The chord sequencer broadcasts the "active" chord which allows downstream components (Seqs 1-3, MIDI/CV Harmonizers) to adapt their sequences using a number of chord-based note transformations.
+- The chord sequencer broadcasts the "active" chord which allows the downstream sequencers and harmonizers to avail themselves of chord-based note transformations.
 - Optionally, the active chord can shaped with various parameters (voicing, inversion, note-thinning, strumming) and played directly.
-- Patterns entered on Grid are references to chord degrees (I-VII) of the song key (`Tonic` and `Scale` parameters in the SONG view). This means that the available chords are always appropriate for the song's harmonic framework and adapt to key changes.
+- Patterns entered on Grid are references to chord degrees (I-VII) of the song key (determined by the `Tonic` and `Scale` parameters in the SONG view). This means that the available chords are always appropriate for the song's harmonic framework and adapt to key changes.
 - In addition to triads, alternate chord types and user-defined chords are available.
 - 4 chord patterns (A, B, C, D) can be saved and switched between manually or with the Arranger.
-- See the [Chord Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-grid-interface) and [Chord menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-menu) documentation for details.
+- See the [Chord Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-grid-interface) and [Chord menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#chord-menu) documentation for details.
 
 
 ### Sequencers 1-3
 *Three Grid-based pattern sequencers/arpeggiators*
-- Seqs can be configured as step sequencers, chord-based arpeggiators, or various hybrids. Sequences may be monophonic or polyphonic.
-- Each column on the Seq grid pattern represents a note which is determined by the `NOTE` parameter which offers a number of methods to transform sequences. These transformations can include playing notes from the active chord, the song scale, the chromatic scale, a fixed drum kit scale, or custom scale masks.
-- See the [Seq Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-grid-interface) and [Seq menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-menu) documentation for details.
+- Seqs 1-3 can be configured as step sequencers, chord-based arpeggiators, or various hybrids. Sequences may be monophonic or polyphonic.
+- Each column on the Grid pattern represents a note, which can be transformed per the `NOTE` parameter. These transformations include playing notes from the active chord, the song scale, the chromatic scale, a fixed drum kit scale, or custom scale masks.
+- See the [Seq Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-grid-interface) and [Seq menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#seq-menu) documentation for details.
 
 
 ### MIDI Harmonizer
 *MIDI note transformer suitable for chords, sequences, and arpeggios*
-- Transforms incoming MIDI to play notes from the selected chord or mode.
+- Transforms incoming MIDI to play notes from the selected chord, scale, etc...
 - Examples:
   - Turn a synced step sequencer into a chord-aware secondary arpeggio, melody, bassline, etc...
-  - Pass through a drum pad/sequencer to trigger virtual percussion voices.
-  - Improvise with a MIDI controller for live performances.
-  - Use a looping MIDI clip from a synced DAW for off-the-grid timing.
-- See the [MIDI Harmonizer menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#midi-harmonizer-menu) documentation for details (no Grid interface).
+  - Pass a drum pad/sequencer to trigger virtual percussion voices.
+  - Improvise with a MIDI controller during live/recorded performances.
+  - Use a looping MIDI clip from a synced DAW for off-grid timing.
+- See the [MIDI Harmonizer menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#midi-harmonizer-menu) documentation for details (no Grid interface).
 
 
 ### CV Harmonizer
 *Sample and hold + quantizer/transformer (requires Crow)*
 - A trigger received at Crow input 2 will sample the voltage at input 1 and use this to play a note using a number of transformation options.
-- Alternately, voltage sampling can be triggered on a fixed clock using the `Trigger` setting.
-- Rests can be inserted by enabling the "Auto-rest" menu option and triggering the same voltage repeatedly within a chord step.  
+- Alternatively, clocked voltage sampling can be scheduled using the `Trigger` setting.
 - Examples:
-  - Process CV from a eurorack sequencer then send it back out via Crow outputs 1-2.
+  - Process CV from a eurorack sequencer then send it back out via Crow outputs.
   - Turn LFOs, function generators, S&H modules, etc... into sequencers.
   - Use trigger/clock/voltage sources for novel sequence timing or to inject chaos into a merged sequence.
-- See the [CV Harmonizer menus](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#cv-harmonizer-menu) documentation for details (no Grid interface).
+- See the [CV Harmonizer menu](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#cv-harmonizer-menu) documentation for details (no Grid interface).
 
 
 ### Arranger
-*Chord pattern arranger and Event manager for automation*
-- Sequences playback of chord patterns (A, B, C, D) and is the entry point to the Event Editor.
-- Events set, increment, randomize, or incite parameters to "wander" throughout an arrangement, with clamping or wrapping value ranges and probability control. Events can be used like rudimentary DAWesque automation lanes or they can be used more sparingly to reconfigure your patch at certain key points in your arrangement. Events can also be used to control NB voices, directly output triggers/gates/CV via Crow, and send MIDI bank/program changes to connected devices.
+*Chord pattern arranger and Events manager for automation*
+- Sequences playback of chord patterns (A, B, C, D) and is the entry point to the Events Editor.
+- Events set, increment, randomize, or prompt parameters to "wander" throughout an arrangement, with clamping or wrapping of value ranges and probability control. Events can be used like rudimentary DAWesque automation lanes or they can be used more sparingly to reconfigure your patch at certain key points in your arrangement. Events can also be used to control NB voices, directly output triggers/gates/CV via Crow, and send MIDI bank/program changes to connected devices.
 - See the [Arranger Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#arranger-grid-interface) and [Events Grid interface](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#events-grid-interface) documentation for details.
 
 ---
@@ -110,13 +109,13 @@ This Overview will explain how the components that make up Dreamsequence operate
 ### Chord Grid interface
 ![dreamsequence](doc/grid_chord.svg)
 
-The Chord view is used to program chord patterns A-D. Since Seqs 1-3 and the harmonizers by default create notes based on the active chord, this is typically where you'll begin composing.
+The Chord view is used to program chord patterns A-D.
 
-- Playhead moves from top to bottom and sequence length is set using column 15. On 16x8 Grids, E1 can be used to scroll up and down the full 16-step pattern.
+- The playhead moves from top to bottom and sequence length is set using column 15. On 16x8 Grids, E1 can be used to scroll up and down the full 16-step pattern.
 
-- Chords are selected using columns 1-14 which represent chord degrees I-VII across two octaves. Pressing and holding a key will display the corresponding chord name on Norns and variants, appropriate for degree and song key, can be selected using E3.
+- Chords are selected using columns 1-14 which represent chord degrees I-VII across two octaves. Pressing and holding a key will display the corresponding chord name on Norns' screen. At that point, chord variants can be selected using E3.
 
-- Custom chords may be entered by, holding a chord key and pressing K3. In the chord editor, note intervals are displayed on the bottom two rows (representing two octaves), beginning with the degree's root note. Chords can also be selected and visualized here using E3. If a voice is selected for the chord, the chord can be previewed with K2. Note that not all chords will be recognized, in which case the resulting chord will be displayed with the root note followed by an asterisk, e.g. "C*".
+- The Chord Editor allows defining custom chords. It is accessed by holding a chord key and pressing K3. In the Chord Editor, the two bottom rows represent note intervals across two stacked octaves. The bottom left key is the root note of the selected chord degree, with pitch increasing as you move to the right. After 12 semitones, the progression of intervals moves up a row. Use E3 to select from available chords or enter your own by touching the keys on Grid. The chord can be previewed with K2 (make sure to select a `Voice` option in the Chord menu). Note that not all chords will be recognized, in which case the resulting chord name will be the root note followed by an asterisk, e.g. "C*".
 
 - Rows 1-4 of the rightmost column represent 4 chord patterns: A, B, C, D.
   - Tapping a pattern will disable the Arranger and cue that pattern to play once the current pattern is completed.
@@ -137,14 +136,14 @@ The Chord view is used to program chord patterns A-D. Since Seqs 1-3 and the har
 
 The Sequence view is used to program notes into the 3 pattern sequencers.
 
-- One sequencer and one pattern can be edited at a time. Use the matrix at the upper right of Grid to select a Seq and pattern.
+- One sequencer and one pattern can be edited at a time. Use the matrix at the upper right of Grid to select a Seq and pattern to edit/play.
 
-- To change which pattern is playing, tap it. The change can be immediate or quantized depending on the `Change` parameter. Holding one pattern and tapping on another will copy and paste notes from the held pattern without causing the pattern to change.
-  >IMPORTANT: It is possible to change the patterns of multiple sequencers at once, but it is important to do so with a near-simultaneous press of all keys. If pattern keys are pressed sequentially with even a small amount of hesitation, that gesture may be interpreted as a copy and paste! Be sure to practice this first if you intend to do this in a performance.
+- To change which pattern is playing, tap it. The change can be immediate or quantized depending on the `Change` parameter. Holding one pattern and tapping on another will copy and paste without causing the pattern to change.
+  >IMPORTANT: It is possible to change the patterns of multiple sequencers at once, but it is critical to do so with a near-simultaneous press of all keys. If pattern keys are pressed sequentially with even a small amount of hesitation, that gesture will be interpreted as a copy and paste! Be sure to practice this if you intend to do this in a performance setting.
 
-- Each column represents a different note pitch, determined by the `Notes` menu (see [menus](TODO)).
+- Each column represents a different note pitch, determined by the `Notes` menu.
 
-- Playhead moves from top to bottom and sequence length is set using column 15. On 16x8 Grids, E1 can be used to scroll up and down the full 16-step pattern. After completing the sequence, the playhead will reset to the beginning and wait to start playback again based on the `Start` parameter. (TODO)
+- The playhead moves from top to bottom and sequence length is set using column 15. On 16x8 Grids, E1 can be used to scroll up and down the full 16-step pattern. After completing the sequence, the playhead will reset to the beginning and wait to start playback again based on the `Start` parameter.
 
 - The last three keys on the bottom of the rightmost column switch between Arranger, Chord, and Seq views.
   - Holding the Seq view key enables alternate functions:
@@ -153,25 +152,25 @@ The Sequence view is used to program notes into the 3 pattern sequencers.
     - E3 shifts the pattern left one note position, with wrapping.
     - K2 generates a new pattern.
     - Holding the Chord+Seq view keys together enables K2 to generate both a new chord and Seq pattern.
-    - K3 accesses the Scale Mask editor, which allows the customization of 8 scale masks available to Seqs and Harmonizers via the `Notes` menu. Use E2 or column 16 on Grid to select row 1-8, representing masks 1-8. E3 may be used to select from a menu of predefined scales, or a custom mask may be created with Grid where each column is a semitone interval relative to the song `Root`. In-scale intervals are highlighted, but it's possible to select other intervals.
+    - K3 accesses the Scale Mask Editor, which allows the customization of 8 scale masks available to Seqs 1-3 and Harmonizers via the `Notes` menu. Use E2 or column 16 on Grid to select row 1-8, representing each custom mask. E3 may be used to select from a menu of predefined scales, or a custom mask may be created with Grid where each column is a semitone interval relative to the song `Root`. In-scale intervals are highlighted, but it's possible to select out-of-scale intervals, too.
 
 ---
 ### Arranger Grid interface
 ![dreamsequence](doc/grid_arranger.svg)
 
-The Arranger view is used to linearly sequence chord patterns and access the Events editor. The playhead moves from left to right with each increment being a "segment"
+The Arranger view is used to linearly sequence chord patterns and access the Events Editor. The playhead moves from left to right with each increment being a "segment".
 
-- Rows 1-4 correspond to chord patterns A-D and columns 1-16 represent "segments" of the Arranger sequence. The Arranger length automatically resizes to the rightmost set pattern and any gaps in the sequence are filled in lighter colors to indicate that the previous chord pattern will be sustained. If the first segment isn't filled it will default to pattern A or it will grab the last populated pattern (since the Arranger is loopable).
+- Rows 1-4 correspond to chord patterns A-D. The Arranger length automatically resizes to the rightmost set pattern and any gaps in the sequence are filled in lighter colors to indicate that the previous chord pattern will be sustained. If the first segment isn't filled, it will default to pattern A or it will grab the last populated pattern (since the Arranger is loopable).
 
 - Row 5 is the Arranger timeline which illuminates segments containing one or more events. Holding down a key on the Arranger timeline will enable alternate functions:
   - E3 shifts the selected segment and subsequent segments to the right or left depending on the direction of rotation.
   - K2 will cue the playhead to jump to the selected segment after the current segment is finished.
-  - K3 enters the Events editor view (see next section).
+  - K3 enters the Events Editor view (see next section).
   - Holding a segment on the timeline and tapping on another will copy and paste events from the held segment. You can also hold a segment and tap rows 1-4 to set a pattern and paste events at the same time.
 
 - Grid keys on the bottom left enable or disable the Arranger and Looping, respectively.
 
-- Page keys 1-4 scroll the view in 16-segment chunks (scrolling can also be done incrementally with E1). Note that the arranger view does not follow the playhead off-screen so it's up to you to adjust the view to keep track of it.
+- Page keys 1-4 jump the Arranger view in 16-segment chunks (scrolling can also be done incrementally with E1). Note that the arranger view does not follow the playhead off-screen. In that case, a blinking LED will indicate which of the 4 pages the playhead is at. Tap to jump to its position.
  
 - The last three keys on the bottom of the rightmost column switch between Arranger, Chord, and Seq views. 
 
@@ -179,18 +178,18 @@ The Arranger view is used to linearly sequence chord patterns and access the Eve
 ### Events Grid interface
 ![dreamsequence](doc/grid_events.svg)
 
-The Events editor view is used to schedule automation of parameter changes and functions at certain points in the Arrangement. Events will be ignored when the Arranger is disabled.
+The Events Editor view is used to schedule automation of parameter changes and functions at certain points in the Arrangement. Events will be ignored when the Arranger is disabled.
 
-- The view is entered by holding down a segment on the Arranger timeline (row 5) then pressing K3. Think of it as zooming in on that segment- and the chord pattern (A-D) active in that segment.
+- The view is entered by holding down a segment on the Arranger timeline (row 5) then pressing K3. Think of it as zooming in on that segment (and the chord pattern (A-D) active there).
 
-- Upon entering the editor, Grid displays a view of all events in the selected Arranger segment, where events fire left-to-right then top-to-bottom.
+- Upon entering the editor, Grid displays a view of all events in the selected Arranger segment, where events fire one row/step at a time, left-to-right.
   - Column 16 on the right shows the length of the chord pattern enabled for this Arranger segment. This can not be changed here.
   - Rows 1-16 correspond to steps in the chord pattern.
   - Columns 1-15 are event "lanes" that typically will be used to store one type of event at a time (e.g. tempo changes in lane 1, scale changes in lane 2, etc...). As the chord sequencer advances to a new step, any events on that step fire, left-to-right, just before the chord is played.
 
-- Dreamsequence will help keep track of which events are stored in which lanes, across all segments of the arranger. On Norns, glyphs indicate which lanes are empty (□), contain a single type of event(⊡), or multiple types of events(☰). Selecting a lane with E3 will show the last edited event type in that lane.
+- Dreamsequence will help keep track of which events are stored in which lanes, across all segments of the arranger. On Norns' screen, glyphs indicate which lanes are empty (□), contain a single type of event(⊡), or multiple types of events(☰). Selecting a lane with E3 will show the last edited event type in that lane.
 
-- To create/edit an event, tap a position on Grid and use E2/E3 to configure. To revert changes made to an event, just tap the illuminated event on Grid and it will revert to the saved state so you can exit with K3.
+- To create/edit an event, tap a position on Grid and use E2/E3 to configure. To undo changes made to an event, just tap the illuminated event on Grid and it will revert to the saved state so you can exit with K3.
 
 - Holding one event and tapping on one or more slots will copy and paste the settings from the held event- this can also be used to paste an empty event over a populated one, effectively deleting it.
 
@@ -203,33 +202,32 @@ The Events editor view is used to schedule automation of parameter changes and f
 
 - Key 1 (K1): Alt
   - Tap quickly to access System menus.
-  - In standard views (SONG, CHORD, SEQ, etc...), hold K1 to defer any edits made with E3 until the key is released. This is useful for making jumps from one value to another without applying intermediate values. It's also possible to cue up a number of changes, even across views.
+  - In standard views (SONG, CHORD, SEQ, etc...), hold K1 to defer any edits made with E3 until the key is released. This is useful for making jumps from one value to another without applying intermediate values. It's also possible to fire multiple edits simultaneously, even across views.
   - In standard views, hold K1 and tap K3 to toggle the `Sync views` setting.
-  - In the events editor view, hold K1 to access the quick actions menu. Select an option with K3 and release K1 to fire.
+  - In the Events Editor view, hold K1 to access the quick actions menu. Select an option with K3 and release K1 to fire.
 
 - Key 2 (K2): Pause/Stop(2x)
-	- Default K2 behavior is to pause playback on a single press and stop on a second press. Stopping will reset the chord pattern position. If the Arranger is enabled, its position will also be reset. If the Arranger is disabled, it can be reset with a third tap of K2.
-	- Pausing is only available when using Internal clock source. For all other clock sources, K2 will initiate a full stop.
-	- Stopping resets the active chord pattern and will reset the Arranger if it is enabled.
-  - Under certain conditions, alternate functions are enabled and will be shown at the bottom of the screen.
+	- When using Norns' internal clock, K2 will pause playback on a single press and stop on a second press.
+	- Pausing is only available when using the internal clock source. For all other clock sources, K2 will initiate a full stop.
+	- Stopping will reset the chord pattern position. If the Arranger is enabled, its position will also be reset. If the Arranger is disabled, it can be reset with a third tap of K2.
+  - Under certain conditions, alternate functions are enabled for K2 and will be shown at the bottom of the screen.
 
 - Key 3 (K3): Play
 	- Default K3 behavior is to start playback.
-   	- When using Internal clock source, K3 continues after pausing. Settings are available for each MIDI clock port via K3>>PARAMETERS>>EDIT>>PREFERENCES. [See preferences](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#preferences) documentation. 
-  - Under certain conditions, alternate functions are enabled and will be shown at the bottom of the screen.
+   	- When using Norns' internal clock source, K3 continues/resumes after pausing. This will also send out MIDI Song Position Pointer (SPP) depending on the MIDI port settings in PARAMETERS>>EDIT>>PREFERENCES. [See preferences](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#preferences) documentation. 
+  - Under certain conditions, alternate functions are enabled for K3 and will be shown at the bottom of the screen.
 
 - Encoder 1 (E1): Scroll Grid
   - For 16x8 Grids, scrolls the Chord and Seq pattern views up and down (8 steps of 16 shown at a time).
   - For all Grids, scrolls the Arranger view along its length (16 of 64 segments are shown at a time.)
   - While holding Chord or Seq Grid view keys (last two keys on the rightmost column): shift the entire active pattern up or down.
- 
 
 - Encoder 2 (E2): Select menu
-  - Scroll up/down to select a menu.
+  - Scrolls or changes focus of selected menu/UI element.
   - Under certain conditions, alternate functions are enabled and will be shown on screen.
 
 - Encoder 3 (E3): Edit menu
-  - Changes the value of the selected menu item, including changing the active view on top level menus.
+  - Changes the value of the selected menu/UI element, including changing the active view on top level menus.
   - Under certain conditions, alternate functions are enabled and will be shown on screen.
 
 
@@ -237,7 +235,7 @@ The Events editor view is used to schedule automation of parameter changes and f
 
 ![dreamsequence](doc/screen.svg)
 
-Dreamsequence has seven primary views, each containing a list of parameters. Scrolling is done with E2 and values are changed with E3. To change views, use E2 to scroll up to the view's name (SONG in the example above) and change views using E3. On the right is a modular dashboard that can be reconfigured via `K1>>PARAMETERS>>EDIT>>PREFERENCES>>Dash 1-4`.
+Dreamsequence has seven primary views, each containing a list of menus. Scrolling is done with E2 and values are changed with E3. To change views, use E2 to scroll up to the view's name (SONG in the example above) and change it using E3. On the right is a modular dashboard that can be reconfigured via `PARAMETERS>>EDIT>>PREFERENCES>>Dash 1-4`.
 
 --------------------------------------------------------------------------------
  
@@ -245,8 +243,8 @@ Dreamsequence has seven primary views, each containing a list of parameters. Scr
 
 ![dreamsequence](doc/dash_1.svg)
 
-- On the left, transport status is displayed. This glyph also acts as a metronome, blinking in time with song tempo. Default time signature is 4/4 and can be changed using `SONG>>Beats per bar/Beat length`.
-- On the right, the elapsed play time is displayed. To instead view the estimated time remaining in the arrangement, choose the `Metro T-` option in preferences.
+- On the left, transport status is displayed. This glyph also acts as a metronome, blinking in time with song tempo. The first beat of a new measure is emphasized with a darker glyph. The default time signature is 4/4 and can be changed using `SONG>>Beats per bar/Beat length`.
+- On the right, the elapsed play time is displayed. To instead view the estimated time remaining in the arrangement, choose the "Metro T-" option in preferences.
 
 --------------------------------------------------------------------------------
 
@@ -254,10 +252,10 @@ Dreamsequence has seven primary views, each containing a list of parameters. Scr
 
 ![dreamsequence](doc/dash_2.svg)
 
-- The chart will be grayed-out when the Arranger is disabled.
-- The number shown on the left is the active Arranger position (segment). If the Arranger is syncing (waiting for the in-progress chord pattern to complete before entering the Arranger), the upcoming segment will appear with a "→" symbol in front.
-- To the right, a symbol will indicate if looping is enabled. When on the last segment of the arranger, this symbol will flash to indicate that the arrangement is about to end or pulse to indicate that the arrangement is about to loop.
-- The chart is a visual representation of the arrangement, showing patterns (A-D), with rows corresponding to those on the Song Arranger Grid view. One advantage this dashboard has over Grid for performing is that it gives a preview of upcoming segment/chord pattern lengths.
+- Module elements will be dimmed when the Arranger is disabled.
+- The number shown on the left is the active Arranger position/segment. If the Arranger is syncing (waiting for the in-progress chord pattern to complete before entering the arrangement), the upcoming segment will appear with a "→" symbol in front.
+- To the right, a symbol will indicate if looping is enabled. When on the last segment of the arranger, this symbol will flash to indicate that the arrangement is about to end or pulse to indicate that it is about to loop.
+- The chart is a visual representation of the current and next few arrangement segments, showing patterns (A-D), with rows corresponding to those on the Arranger Grid view. One advantage this dashboard has over Grid is that it gives a preview of upcoming segment/chord pattern lengths, which may differ from pattern to pattern.
 
 --------------------------------------------------------------------------------
 
@@ -286,28 +284,28 @@ To navigate between pages, use E2 to scroll to the top of the list of menu items
 
 To edit a menu item, simply scroll down the list using E2 and change its value using E3. < and > symbols will appear when at the end of the range of possible values. Descriptions of each page and menu options follow.
 
-> **_TIP:_** Hold K1 while editing menus items to defer those changes until K1 is released. For example, if you want to switch voices while playback is ongoing, this lets you switch directly to the desired voice without needlessly sending notes to all the intermediate options. You can accumulate a number of edits, across views, and fire them all at once.
+> **_TIP:_** Hold K1 while editing menus items to defer applying those changes until K1 is released. For example, if you want to switch voices while playback is ongoing, this lets you switch directly to the desired voice without needlessly sending notes to all the intermediate voices. You can accumulate a number of edits, across views, and fire them all at once.
 
 
 #### SONG menu
 
-- Tonic: Song transposition of +/- 12 semitones.
+- Tonic: The "home note" of the song, with global transposition of +/- 12 semitones.
 
-- Scale: 9 scales: Major, Natural Minor, Harmonic Minor, Melodic Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian.
+- Scale: The scale used to generate the palette of available chords. Select from 9 scales: Major, Natural Minor, Harmonic Minor, Melodic Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian.
 
-- Tempo: sets Norns system clock tempo in BPM.
+- Tempo: Sets the Norns system clock tempo in BPM.
 
 - Beats per bar: Time signature numerator. Used to determine the current measure, for metronome, and to sync MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT). Can only be changed when transport is stopped.
 
 - Beats length: Time signature denominator. Used to determine the current measure, for metronome, and to sync MIDI devices using "pattern" mode (K3>>PARAMETERS>>EDIT>>PREFERENCES MIDI CLOCK OUT). Can only be changed when transport is stopped.
  
-- Crow outs: Outs 1-3 have options for "Off", "CV", "Env", and "Events". Out 4 also includes Dreamsequence's custom clock out option. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK. For more information, see [Crow Patching](TODO).
+- Crow outs: Outs 1-3 have options for "Off", "CV", "Env", and "Events". Out 4 also includes Dreamsequence's custom Crow clock out option. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK. For more information, see [Crow](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#crow) documentation.
   
 - Crow clk: Frequency of the pulses from Crow out port 4. Frequency is conveyed as fractions of a measure, with Pulses Per Quarter Note (PPQN) in parenthesis.
 
-- Crow swing: Amount of swing applied to the outgoing Crow clock. 50% is 0 swing and 99% is the maximum swing.
+- Crow swing: Amount of swing applied to the outgoing Crow clock. 50% is 0 swing and 99% is the maximum amount.
 
-- Dedupe <: This enables and sets the threshold for detecting and de-duplicating repeat notes at each output. This can be particularly helpful when merging sequences from different sources (say combining harmonizer with chords). Rather than trying to send the same note twice (potentially resulting in truncated notes or phase cancellation issues), this will let the initial note pass and filter out the second note if it arrives within the specified period of time.
+- Dedupe <: This enables and sets the deduplication threshold for merging sequences to a single voice. This can be particularly helpful when merging sequences from different sources (say combining harmonizer with chords). Rather than trying to send the same note twice (potentially resulting in truncated notes or phase cancellation issues), this will let the initial note pass and filter out the second note if it arrives within the specified period of time.
 
 - C-gen: Which algorithm is used for generating _Chord_ patterns. The default value picks an algorithm randomly.
 
@@ -321,9 +319,9 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
 - Octave: Shifts output from -4 to +4 octaves from default. Note that this offset is not the same as MIDI octaves. In the key of C, the default value of 0 will result in chords ranging with root notes ranging from C2 to B3.
 
-- Range: Expands or shrinks the chord's upper pitch range, conveyed as number of notes. The default value of "Chord" dynamically adjusts the range depending on the type of chord; triads will have a range of 3, 7ths will have a range of 4, 9ths will have a range of 5, etc... Manually selecting a specific value will remove or repeat notes in a higher octave so that every chord plays with the same number of notes. This can be helpful when you want a consistent strum pattern regardless of the base chord voicing.
+- Range: Expands or shrinks the chord's upper pitch range, conveyed as number of notes/tones. The default value of "Chord" dynamically adjusts the range depending on the type of chord; triads will have a range of 3, 7ths will have a range of 4, 9ths will have a range of 5, etc... Manually selecting a specific value will add or remove notes so that every chord plays with the same number of notes. This can be helpful when you want a consistent strum pattern across chords that have varying numbers of notes.
 
-- Max notes: Applied after Range has been set, this option limits the number of notes in the chord using a note thinning algorithm. The algorithm prioritizes the first and last notes in the chord, after which the intermediate notes are thinned out and evenly distributed. The resulting chord voicing depends on Range, Max notes, and Inversion. It's possible to end up with some false "chords" like the same note repeated across multiple octaves. The default value of "Range" will follow the lead of the `Range` option setting, having no effect on the chord.
+- Max notes: Applied after Range has been set, this option limits the number of notes in the chord using a note thinning algorithm. The algorithm prioritizes the first and last notes in the chord, after which the intermediate notes are thinned out and evenly distributed. The resulting chord voicing depends on Range, Max notes, and Inversion. It's possible to end up with some false chords like the same note repeated across multiple octaves. The default value of "Range" will follow the lead of the `Range` option setting, having no effect on the chord.
  
 - Inversion: Incrementally shifts the lowest note up an octave so that 1 = first inversion, 2 = second inversion, etc... At multiples of the chord's Range/Max notes, this will effectively transpose the chord up an octave.
 
@@ -355,9 +353,9 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
   
   - Triad: Columns 1-3 map to notes 1-3 from the active chord degree's triad, ignoring any configured custom chords. Columns 4-6 play the same notes one octave up, etc..
 
-  - Chord raw: Each column plays a note from the active chord, sequentially. One-octave chords will repeat one octave higher and two-octave chords will repeat two octaves higher. For some chords, this can result in a large jump in pitch between octaves.
+  - Chord raw: Each column plays a note from the active chord, sequentially. One-octave chords will repeat one octave higher and two-octave chords will repeat two octaves higher. For some chords, this can result in a large jump in pitch.
 	
-  - Chord extd.: Each column plays a note from the active chord, but two-octive chords may have some notes doubled in the upper octave in order to have a smoother transition to the transposed chord.
+  - Chord extd.: Each column plays a note from the active chord, but two-octave chords may have some notes doubled in the upper octave in order to have a smoother transition to the transposed chord.
 
   - Chord dense: Each column plays a note from the active chord but notes in the second octave will be transposed down an octave and the resulting pitches will be ordered from lowest to highest. This will deduplicate any resulting notes from the same pitch class.
 
@@ -367,24 +365,23 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
   - Scale+tr.: Columns 1-7 play notes from the scale selected in `SONG>>Scale` and a diatonic transposition is applied based on the active chord degree. Columns 8-12 play the same notes one octave higher. In C Major: columns 1-7 would be C, D, E, F, G, A, B for degree I and D, E, F, G, A, B, C for degree ii.
   
-  - Chromatic: Columns 1-12 play chromatic semitones with the starting note determined by `Song>>Key`
+  - Chromatic: Columns 1-12 play chromatic semitones with the starting note determined by `Song>>Tonic`
 
   - Chromatic+tr: Columns 1-12 play chromatic semitones transposed by the root note of the selected chord degree. In C Major, columns 1-6 would output C, C#, D, D#, E, F for degree I and D, D#, E, F, F#, G for degree ii.
 
   - Kit: Outputs chromatic semitones, beginning with C, no matter the song's key. Typically used to trigger notes on a drum machine or sampler, but can also be used for static pattern sequencing.
 
-  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the mask editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
+  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the Mask Editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
 
   - Mask 1-8+tr: Custom scale masks transposed within the scale by the active chord degree. This works just like the diatonic transposition in the Mode+tr option, but can produce curious results when the mask is not heptatonic.
 
-  - Priority: This determines if Grid is configured for monophonic sequencing, or polyphonic/note pools. It works in conjunction with the `Polyphony` option to determine which notes (and how many of them) to play.
+  - Grid: This determines if Grid is configured for monophonic sequencing, or note pools/polyphonic sequencing. It works in conjunction with the `Polyphony` option to determine which notes (and how many of them) to play.
     - Mono: Only one note can be enabled per step/row at a time. If multiple notes appear on a step, having been entered while in a different mode, they will still appear, but only the lowest-pitched note will play.
-	- L→: Multiple notes can be enabled per step, and will play from left to right.
-	- ←R: Multiple notes can be enabled per step, and will play from right to left.
-	- Random: Multiple notes can be enabled per step, and will play in random order.
+	  - Pool L→: Multiple notes can be enabled per step, and will play from left to right.
+	  - Pool ←R: Multiple notes can be enabled per step, and will play from right to left.
+	  - Pool Random: Multiple notes can be enabled per step, and will play in random order.
 
-  - Polyphony: The number of notes that will actually be sent to the voice. Combined with `Priority`, this can be used to play the lowest, the highest, or randomly-selected notes from a "pool" of options. This is useful to create voicing or pattern variation. When `Priority` is Mono, this setting is ignored and only one note will sound.
-    
+  - Polyphony: The number of notes that will actually be sent to the voice. Combined with `Grid`, this can be used to play the lowest, the highest, or randomly-selected notes from a "pool" of options. This is useful to create voicing or pattern variation. When `Grid` is Mono, this setting is ignored and only one note will sound.
   
 - Octave: Shifts pitch output from -4 to +4 octaves.
 
@@ -392,7 +389,7 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
 - Duration: Note duration relative to 1 measure. Values ending in T are tuplets. The first option, "Step" will always adjust note length to match step length.
 
-- Swing: Amount of swing timing applied to upbeats. 50% is has no swing and 99% is the maximum amount of swing.
+- Swing: Amount of swing timing applied to upbeats. 50% is has no swing and 99% is the maximum.
   
 - Accent: Bipolar modulation of note dynamics on upbeats.
   
@@ -400,32 +397,33 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
 - Probability: Probability of note playing vs. being muted.
 
-- Start and Reset menus: The sequence always tries to play until it completes, at which point the playhead resets to the beginning and is ready to start again as soon as it receives the signal to do so. These menu options determine what can send that signal to start and what can force a restart before the end of the sequence.
-  - Start: Condition for starting sequence if it is in the reset position.
+- Start and Reset menus: The sequence always tries to play until completion, at which point the playhead resets to the beginning and is ready to start again as soon as it receives the signal to do so. These menu options determine what can send that signal to start and what can force a restart before the end of the sequence.
+
+  The following example shows how the same 8-note sequence can be reinterpreted by changing `Start` and `Reset` options (chords shown below sequence).
+	
+  ![dreamsequence](doc/seq_start_reset.svg)
+
+  - Start: Condition for starting the sequence once it has completed.
     - Loop: As soon as the sequence ends, it will start itself in a loop.
-    - Every step: Start sequence when the chord sequencer advances a step.
-    - Chord steps: Start sequence when the chord sequencer advances to a step containing a chord.
-	- Empty steps: Start sequence when the chord sequencer advances to an empty step.
-	- Measure: Start sequence when advancing to a new measure (see `Song>>Beats per bar/Beat length`).
+    - Every step: Starts the sequence when the chord sequencer advances a step.
+    - Chord steps: Starts the sequence when the chord sequencer advances to a step containing a chord.
+	  - Empty steps: Starts the sequence when the chord sequencer advances to an empty step.
+	  - Measure: Starts the sequence when advancing to a new measure (see `Song>>Beats per bar/Beat length`).
     - Off/trigger: Sequence only starts when the `Trigger start` param is triggered in one of two ways:
-	  - `Seq n>>Trigger start` parameter, which can be called by external devices using MIDI/OSC PMAP. 
-	  - `Seq n>>Pattern>>Trigger start` event.
+	    - `Seq n>>Trigger start` parameter, which can be called by external devices using MIDI/OSC PMAP. 
+	    - `Seq n>>Pattern>>Trigger start` event.
 
   - Reset: While sequences naturally reset upon completion, they can also to interrupted and an immediate reset can be forced. Depending on when the reset occurs, this can prevent the sequence from reaching its end, keeping it in a suspended loop. Note: patterns are also reset when transport is stopped.
-    - Every step: Reset sequence when the chord sequencer advances a step.
-    - Chord steps: Reset sequence when the chord sequencer advances to a step containing a chord.
-	- Empty steps: Reset sequence when the chord sequencer advances to an empty step.
-	- Measure: Reset sequence when advancing to a new measure (see `Song>>Beats per bar/Beat length`).
+    - Every step: Resets the sequence when the chord sequencer advances a step.
+    - Chord steps: Resets the sequence when the chord sequencer advances to a step containing a chord.
+	  - Empty steps: Resets the sequence when the chord sequencer advances to an empty step.
+	  - Measure: Resets the sequence when advancing to a new measure (see `Song>>Beats per bar/Beat length`).
     - Off/trigger: Sequence only resets when the `Trigger reset` param is triggered in one of two ways:
-	  - `Seq n>>Trigger start` parameter, which can be called by external devices using MIDI/OSC PMAP. 
-	  - `Seq n>>Pattern>>Trigger start` event.
+	    - `Seq n>>Trigger reset` parameter, which can be called by external devices using MIDI/OSC PMAP. 
+	    - `Seq n>>Pattern>>Trigger reset` event.
 	<br><br> 
-	  > **_NOTE:_** Triggering the `Trigger start/reset` parameters/events can be done in combination with any of the selections above.
-	  > 
-
-	The following examples show how the same 8-note sequence can be reinterpreted by changing `Start` and `Reset` options (chords shown below sequence).
-	
-	![dreamsequence](doc/seq_start_reset.svg)
+	> **_NOTE:_** Triggering the `Trigger start/reset` parameters/events can be done in combination with any of the selections above.
+	> 
  
  - Change: When switching sequence patterns using Grid, this option determines whether the change is immediate or quantized to occur on the next loop or reset. Pattern changes initiated by events will happen immediately.
 
@@ -441,9 +439,9 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
   - Triad: Notes C1-D1 map to notes 1-3 from the active chord degree's triad, even if a custom chord has been configured. Notes D#1-F1 play the same notes one octave up, etc..
 	
-  - Chord raw: Each incoming MIDI note plays a note from the active chord, sequentially. One-octave chords will repeat one octave higher and two-octave chords will repeat two octaves higher. For some chords, this can result in a large jump in pitch between octaves.
+  - Chord raw: Each incoming MIDI note plays a note from the active chord, sequentially. One-octave chords will repeat one octave higher and two-octave chords will repeat two octaves higher. For some chords, this can result in a large jump in pitch.
 	
-  - Chord extd.: Each incoming MIDI note plays a note from the active chord, but two-octive chords may have some notes doubled in the upper octave in order to have a smoother transition to the transposed chord.
+  - Chord extd.: Each incoming MIDI note plays a note from the active chord, but two-octave chords may have some notes doubled in the upper octave in order to have a smoother transition to the transposed chord.
 
   - Chord dense: Each incoming MIDI note plays a note from the active chord but notes in the second octave will be transposed down an octave and the resulting pitches will be ordered from lowest to highest. This will deduplicate any resulting notes from the same pitch class.
 
@@ -453,13 +451,13 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
   - Scale+tr.: Plays notes from the scale selected in `SONG>>Scale` and a diatonic transposition is applied based on the active chord degree. In C Major, incoming notes C1-F#1 would output C, D, E, F, G, A, B for degree I and D, E, F, G, A, B, C for degree ii.
   
-  - Chromatic: Plays chromatic semitones, with the starting note determined by `Song>>Key`.
+  - Chromatic: Plays chromatic semitones, with the starting note determined by `Song>>Tonic`.
 
   - Chromatic+tr: Plays chromatic semitones transposed by the root note of the selected chord degree. In C Major, incoming notes C1-F1 would output C, C#, D, D#, E, F for degree I and D, D#, E, F, F#, G for degree ii.
   
   - Kit: Uses the same pitch of incoming note for the outgoing note. This is typically used to trigger notes on a drum machine or sampler, but can also be used to play voices directly (although note duration and velocity are determined by their respective menus, not by the incoming note).
 
-  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the mask editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
+  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the Mask Editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
 
   - Mask 1-8+tr: Custom scale masks transposed within the scale by the active chord degree. This works just like the diatonic transposition in the Mode+tr option, but can produce curious results when the mask is not heptatonic.
 
@@ -475,7 +473,7 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
 - Voice: Where the output of the CV harmonizer is sent for playback. Default options include Crow and MIDI ports, but additional synths and devices are supported by installing [NB voice mods](https://llllllll.co/t/n-b-et-al-v0-1/60374).
 
-- Trigger: When set to "Crow IN 2", this option will sample the voltage at Crow input 1 and immediately play a note. Other settings may be used to automatically sample the voltage at regular divisions of the measure. Note that very fast rates are likely to result in erratic notes if `SONG>>Dedupe` is not set to "Off".
+- Trigger: When set to "Crow IN 2", this option will sample the voltage at Crow input 1 and immediately play a note. Other settings may be used to automatically sample the voltage at regular divisions of the clock. Note that very fast rates are likely to result in erratic notes if `SONG>>Dedupe` is not set to "Off".
 
 - Channel: This menu item only appears when a MIDI port is selected as a voice (or when K1 is held).
 
@@ -485,9 +483,9 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
   
   - Triad: voltage of 0v, 1/12v, 2/12v map to notes 1-3 from the active chord degree's triad, even if a custom chord has been configured. Voltage of 3/12v, 4/12v, 5/12v play the same notes one octave up, etc..
 
-  - Chord raw: Each quantized note plays a note from the active chord, sequentially. One-octave chords will repeat one octave higher and two-octave chords will repeat two octaves higher. For some chords, this can result in a large jump in pitch between octaves.
+  - Chord raw: Each quantized note plays a note from the active chord, sequentially. One-octave chords will repeat one octave higher and two-octave chords will repeat two octaves higher. For some chords, this can result in a large jump in pitch.
 	
-  - Chord extd.: Each quantized note plays a note from the active chord, but two-octive chords may have some notes doubled in the upper octave in order to have a smoother transition to the transposed chord.
+  - Chord extd.: Each quantized note plays a note from the active chord, but two-octave chords may have some notes doubled in the upper octave in order to have a smoother transition to the transposed chord.
 
   - Chord dense: Each quantized note plays a note from the active chord but notes in the second octave will be transposed down an octave and the resulting pitches will be ordered from lowest to highest. This will deduplicate any resulting notes from the same pitch class.
 
@@ -497,13 +495,13 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
   - Scale+tr.: Plays notes from the scale selected in `SONG>>Scale` and a diatonic transposition is applied based on the active chord degree. In C Major, incoming voltage of 0/12v, 1/12v, 2/12v would output C, D, E... for degree I and D, E, F... for degree ii.
 
-  - Chromatic: Plays chromatic semitones, with the starting note determined by `Song>>Key`.
+  - Chromatic: Plays chromatic semitones, with the starting note determined by `Song>>Tonic`.
 
   - Chromatic+tr: Plays chromatic semitones transposed by the root note of the selected chord degree. In C Major, incoming voltage of 0/12v, 1/12v, 2/12v would output C, C#, D... for degree I and D, D#, E... for degree ii.
   
   - Kit: Outputs chromatic semitones, beginning with C, no matter the song's key. Typically used to trigger notes on a drum machine or sampler, but can also be used for static pattern sequencing.
 
-  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the mask editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
+  - Mask 1-8: Custom scale masks that can be edited by holding down the Seq Grid key (column 8, row 8) and pressing K3 to enter the Mask Editor. These custom masks exist at the `SONG>>Scale` level. In other words `SONG>>Scale: Major` contains 8 custom masks which will change when switching to `SONG>>Scale: Natural Minor`. By default, Dreamsequence contains one example custom mask (Mask 1) for each `SONG>>Scale`. Custom Masks will be saved along with a song preset but can also be saved as global defaults, available when creating a new song, via `SYSTEM>>PARAMETERS>>PREFERENCES>>Save masks`.
 
   - Mask 1-8+tr: custom scale masks transposed within the scale by the active chord degree. This works just like the diatonic transposition in the Mode+tr option, but can produce curious results when the mask is not heptatonic.
   
@@ -513,27 +511,28 @@ To edit a menu item, simply scroll down the list using E2 and change its value u
 
 - Duration: Note duration relative to 1 measure. Values ending in T are tuplets. The first option, "Step" will always adjust note length to match step length.
 
-- Swing: When `Trigger` is not set to "Crow IN 2", this determines the amount of swing timing applied to upbeats when sampling voltage. 50% is has no swing and 99% is the maximum amount of swing.
+- Swing: When `Trigger` is not set to "Crow IN 2", this determines the amount of swing timing applied to upbeats when sampling voltage. 50% is has no swing and 99% is the maximum.
     
 - Dynamics: Volume/velocity/amplitude of voice, from 1-100%.
 
 ---
 
 # Preferences
-Global preferences that persist across sessions via K1>>PARAMETERS>>EDIT>>PREFERENCES allow Dreamsequence to be customized to your liking.
+Global preferences that persist across sessions, set via PARAMETERS>>EDIT>>PREFERENCES, allow Dreamsequence to be customized to your liking.
 - Default song: Determines if a preset (PSET) is loaded at script launch.
   - New: Starts with an empty song each time the script is launched.
   - Last PSET: Loads the last-saved PSET on script launch.
   - Template: Loads the template (PSET 00) on script launch.
-  - Save template: Press K3 to save the current song as a starting template.
+
+- Save template: Press K3 to save the current song as a template.
  
-  - Save masks: Saves all configured custom scale masks in the current song as global scales, available the next time the script starts a new song with `Default>>New` selected.
+- Save masks: Press K3 to save all scale masks in the current song as global scales, available the next time the script starts with `Default>>New` selected.
 
-  - Sync views: When on, changing views on Grid will change views on Norns, and vice versa. This setting can also be toggled from within Dreamsequence using K1+K3. Note that the views are not necessarily 1:1 as there are no Grid views for the MIDI and CV harmonizers.
+- Sync views: When on, changing views on Grid will change views on Norns, and vice versa. This setting can also be toggled from within Dreamsequence using K1+K3. Note that the views are not necessarily 1:1 as there are no Grid views for the MIDI and CV harmonizers.
 
-  - Notifications: Determines whether notifications pop up at the bottom of the screen, and for how long. Momentary notifications only appear when holding down keys, whereas the other options will appear for a fixed amount of time after the key is released. None of the notifications are essential for use of the script, but they may be helpful to remember what certain keys do and to confirm actions.
+- Notifications: Determines whether notifications pop up at the bottom of the screen, and for how long. Momentary notifications only appear when holding down keys, whereas the other options will appear for a fixed amount of time after the key is released. None of the notifications are essential for use of the script, but they may be helpful to remember what certain keys do and to confirm actions.
 
-  - Preview notes: When on, Grid will play notes when pressing chord/seq keys. This only occurs when transport is not playing.
+- Preview notes: When on, Grid will play notes when pressing chord/seq keys. This only occurs when transport is not playing.
 
 - Dash 1-4: Configures the modules shown in screen dashboard, from top to bottom:
   - Off
@@ -541,7 +540,7 @@ Global preferences that persist across sessions via K1>>PARAMETERS>>EDIT>>PREFER
 	- Chord name: Readout of active chord.
 	- Chord progress: Current chord pattern and progress.
   - Metro T-: Transport state, metronome, and time remaining in arrangement.
-  - Metro T+: Transport state, metronome, and elapsed play time (Dash 1 default).
+  - Metro T+: Transport state, metronome, and elapsed play time.
 
 - Crow pullup: i2c pullup resistors can be set On (default) or Off.
 
@@ -568,20 +567,20 @@ Dreamsequence supports using Monome Crow to send and receive CV envelopes, as we
 ### Outputs
 Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 
-- Crow OUT 1: CV 1V/oct when a voice is set to "Crow 1" (CV only) or "Crow 1/2" (CV/Env pair).
+- Crow OUT 1 (CV): 1V/oct when a voice is set to "Crow 1" (CV only) or "Crow 1/2" (CV/Env pair).
 
-- Crow OUT 2: Envelope when a voice is set to "Crow n/2" (CV/Env pair).
+- Crow OUT 2 (Env): Sends envelope along with CV when a voice is set to "Crow n/2" (CV/Env pair).
 
-- Crow OUT 3: [Arranger Events](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#events-view).
+- Crow OUT 3 (Events): Reserves output for [Arranger Events](https://github.com/dstroud/dreamsequence_dev/blob/main/README.md#events-view). Technically, Crow events can be sent to any out, but this makes sure that notes are not mistakenly sent to an out intended solely for events.
 - Crow OUT 4: Dreamsequence's clock out. Unlike the system Crow clock, this clock only runs when transport is playing, and has an option for swing. For best results, make sure the system Crow clock is disabled in PARAMETERS>>CLOCK.
 
 ### Tips
 
-- Tuning: CV output can be automatically tuned to concert pitch (A - 440Hz) using the `tune` parameter in K1>>PARAMETERS>>EDIT>>VOICES>>crow 1. To do so, turn down Norns' monitor levels, patch an oscillator to Norns' left input (**MAKE SURE TO ATTENUATE TO IF AT MODULAR LEVELS!**), bypassing VCA, etc..."
+- Tuning: CV output can be automatically tuned to concert pitch (A - 440Hz) using the `tune` parameter in K1>>PARAMETERS>>EDIT>>VOICES>>crow n (cv). To do so, turn down Norns' monitor levels, patch an oscillator to Norns' left input (**MAKE SURE TO ATTENUATE HOT/MODULAR LEVELS DOWN TO LINE LEVEL!**), bypassing VCA, etc..."
 
-- Envelopes: Shapes are adjustable via K1>>PARAMETERS>>EDIT>>VOICES>>crow 2.
-  - For gates, choose attack and release shapes of "now", and a sustain of 1.
-  - For triggers, choose attack and decay shapes of "now" and a sustain of 0.
+- Envelopes: Shapes are adjustable via K1>>PARAMETERS>>EDIT>>VOICES>>crow n (env).
+  - For gates, choose attack and release shapes of "now", and sustain of 1.
+  - For triggers, choose attack and decay shapes of "now" and sustain of 0.
 
 ---
 
@@ -596,7 +595,7 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
   - Scale/degree-appropriate chord variants selectable by holding chord key and using E3 (scale/degree specific)
   - Custom chords editable by holding chord key and pressing K3 to enter editor
 
-- Note masking (custom scales)
+- Scale masking
   - Hold Seq view switcher (bottom right Grid key) + K3 to access
   - 8 masks available per song scale
   - Masks selectable from list of scales or customizable with Grid
@@ -607,20 +606,20 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 	- 3 concurrent sequencers
 	- 4 patterns each w/ copy+paste, instant/quantized switching configurable via `Change` param
 	- Polyphonic seq modes
-		- `Priority` param determines if Grid is mono or poly, as well as order of note playback
+		- `Grid` param determines if Grid is mono or pool/poly, as well as order of note playback
 		- `Polyphony` param determines number of notes played per step
   - Pattern shift param (in addition to loop shift)
-  - `Notes` param options: chromatic, chromatic + transposition based on chord degree, drum kit (chromatic starting from C1), note masks. Also available for CV/MIDI-in
+  - `Notes` param options: kit/drum (chromatic starting from C1), scale masks. Also available for MIDI/CV harmonizers.
   - New `Start`/`Reset` options: Empty steps, Measure, 
 
 - User Interface:
-	- Holding K1 while changing menu values defers all changes until K1 is released
-	- Norns and Grid views will be synced by default when `Sync Views` is enabled in Preferences Can be toggled by holding K1+K3.
+	- Holding K1 while changing menu values defers applying changes until K1 is released
+	- Norns and Grid views will be synced by default when `Sync Views` is enabled in Preferences. Can be toggled by holding K1+K3.
 	- Holding chord or seq Grid view switcher key and tapping a pattern will toggle muting of chord or seq.
   - `Notifications` preference adjusts or disables pop-up notifications
   - `Preview notes` preferences plays or silences pressed chords/notes while stopped
-	- PARAMETERS>>EDIT>>PREFERENCES>>Enc 1-3: set encoder speed and acceleration
-	- Rotation of full seq pattern or looped portion of pattern (param or permanent via seq key + E1/E2)
+	- `Enc 1-3`: set encoder speed and acceleration
+	- Rotation of full seq pattern or looped portion of pattern (param or destructive via seq key + E1/E2)
 	- Pressing K2 when transport is stopped will reset arranger position, even if arranger is disabled
  	- E1 can be used to scroll arranger continuously, in addition to the page jump keys
 
@@ -629,36 +628,30 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 	- Configure with PARAMETERS>>EDIT>>PREFERENCES>>Dash 1-4
 
 - Events
-	- Events editor now tracks what event types are saved in each lane/column and provides a summary browsable using E2/3. Glyphs indicate lane type:
+	- Events Editor now tracks what event types are saved in each lane/column across the entire arrangement and provides a summary browsable using E2/3. Glyphs indicate lane type:
 		- ☐ empty lane
 		- ⊡ "single-event" lane containing only type of event
 		- ☰ "multi-event" lane containing various types of events
 	- Selecting a lane using E2/3 or tapping an empty event slot will show the last-saved event in that lane
-	- Holding K1 in the events editor brings up a quick actions menu. Select an option with E2/3 and release K1 to perform the action. Currently the only option is to clear all events in the segment.
+	- Holding K1 in the Events Editor brings up a quick actions menu. Select an option with E2/3 and release K1 to perform the action. Currently the only option is to clear all events in the segment.
   - MIDI Bank Select and Program Change events
   - Song>>Arranger>>Next position event can create nonlinear/randomized arrangements. Can also be used to create sub loop (i.e. use segment 1 for song init events then loop from a later segment 2).
 
-- Custom NB MIDI voice with script-level control over channel. No need for voice instances.
-
 - Quality of life
   - Custom MIDI voice with script control over MIDI channel
-
+  - Reworked Grid drawing, use of pulses to indicate low-priority states (looping Arranger, pattern changes, selected events/lanes) and blinking to indicate high-priority state (muted chord/seqs, unsaved events, off-Grid patterns and Arranger position)
+  - Pop-up notifications to confirm actions like copy+paste, Arranger enable/disable, etc...
 
 
 ### Changes and FYI
-- Rolled back requirements to 231114. However, Norns 240221 is required for Ableton Link clock support.
-- Grid will blink LEDs to communicate that user interaction may be required, e.g.: pattern extends beyond the current Grid view, muted patterns, unsaved events, arranger ending.
-- Grid will slowly pulse LEDs to communicate upcoming changes such as a manual jump of the arranger playhead, arranger looping, upcoming chord pattern changes.
-- Dropping MIDI device names and displaying by port # instead. They're just too long.
 - Will reset `load pset` pref on first launch as compatibility with older psets is broken.
+- Rolled back requirements to 231114 for Fates. However, Norns 240221 is required for Ableton Link clock support.
+- Dropping MIDI device names and displaying by port # instead. Sorry, they're just too long.
 - Default seq `reset` value is now "measure".
 
 
-
 ### Known issues
-
-- Breaks compatibility with earlier .psets
-- May need to clear dust/data/dreamsequence/prefs.data
+- Breaks compatibility with pre-1.4 PSETs
 - Seq start/reset triggered by a new measure will occur before events fire
 - Time signature (`beats per bar` and `beat length`) can not be changed unless transport is stopped
 </details>
@@ -815,7 +808,7 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
   - Seq end: as soon as the sequence ends, it will start itself in a loop.
    - Step: start Seq when the chord sequencer advances a step.
    - Chord: start Seq when the chord sequencer advances to a step containing a chord (empty steps are ignored). Useful for turning Seq into a chord strummer, or to layer notes on top of the chord, building alternative chord types and voicings.
-   - Cue: start Seq when it recieves a "Start" event or the "Start" param is triggered via K1>>PARAMETERS>>EDIT>>SEQ (also MIDI/OSC mappable so this can be called by external sources). 
+   - Cue: start Seq when it receives a "Start" event or the "Start" param is triggered via K1>>PARAMETERS>>EDIT>>SEQ (also MIDI/OSC mappable so this can be called by external sources). 
 
 - “Reset on” menu option. Seq can be forced to reset before its normal end using this setting. Depending on when the reset occurs, this can prevent the sequence from reaching its end, keeping it in a suspended loop.
   - Step: reset Seq when the chord sequencer advances a step.
@@ -834,7 +827,7 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 
 - Arranger length is extended from 16 segments to 64 segments and can be navigated using the four pagination keys at the bottom of the Grid view.
 
-- Event probability setting in event editor determines how likely it is for the event to fire.
+- Event probability setting in Events Editor determines how likely it is for the event to fire.
 
 - New Event operation types:
   - ‘Random’ operation picks a random value (within range) for the selected event.
@@ -843,9 +836,9 @@ Outputs are configurable via `Song>> Crow out 1-4`, defaulting to:
 - Event ‘Limit’ options allow you to set a min and max value range that can either be clamped or wrapped. Clamp = values will stop once they reach the limit. Wrap = values will wrap around once they reach the limit. Example: a value of 8 with a Limit of -10 to 10 incremented by 5 will result in a clamped value of 10 or a wrapped value of -8.
 
 ### Quality of life improvements
-- Event editor menus are now broken down into Category and Subcategory.
+- Events Editor menus are now broken down into Category and Subcategory.
 
-- Event editor displays the state of the selected event in the header: New, Edited, or Saved. 
+- Events Editor displays the state of the selected event in the header: New, Edited, or Saved. 
 
 - Transport state indicator displays a flashing play symbol when waiting to sync with an Ableton Link clock, and a flashing pause symbol when waiting to pause until the end of the current chord. Accidental pause can be canceled if you press play before the end of the chord step.
 

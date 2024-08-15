@@ -1,7 +1,7 @@
 events_lookup = {}								--
 -- Song								
-table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'scale', 	name= 'Scale', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'tonic', 	name= 'Tonic', 			})
+table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'scale', 	name= 'Scale', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Mood', 	event_type= 'param', 	id= 'clock_tempo', 	name= 'Tempo', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_out_1', 	name= 'Crow out 1', 			})
 table.insert(events_lookup, {	category= 'Song', 	subcategory= 'Config', 	event_type= 'param', 	id= 'crow_out_2', 	name= 'Crow out 2', 			})
@@ -37,7 +37,7 @@ for seq_no = 1, max_seqs do
   table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_mute_" .. seq_no, 	name= 'Play/mute', 			})
   table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_voice_" .. seq_no, 	name= 'Voice', 			})
   table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_channel_" .. seq_no, 	name= 'Channel', 			})
-  table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_note_priority_" .. seq_no, 	name= 'Priority', 			})
+  table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_grid_" .. seq_no, 	name= 'Grid', 			})
   table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_polyphony_" .. seq_no, 	name= 'Polyphony', 			})
   table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_start_on_" .. seq_no, 	name= 'Start', 			})
   table.insert(events_lookup, {	category = "Seq " .. seq_no, 	subcategory= 'Config', 	event_type= 'param', 	id= "seq_reset_on_" .. seq_no, 	name= 'Reset', 			})
